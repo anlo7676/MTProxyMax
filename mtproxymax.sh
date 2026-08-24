@@ -38,8 +38,8 @@ CLOUD_BACKUP_FILE="${CLOUD_BACKUP_FILE:-${INSTALL_DIR}/cloud_backup.conf}"
 SCANNER_SHIELD_SET="mtp_scanners"
 CONTAINER_NAME="mtproxymax"
 DOCKER_IMAGE_BASE="mtproxymax-telemt"
-TELEMT_MIN_VERSION="3.4.25"
-TELEMT_COMMIT="51e58b5"  # Pinned: v3.4.25 — Handshake failure stage accounting, In-Runtime Reload
+TELEMT_MIN_VERSION="3.5.2"
+TELEMT_COMMIT="b6b9a18"  # Pinned: v3.5.2 — Fix Windows WEB carrier empty-cookie compatibility
 GITHUB_REPO="SamNet-dev/MTProxyMax"
 REGISTRY_IMAGE="ghcr.io/samnet-dev/mtproxymax-telemt"
 
