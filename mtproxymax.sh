@@ -2,7 +2,7 @@
 # ═══════════════════════════════════════════════════════════════
 #  MTProxyMax — 全能 Telegram 代理管理器
 #  Copyright (c) 2026 SamNet Technologies
-#  https://github.com/SamNetTechnologies/MTProxyMax
+#  https://github.com/anlo7676/MTProxyMax
 #
 #  Engine: telemt 3.x (Rust+Tokio)
 #  License: MIT
@@ -40,7 +40,7 @@ CONTAINER_NAME="mtproxymax"
 DOCKER_IMAGE_BASE="mtproxymax-telemt"
 TELEMT_MIN_VERSION="3.5.2"
 TELEMT_COMMIT="b6b9a18"  # Pinned: v3.5.2 — Fix Windows WEB carrier empty-cookie compatibility
-GITHUB_REPO="SamNetTechnologies/MTProxyMax"
+GITHUB_REPO="anlo7676/MTProxyMax"
 REGISTRY_IMAGE="ghcr.io/samnet-dev/mtproxymax-telemt"
 
 # Bash version check
@@ -9794,7 +9794,7 @@ self_update() {
             log_error "Downloaded script has syntax errors — aborting"
             rm -f "$_tmp"; return 1
         fi
-        if ! grep -q "GITHUB_REPO=\"SamNetTechnologies/MTProxyMax\"" "$_tmp" 2>/dev/null; then
+        if ! grep -q "GITHUB_REPO=\"anlo7676/MTProxyMax\"" "$_tmp" 2>/dev/null; then
             log_error "Downloaded file doesn't look like MTProxyMax — aborting"
             rm -f "$_tmp"; return 1
         fi
