@@ -621,7 +621,7 @@ sync_domain_cert_len() {
         echo "$now_s" > "$stamp_file" 2>/dev/null || true
         if [ "$detected" != "${FAKE_CERT_LEN:-2048}" ]; then
             if [ "$quiet" = "false" ]; then
-                log_info "Auto-detected TLS cert length for '${PROXY_DOMAIN}': ${detected} bytes (was ${FAKE_CERT_LEN:-2048})"
+                log_info "已自动检测 '${PROXY_DOMAIN}' 的 TLS 证书长度：${detected} 字节（原值：${FAKE_CERT_LEN:-2048}）"
             fi
             FAKE_CERT_LEN="$detected"
             save_settings
@@ -2129,7 +2129,7 @@ secret_list() {
     fi
 
     echo ""
-    draw_header "SECRETS"
+    draw_header "密钥"
     echo ""
 
     # Batch-load all user stats in one pass (single metrics fetch + single file read)
@@ -2645,7 +2645,7 @@ secret_show_limits() {
     if [ -z "$label" ]; then
         # Show all
         echo ""
-        draw_header "USER LIMITS"
+        draw_header "用户限制"
         echo ""
         printf "  ${BOLD}%-4s %-16s %-10s %-8s %-12s %-14s${NC}\n" "#" "LABEL" "MAX CONN" "MAX IP" "QUOTA" "EXPIRES"
         echo -e "  ${DIM}$(_repeat '─' 70)${NC}"
@@ -2915,7 +2915,7 @@ show_connections() {
     local total=0
     IFS='|' read -r _ total <<< "$(echo "$parsed" | grep '^T|')"
 
-    draw_header "ACTIVE CONNECTIONS"
+    draw_header "活跃连接"
     echo ""
     echo -e "  ${BOLD}Total active:${NC} ${total:-0}"
     echo ""
@@ -3034,7 +3034,7 @@ secret_stats() {
         ')
     fi
 
-    draw_header "USER STATS"
+    draw_header "用户统计"
     echo ""
     printf "  ${BOLD}%-14s %5s %6s %10s %10s %6s %8s %10s${NC}\n" "LABEL" "CONNS" "IPs" "DOWN" "UP" "QUOTA" "USED" "EXPIRES"
     echo -e "  ${DIM}$(_repeat '─' 80)${NC}"
@@ -3150,7 +3150,7 @@ secret_sort() {
 # Doctor: comprehensive diagnostics
 run_doctor() {
     echo ""
-    draw_header "DOCTOR"
+    draw_header "综合诊断"
     echo ""
     local issues=0
 
@@ -3552,7 +3552,7 @@ secret_archive_list() {
         return
     fi
     echo ""
-    draw_header "ARCHIVED SECRETS"
+    draw_header "已归档密钥"
     echo ""
     while IFS='|' read -r label key created enabled _mc _mi _q _ex notes; do
         [ -z "$label" ] && continue
@@ -3706,7 +3706,7 @@ show_config() {
     local config="${CONFIG_DIR}/config.toml"
     if [ -f "$config" ]; then
         echo ""
-        draw_header "ENGINE CONFIG"
+        draw_header "引擎配置"
         echo ""
         sed 's/^/  /' "$config"
         echo ""
@@ -3816,7 +3816,7 @@ profile_list() {
     [ -z "$dirs" ] && { log_info "No saved profiles"; return; }
 
     echo ""
-    draw_header "PROFILES"
+    draw_header "配置方案"
     echo ""
     while read -r name; do
         [ -z "$name" ] && continue
@@ -4201,7 +4201,7 @@ backup_restore_encrypted() {
 # ── Comprehensive server info ──
 show_server_info() {
     echo ""
-    draw_header "MTPROXYMAX SERVER INFO"
+    draw_header "MTPROXYMAX 服务器信息"
     echo ""
 
     # System
@@ -4224,7 +4224,7 @@ show_server_info() {
     echo -e "  ${BOLD}Network${NC}"
     echo -e "    Public IPv4:  ${ip4:-—}"
     echo -e "    Public IPv6:  ${ip6:-—}"
-    echo -e "    Proxy port:   ${PROXY_PORT:-443}"
+    echo -e "    代理端口：    ${PROXY_PORT:-443}"
     echo ""
 
     # Proxy config
@@ -4463,7 +4463,7 @@ template_list() {
         return
     fi
     echo ""
-    draw_header "TEMPLATES"
+    draw_header "模板"
     echo ""
     printf "  ${BOLD}%-16s %-8s %-8s %-12s %-14s${NC}\n" "NAME" "CONNS" "IPS" "QUOTA" "EXPIRES"
     echo -e "  ${DIM}$(_repeat '─' 64)${NC}"
@@ -4614,7 +4614,7 @@ _tune_lookup() {
 
 tune_list_params() {
     echo ""
-    draw_header "TUNABLE ENGINE PARAMS"
+    draw_header "可调引擎参数"
     echo ""
     local entry p s v
     for entry in "${_TUNE_WHITELIST[@]}"; do
@@ -4730,7 +4730,7 @@ _emit_tunings_for_section() {
 # ── End-to-end install verification ──
 run_verify() {
     echo ""
-    draw_header "VERIFY"
+    draw_header "安装验证"
     echo ""
     local pass=0 fail=0
     _check() {
@@ -4937,7 +4937,7 @@ COMPL
 # ── Outbound throughput test ──
 run_speedtest() {
     echo ""
-    draw_header "SPEED TEST"
+    draw_header "速度测试"
     echo ""
     echo -e "  ${DIM}Measuring outbound bandwidth from server...${NC}"
     echo ""
@@ -4970,7 +4970,7 @@ run_speedtest() {
 
 run_digest() {
     echo ""
-    draw_header "EXECUTIVE DIGEST"
+    draw_header "系统摘要"
     echo ""
 
     local _running=false _pstatus="stopped" uptime_str="—"
@@ -5008,7 +5008,7 @@ run_digest() {
 
 run_ping_dc() {
     echo ""
-    draw_header "TELEGRAM DC BENCHMARK"
+    draw_header "TELEGRAM 数据中心性能测试"
     echo ""
     echo -e "  ${DIM}Benchmarking TCP handshake latency to global Telegram DCs...${NC}"
     echo ""
@@ -5043,7 +5043,7 @@ run_ping_dc() {
 
 run_upload_test() {
     echo ""
-    draw_header "UPLOAD MECHANISM DIAGNOSTICS"
+    draw_header "上传机制诊断"
     echo ""
     echo -e "  ${DIM}Auditing proxy upload mechanism, socket write buffers, and DC egress...${NC}"
     echo ""
@@ -5298,9 +5298,9 @@ run_shield() {
         status)
             echo -e "\n  🛡️  ${BOLD}Kernel SYN Shield 状态:${NC}"
             if [ "${STEALTH_SHIELD:-false}" = "true" ]; then
-                echo -e "     状态: ${GREEN}ENABLED${NC} (有效 protection on port ${PROXY_PORT})"
+                echo -e "     状态: ${GREEN}已启用${NC} (有效 protection on port ${PROXY_PORT})"
             else
-                echo -e "     状态: ${YELLOW}DISABLED${NC}"
+                echo -e "     状态: ${YELLOW}已禁用${NC}"
             fi
             echo ""
             ;;
@@ -5332,13 +5332,13 @@ run_clamp_mss() {
         status)
             echo -e "\n  📉 ${BOLD}TCP MSS Clamping 状态:${NC}"
             if [ "${STEALTH_MSS_CLAMP:-false}" = "true" ]; then
-                echo -e "     状态: ${GREEN}ENABLED${NC} (有效 alignment on port ${PROXY_PORT})"
+                echo -e "     状态: ${GREEN}已启用${NC} (有效 alignment on port ${PROXY_PORT})"
                 if command -v iptables >/dev/null 2>&1; then
                     local _rule_cnt; _rule_cnt=$(iptables -t mangle -S 2>/dev/null | grep -c "mtproxymax_mss" || echo 0)
                     echo -e "     Kernel Hooks: ${CYAN}${_rule_cnt} Netfilter rules active across FORWARD, OUTPUT & POSTROUTING${NC}"
                 fi
             else
-                echo -e "     状态: ${YELLOW}DISABLED${NC}"
+                echo -e "     状态: ${YELLOW}已禁用${NC}"
             fi
             echo ""
             ;;
@@ -5479,7 +5479,7 @@ run_domain_pool() {
 # ── DPI Forensics & Readiness Score ──
 run_dpi_inspect() {
     echo ""
-    draw_header "DPI FORENSICS & READINESS ANALYZER"
+    draw_header "DPI 分析与防护就绪度检查"
     echo ""
     echo -e "  ${DIM}运行中 active 5-point network diagnostics...${NC}"
     echo ""
@@ -5519,10 +5519,10 @@ run_dpi_inspect() {
     # Check 3: Kernel SYN Shield State
     printf "  [3/5] Anti-DPI SYN Shield: "
     if [ "${STEALTH_SHIELD:-false}" = "true" ]; then
-        echo -e "${GREEN}ACTIVE${NC}"
+        echo -e "${GREEN}运行中${NC}"
         score=$((score + 20))
     else
-        echo -e "${YELLOW}DISABLED${NC}"
+        echo -e "${YELLOW}已禁用${NC}"
     fi
 
     # Check 4: Stealth Preset Engine Hardening
@@ -5546,11 +5546,11 @@ run_dpi_inspect() {
             echo -e "${GREEN}ENABLED (${mss_rules} kernel hooks active)${NC}"
             score=$((score + 20))
         else
-            echo -e "${GREEN}ENABLED${NC}"
+            echo -e "${GREEN}已启用${NC}"
             score=$((score + 20))
         fi
     else
-        echo -e "${YELLOW}DISABLED${NC}"
+        echo -e "${YELLOW}已禁用${NC}"
     fi
 
     echo ""
@@ -5567,7 +5567,7 @@ run_cover_watchdog() {
     case "$action" in
         test)
             echo ""
-            draw_header "COVER DOMAIN HEALTH WATCHDOG"
+            draw_header "掩护域名健康监控"
             echo ""
             echo -e "  ${DIM}Testing live latency across domain pool...${NC}"
             echo ""
@@ -5822,7 +5822,7 @@ run_qos() {
             if [ "${QOS_LIMIT_MBPS:-0}" -gt 0 ]; then
                 echo -e "     状态:      ${GREEN}ACTIVE (${QOS_LIMIT_MBPS} Mbps / IP)${NC}"
             else
-                echo -e "     状态:      ${YELLOW}DISABLED${NC}"
+                echo -e "     状态:      ${YELLOW}已禁用${NC}"
             fi
             echo -e "  ${DIM}用法： mtproxymax qos [set <mbps>|off|status]${NC}\n"
             ;;
@@ -5866,7 +5866,7 @@ run_happy_hours() {
                 fi
                 echo -e "     Configured Window: ${CYAN}${HAPPY_HOURS_WINDOW}${NC} (${st})"
             else
-                echo -e "     状态:            ${YELLOW}DISABLED${NC}"
+                echo -e "     状态:            ${YELLOW}已禁用${NC}"
             fi
             echo -e "  ${DIM}用法： mtproxymax happy-hours [set <HH:MM-HH:MM>|off|status]${NC}\n"
             ;;
@@ -6162,11 +6162,11 @@ run_ddns() {
             load_settings
             echo -e "\n  🌐 ${BOLD}Cloudflare Dynamic DNS (DDNS) Updater:${NC}"
             if [ "${DDNS_ENABLED:-false}" = "true" ]; then
-                echo -e "     状态:      ${GREEN}ACTIVE${NC}"
+                echo -e "     状态:      ${GREEN}运行中${NC}"
                 echo -e "     Record Name: ${CYAN}${DDNS_RECORD_NAME:-unknown}${NC}"
                 echo -e "     Zone ID:     ${DIM}${DDNS_CF_ZONE_ID:-unknown}${NC}"
             else
-                echo -e "     状态:      ${YELLOW}DISABLED${NC}"
+                echo -e "     状态:      ${YELLOW}已禁用${NC}"
             fi
             echo -e "  ${DIM}用法： mtproxymax ddns [set <token> <zone_id> <record_name>|run|off|status]${NC}\n"
             ;;
@@ -6300,8 +6300,8 @@ run_top() {
         else
             for ((i=0; i<count; i++)); do
                 local label="${SECRETS_LABELS[$i]}"
-                local st="${GREEN}ACTIVE${NC}"
-                [ "${SECRETS_ENABLED[$i]}" = "false" ] && st="${RED}DISABLED${NC}"
+                local st="${GREEN}运行中${NC}"
+                [ "${SECRETS_ENABLED[$i]}" = "false" ] && st="${RED}已禁用${NC}"
                 
                 local conns=0 bytes_used=0
                 if [ -f "$USERS_JSON_FILE" ]; then
@@ -6350,8 +6350,8 @@ run_tag() {
         printf "  %-20s %-18s %-35s\n" "LABEL" "STATUS" "TAGS / NOTES"
         echo "  ─────────────────────────────────────────────────────────────────"
         for ((i=0; i<count; i++)); do
-            local st="${GREEN}ACTIVE${NC}"
-            [ "${SECRETS_ENABLED[$i]}" = "false" ] && st="${RED}DISABLED${NC}"
+            local st="${GREEN}运行中${NC}"
+            [ "${SECRETS_ENABLED[$i]}" = "false" ] && st="${RED}已禁用${NC}"
             printf "  %-20s %-20b %-35s\n" "${SECRETS_LABELS[$i]}" "$st" "${SECRETS_NOTES[$i]:-${DIM}none${NC}}"
         done
         echo -e "\n  ${DIM}用法： mtproxymax tag <label> <tag/note text>${NC}"
@@ -6741,8 +6741,8 @@ run_calendar() {
             local wp="false" hb="false"
             [ -f "$cal_file" ] && { source "$cal_file" 2>/dev/null || true; }
             
-            local wp_st="${YELLOW}DISABLED${NC}"; [ "$wp" = "true" ] && wp_st="${GREEN}ENABLED (Free Weekend Data: Fri 00:00 - Sun 23:59)${NC}"
-            local hb_st="${YELLOW}DISABLED${NC}"; [ "$hb" = "true" ] && hb_st="${GREEN}ENABLED (Holiday Airdrop: +5GB bonus on major holidays)${NC}"
+            local wp_st="${YELLOW}已禁用${NC}"; [ "$wp" = "true" ] && wp_st="${GREEN}ENABLED (Free Weekend Data: Fri 00:00 - Sun 23:59)${NC}"
+            local hb_st="${YELLOW}已禁用${NC}"; [ "$hb" = "true" ] && hb_st="${GREEN}ENABLED (Holiday Airdrop: +5GB bonus on major holidays)${NC}"
             
             echo -e "  ${BOLD}[1] Weekend Free Pass:${NC}  ${wp_st}"
             echo -e "  ${BOLD}[2] Holiday Bonus Pool:${NC} ${hb_st}"
@@ -6795,7 +6795,7 @@ run_geo_fence() {
                 countries=$(grep -E '^countries=' "$geo_file" 2>/dev/null | cut -d'=' -f2- | tr -d '"\r' | tail -1 || echo "")
             fi
             
-            local st="${YELLOW}DISABLED${NC}"
+            local st="${YELLOW}已禁用${NC}"
             if [ "$mode" = "allow" ]; then
                 st="${GREEN}ALLOW-ONLY WHITELIST (${countries})${NC}"
             elif [ "$mode" = "block" ]; then
@@ -6855,7 +6855,7 @@ run_decoy_web() {
                 d_tmpl=$(grep -E '^d_tmpl=' "$decoy_file" 2>/dev/null | cut -d'=' -f2- | tr -d '"\r' | tail -1 || echo "cloud")
             fi
             
-            local st="${YELLOW}DISABLED${NC}"
+            local st="${YELLOW}已禁用${NC}"
             [ "$d_status" = "enabled" ] && st="${GREEN}ACTIVE (Serving '${d_tmpl}' camouflage theme on port ${d_port})${NC}"
             
             echo -e "  ${BOLD}状态:${NC}        ${st}"
@@ -6996,7 +6996,7 @@ run_dc_optimize() {
             ;;
         status)
             echo -e "\n  ── ⚡ ${BOLD}Telegram Datacenter Route Optimization 状态${NC} ──\n"
-            echo -e "  ${BOLD}TCP Fast Open:${NC}       $([ "$(sysctl -n net.ipv4.tcp_fastopen 2>/dev/null || echo 0)" -ge 1 ] && echo "${GREEN}ENABLED${NC}" || echo "${YELLOW}DISABLED${NC}")"
+            echo -e "  ${BOLD}TCP Fast Open:${NC}       $([ "$(sysctl -n net.ipv4.tcp_fastopen 2>/dev/null || echo 0)" -ge 1 ] && echo "${GREEN}已启用${NC}" || echo "${YELLOW}已禁用${NC}")"
             echo -e "  ${BOLD}Slow Start Idle:${NC}     $([ "$(sysctl -n net.ipv4.tcp_slow_start_after_idle 2>/dev/null || echo 1)" -eq 0 ] && echo "${GREEN}OPTIMIZED (0)${NC}" || echo "${YELLOW}DEFAULT${NC}")"
             echo -e "\n  ${DIM}Run 'mtproxymax dc-optimize benchmark' to test live DC ping times.${NC}\n"
             ;;
@@ -7157,7 +7157,7 @@ run_auto_failover() {
                 fo_mode=$(grep -E '^fo_mode=' "$fo_file" 2>/dev/null | cut -d'=' -f2- | tr -d '"\r' | tail -1 || echo "backend")
             fi
             
-            local st="${YELLOW}DISABLED${NC}"
+            local st="${YELLOW}已禁用${NC}"
             [ "$fo_status" = "enabled" ] && st="${GREEN}ACTIVE (Mode: ${fo_mode^^})${NC}"
             
             echo -e "  ${BOLD}状态:${NC}        ${st}"
@@ -7400,9 +7400,9 @@ run_daily_report() {
         status|"")
             echo -e "\n  📰 ${BOLD}Automated Daily Morning Executive Briefing:${NC}"
             if [ "${DAILY_REPORT_ENABLED:-false}" = "true" ]; then
-                echo -e "     状态:    ${GREEN}ENABLED${NC} (Schedule: ${DAILY_REPORT_TIME:-08:00})"
+                echo -e "     状态:    ${GREEN}已启用${NC} (Schedule: ${DAILY_REPORT_TIME:-08:00})"
             else
-                echo -e "     状态:    ${YELLOW}DISABLED${NC}"
+                echo -e "     状态:    ${YELLOW}已禁用${NC}"
             fi
             echo -e "  用法： mtproxymax daily-report [on <HH:MM>|off|run|status]\n"
             ;;
@@ -7475,10 +7475,10 @@ F2B
             if [ "${SSH_SHIELD_ENABLED:-false}" = "true" ] && command -v fail2ban-client >/dev/null 2>&1; then
                 local banned_cnt=0
                 banned_cnt=$(fail2ban-client status sshd 2>/dev/null | grep 'Currently banned:' | awk '{print $NF}' || echo "0")
-                echo -e "     状态:          ${GREEN}ACTIVE${NC}"
+                echo -e "     状态:          ${GREEN}运行中${NC}"
                 echo -e "     Currently Banned: ${RED}${BOLD}${banned_cnt:-0} malicious IPs${NC}"
             else
-                echo -e "     状态:          ${YELLOW}DISABLED${NC}"
+                echo -e "     状态:          ${YELLOW}已禁用${NC}"
             fi
             echo -e "  用法： mtproxymax ssh-shield [on|off|status]\n"
             ;;
@@ -7780,9 +7780,9 @@ run_auto_heal() {
         status|"")
             echo -e "\n  🏥 ${BOLD}Emergency RAM & Socket Auto-Healer:${NC}"
             if [ "${AUTO_HEAL_ENABLED:-false}" = "true" ]; then
-                echo -e "     状态:    ${GREEN}ENABLED${NC}"
+                echo -e "     状态:    ${GREEN}已启用${NC}"
             else
-                echo -e "     状态:    ${YELLOW}DISABLED${NC}"
+                echo -e "     状态:    ${YELLOW}已禁用${NC}"
             fi
             echo -e "  用法： mtproxymax auto-heal [on|off|status] or mtproxymax heal\n"
             ;;
@@ -7838,7 +7838,7 @@ SYSCTL
             if [ "${TCP_CLEAN_ENABLED:-false}" = "true" ] || [ "$ka_time" = "300" ]; then
                 echo -e "     状态:           ${GREEN}${BOLD}ENABLED${NC}"
             else
-                echo -e "     状态:           ${YELLOW}DISABLED${NC} (OS default: ${ka_time}${ka_suffix})"
+                echo -e "     状态:           ${YELLOW}已禁用${NC} (OS default: ${ka_time}${ka_suffix})"
             fi
             echo -e "     Keep-Alive Time:  ${CYAN}${ka_time}${ka_suffix}${NC} (interval: ${ka_intvl}${ka_suffix}, probes: ${ka_probes})"
             echo -e "  用法： mtproxymax tcp-clean [on|off|status]\n"
@@ -7899,7 +7899,7 @@ SYSCTL
             if [ "${SOCKET_BOOST_ENABLED:-false}" = "true" ] || [ "$somax" = "65535" ]; then
                 echo -e "     状态:          ${GREEN}${BOLD}ENABLED${NC}"
             else
-                echo -e "     状态:          ${YELLOW}DISABLED${NC}"
+                echo -e "     状态:          ${YELLOW}已禁用${NC}"
             fi
             echo -e "     Socket Backlog:  ${CYAN}${somax}${NC}"
             echo -e "     Buffer Lowat:    ${CYAN}${lowat}${NC}"
@@ -7954,7 +7954,7 @@ run_tls_pad() {
             if [ "${TLS_PAD_ENABLED:-false}" = "true" ]; then
                 echo -e "     状态:              ${GREEN}${BOLD}ENABLED (Auto-rotating)${NC}"
             else
-                echo -e "     状态:              ${YELLOW}DISABLED${NC}"
+                echo -e "     状态:              ${YELLOW}已禁用${NC}"
             fi
             echo -e "     Current Cert Length: ${CYAN}${FAKE_CERT_LEN:-2048} bytes${NC}"
             echo -e "  用法： mtproxymax tls-pad [auto|off|status|randomize]\n"
@@ -7995,7 +7995,7 @@ run_honeypot() {
                 echo -e "     状态:         ${GREEN}${BOLD}ENABLED${NC}"
                 echo -e "     Decoy Target:   ${CYAN}${MASKING_HOST:-${PROXY_DOMAIN:-cloudflare.com}}:${MASKING_PORT:-443}${NC}"
             else
-                echo -e "     状态:         ${YELLOW}DISABLED${NC}"
+                echo -e "     状态:         ${YELLOW}已禁用${NC}"
             fi
             echo -e "  用法： mtproxymax honeypot [on|off|status]\n"
             ;;
@@ -8075,7 +8075,7 @@ SYSCTL
             if [ "${TCP_FASTPATH_ENABLED:-false}" = "true" ]; then
                 echo -e "     状态:        ${GREEN}${BOLD}ENABLED${NC}"
             else
-                echo -e "     状态:        ${YELLOW}DISABLED${NC}"
+                echo -e "     状态:        ${YELLOW}已禁用${NC}"
             fi
             echo -e "     Window Scale:  ${CYAN}$([ "$ws" = "1" ] && echo "ON" || echo "OFF")${NC}"
             echo -e "     TCP SACK:      ${CYAN}$([ "$sack" = "1" ] && echo "ON" || echo "OFF")${NC}"
@@ -8223,7 +8223,7 @@ SYSCTL
             if [ "${RAM_TUNE_ENABLED:-false}" = "true" ]; then
                 echo -e "     状态:         ${GREEN}${BOLD}ENABLED${NC}"
             else
-                echo -e "     状态:         ${YELLOW}DISABLED${NC}"
+                echo -e "     状态:         ${YELLOW}已禁用${NC}"
             fi
             echo -e "     Total RAM:      ${CYAN}${total_mb} MB${NC}"
             echo -e "     Read Buffer:    ${CYAN}${rmem} bytes${NC}"
@@ -8457,7 +8457,7 @@ CPUTUNE
             if [ "${CPU_TUNE_ENABLED:-false}" = "true" ]; then
                 echo -e "     状态:     ${GREEN}${BOLD}ENABLED${NC}"
             else
-                echo -e "     状态:     ${YELLOW}DISABLED${NC}"
+                echo -e "     状态:     ${YELLOW}已禁用${NC}"
             fi
             echo -e "     CPU Cores:  ${CYAN}${num_cpus}${NC}"
             # Check virtualization type
@@ -8542,7 +8542,7 @@ run_bbr() {
             if [ "${BBR_ECN_ENABLED:-false}" = "true" ] || [ "$cur_cc" = "bbr" ]; then
                 echo -e "     状态:        ${GREEN}${BOLD}ENABLED${NC}"
             else
-                echo -e "     状态:        ${YELLOW}DISABLED${NC}"
+                echo -e "     状态:        ${YELLOW}已禁用${NC}"
             fi
             echo -e "     Congestion:    ${CYAN}${cur_cc}${NC}"
             echo -e "     Queue Disc:    ${CYAN}${cur_qdisc}${NC}"
@@ -8612,7 +8612,7 @@ run_anti_dpi_shield() {
             if [ "${ANTI_DPI_SHIELD_ENABLED:-false}" = "true" ]; then
                 echo -e "     状态:        ${GREEN}${BOLD}ENABLED${NC} (有效 TCP Window & MSS Fingerprint Scrubbing)"
             else
-                echo -e "     状态:        ${YELLOW}DISABLED${NC}"
+                echo -e "     状态:        ${YELLOW}已禁用${NC}"
             fi
             echo -e "     Target 端口：   ${CYAN}${PROXY_PORT:-443}${NC}"
             echo -e "     Protection:    ${CYAN}Scrubs MTProto FakeTLS packet size signatures from GFW/TSPU/TIC DPI boxes${NC}"
@@ -8676,7 +8676,7 @@ run_cover_shield() {
             if [ "${COVER_SHIELD_ENABLED:-false}" = "true" ]; then
                 echo -e "     状态:        ${GREEN}${BOLD}ENABLED${NC} (有效 Censorship Probe Trapdoor)"
             else
-                echo -e "     状态:        ${YELLOW}DISABLED${NC}"
+                echo -e "     状态:        ${YELLOW}已禁用${NC}"
             fi
             echo -e "     Listen 端口：   ${CYAN}${PROXY_PORT:-443}${NC}"
             echo -e "     Fallback Site: ${CYAN}${COVER_FALLBACK_TARGET:-https://cloudflare.com}${NC}"
@@ -8890,7 +8890,7 @@ upstream_list() {
     load_upstreams
 
     echo ""
-    draw_header "UPSTREAMS"
+    draw_header "上游代理"
     echo ""
     printf "  ${BOLD}%-4s %-18s %-8s %-28s %-8s %-10s${NC}\n" "#" "NAME" "TYPE" "ADDRESS" "WEIGHT" "STATUS"
     echo -e "  ${DIM}$(_repeat '─' 80)${NC}"
@@ -9576,7 +9576,7 @@ geoblock_remove_all() {
 show_geoblock_menu() {
     while true; do
         clear_screen
-        draw_header "GEO-BLOCKING"
+        draw_header "地理位置屏蔽"
         echo ""
         echo -e "  ${BOLD}Mode:${NC}      ${GEOBLOCK_MODE}"
         echo -e "  ${BOLD}Countries:${NC} ${BLOCKLIST_COUNTRIES:-${DIM}none${NC}}"
@@ -9588,7 +9588,7 @@ show_geoblock_menu() {
         echo -e "  ${DIM}[0]${NC} 返回"
 
         local choice
-        choice=$(read_choice "Choice" "0")
+        choice=$(read_choice "选项" "0")
 
         case "$choice" in
             1)
@@ -9674,7 +9674,7 @@ show_geoblock_menu() {
 
 health_check() {
     echo ""
-    draw_header "HEALTH CHECK"
+    draw_header "健康检查"
     echo ""
 
     # Docker status
@@ -10831,7 +10831,7 @@ telegram_notify_proxy_started() {
 
 telegram_setup_wizard() {
     clear_screen
-    draw_header "TELEGRAM BOT SETUP"
+    draw_header "TELEGRAM 机器人设置"
 
     echo ""
     echo -e "  ${BOLD}Step 1: Create a bot${NC}"
@@ -12449,7 +12449,7 @@ replication_setup_wizard() {
         return 1
     fi
     clear_screen
-    draw_header "REPLICATION SETUP"
+    draw_header "主从复制设置"
     echo ""
     echo -e "  Configures Master-Slave config sync via rsync+SSH."
     echo -e "  Changes on the ${BOLD}Master${NC} auto-push to all Slaves."
@@ -12827,7 +12827,7 @@ run_installer() {
         echo -e "  ${DIM}[0]${NC} 退出"
 
         local choice
-        choice=$(read_choice "Choice" "1")
+        choice=$(read_choice "选项" "1")
         case "$choice" in
             1) load_settings; load_secrets; show_main_menu; return ;;
             2) ;; # Continue with install
@@ -12836,7 +12836,7 @@ run_installer() {
         esac
     fi
 
-    draw_header "INSTALLATION"
+    draw_header "安装"
     echo ""
 
     # Install dependencies
@@ -12847,19 +12847,19 @@ run_installer() {
     wait_for_docker || exit 1
 
     echo ""
-    draw_header "PROXY CONFIGURATION"
+    draw_header "代理配置"
     echo ""
 
     # Port
-    echo -e "  ${BOLD}Proxy port${NC} ${DIM}(default: 443)${NC}"
-    echo -en "  ${DIM}Enter port [443]:${NC} "
+    echo -e "  ${BOLD}代理端口${NC} ${DIM}（默认：443）${NC}"
+    echo -en "  ${DIM}请输入端口 [443]：${NC} "
     local port_input
     read -r port_input
     if [ -n "$port_input" ]; then
         if validate_port "$port_input"; then
             PROXY_PORT="$port_input"
         else
-            log_warn "Invalid port, using default (443)"
+            log_warn "端口无效，将使用默认端口 443"
         fi
     fi
 
@@ -12867,39 +12867,39 @@ run_installer() {
     echo ""
     local _detected_ip
     _detected_ip=$(CUSTOM_IP="" get_public_ip)
-    echo -e "  ${BOLD}服务器 IP or Domain${NC} ${DIM}(used in proxy links — IP or hostname both work)${NC}"
-    echo -en "  ${DIM}Detected: ${_detected_ip:-unknown} — Enter custom IP/domain or press Enter [${_detected_ip:-auto}]:${NC} "
+    echo -e "  ${BOLD}服务器 IP 或域名${NC} ${DIM}（用于生成代理链接，IP 和主机名均可）${NC}"
+    echo -en "  ${DIM}检测到：${_detected_ip:-未知} — 输入自定义 IP/域名，或直接按回车使用 [${_detected_ip:-自动}]：${NC} "
     local ip_input
     read -r ip_input
     if [ -n "$ip_input" ]; then
         if [[ "$ip_input" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]] || [[ "$ip_input" =~ ^[0-9a-fA-F:]+$ ]] || [[ "$ip_input" =~ ^[a-zA-Z0-9]([a-zA-Z0-9._-]*[a-zA-Z0-9])?$ ]]; then
             CUSTOM_IP="$ip_input"
         else
-            log_warn "Invalid IP/domain, using auto-detected"
+            log_warn "IP 或域名无效，将使用自动检测结果"
         fi
     fi
 
     # Domain
     echo ""
-    echo -e "  ${BOLD}FakeTLS domain${NC} ${DIM}(your proxy will look like HTTPS to this site)${NC}"
-    echo -e "  ${DIM}[1]${NC} cloudflare.com ${DIM}(recommended)${NC}"
+    echo -e "  ${BOLD}FakeTLS 域名${NC} ${DIM}（代理流量将表现为访问该 HTTPS 网站）${NC}"
+    echo -e "  ${DIM}[1]${NC} cloudflare.com ${DIM}（推荐）${NC}"
     echo -e "  ${DIM}[2]${NC} www.google.com"
     echo -e "  ${DIM}[3]${NC} www.microsoft.com"
-    echo -e "  ${DIM}[4]${NC} Custom domain"
+    echo -e "  ${DIM}[4]${NC} 自定义域名"
 
     local domain_choice
-    domain_choice=$(read_choice "Choice" "1")
+    domain_choice=$(read_choice "选项" "1")
     case "$domain_choice" in
         2) PROXY_DOMAIN="www.google.com" ;;
         3) PROXY_DOMAIN="www.microsoft.com" ;;
         4)
-            echo -en "  ${DIM}Enter domain:${NC} "
+            echo -en "  ${DIM}请输入域名：${NC} "
             local custom_domain
             read -r custom_domain
             if [ -n "$custom_domain" ] && validate_domain "$custom_domain"; then
                 PROXY_DOMAIN="$custom_domain"
             elif [ -n "$custom_domain" ]; then
-                log_error "Invalid domain format"
+                log_error "域名格式无效"
             fi
             ;;
         *) PROXY_DOMAIN="cloudflare.com" ;;
@@ -12910,8 +12910,8 @@ run_installer() {
 
     # Traffic masking
     echo ""
-    echo -e "  ${BOLD}Traffic masking${NC} ${DIM}(forward DPI probes to real website)${NC}"
-    echo -en "  ${DIM}Enable? [Y/n]:${NC} "
+    echo -e "  ${BOLD}流量伪装${NC} ${DIM}（将 DPI 探测转发到真实网站）${NC}"
+    echo -en "  ${DIM}是否启用？[Y/n]：${NC} "
     local mask_input
     read -r mask_input
     case "$mask_input" in
@@ -12921,31 +12921,31 @@ run_installer() {
 
     # Ad-tag
     echo ""
-    echo -e "  ${BOLD}Ad-tag${NC} ${DIM}(optional)${NC}"
-    echo -e "  ${DIM}Telegram can pin a sponsored channel at the top of your users'${NC}"
-    echo -e "  ${DIM}chat list when they connect through your proxy. To get an ad-tag,${NC}"
-    echo -e "  ${DIM}message @MTProxyBot on Telegram. Most private proxies skip this.${NC}"
-    echo -en "  ${DIM}Enable ad-tag? [y/N]:${NC} "
+    echo -e "  ${BOLD}广告标签${NC} ${DIM}（可选）${NC}"
+    echo -e "  ${DIM}用户通过代理连接后，Telegram 可在其聊天列表顶部置顶推广频道。${NC}"
+    echo -e "  ${DIM}如需广告标签，请在 Telegram 中联系 @MTProxyBot。${NC}"
+    echo -e "  ${DIM}大多数私人代理可以跳过此项。${NC}"
+    echo -en "  ${DIM}是否启用广告标签？[y/N]：${NC} "
     local adtag_choice
     read -r adtag_choice
     case "$adtag_choice" in
         y|Y|yes)
-            echo -en "  ${DIM}Enter ad-tag hex:${NC} "
+            echo -en "  ${DIM}请输入广告标签十六进制值：${NC} "
             local adtag_input
             read -r adtag_input
             adtag_input=$(echo "$adtag_input" | tr -d '[:space:]' | tr '[:upper:]' '[:lower:]')
             if [[ "$adtag_input" =~ ^[0-9a-f]{32}$ ]]; then
                 AD_TAG="$adtag_input"
             else
-                log_warn "Invalid ad-tag (must be 32 hex characters), skipping"
+                log_warn "广告标签无效（必须为 32 位十六进制字符），已跳过"
             fi
             ;;
     esac
 
     # Resource limits
     echo ""
-    echo -e "  ${BOLD}Resource limits${NC}"
-    echo -en "  ${DIM}Enter CPU cores [unlimited]:${NC} "
+    echo -e "  ${BOLD}资源限制${NC}"
+    echo -en "  ${DIM}请输入 CPU 核心数 [不限]：${NC} "
     local cpu_input
     read -r cpu_input
     if [ -n "$cpu_input" ]; then
@@ -12954,14 +12954,14 @@ run_installer() {
             if awk "BEGIN{exit ($cpu_input < 0.1)}" 2>/dev/null; then
                 PROXY_CPUS="$cpu_input"
             else
-                log_warn "CPU must be at least 0.1, keeping ${PROXY_CPUS:-unlimited}"
+                log_warn "CPU 限制不得低于 0.1，将保留 ${PROXY_CPUS:-不限}"
             fi
         else
-            log_warn "Invalid CPU value (must be a number, e.g. 1, 2, 0.5), keeping ${PROXY_CPUS:-unlimited}"
+            log_warn "CPU 值无效（必须是数字，例如 1、2、0.5），将保留 ${PROXY_CPUS:-不限}"
         fi
     fi
 
-    echo -en "  ${DIM}Enter memory limit, e.g. 256m, 1g [unlimited]:${NC} "
+    echo -en "  ${DIM}请输入内存限制，例如 256m、1g [不限]：${NC} "
     local mem_input
     read -r mem_input
     if [ -n "$mem_input" ]; then
@@ -12970,22 +12970,22 @@ run_installer() {
             [[ "$mem_input" =~ ^[0-9]+$ ]] && mem_input="${mem_input}m"
             PROXY_MEMORY="$mem_input"
         else
-            log_warn "Invalid memory value (e.g. 256m, 1g), keeping ${PROXY_MEMORY:-unlimited}"
+            log_warn "内存值无效（例如 256m、1g），将保留 ${PROXY_MEMORY:-不限}"
         fi
     fi
 
     # First secret
     echo ""
-    draw_header "PROXY SECRET"
+    draw_header "代理密钥"
     echo ""
-    echo -e "  ${DIM}A secret key will be auto-generated for your proxy.${NC}"
-    echo -e "  ${DIM}Users need this key to connect. Give it a name to identify it.${NC}"
-    echo -en "  ${DIM}Enter label [default]:${NC} "
+    echo -e "  ${DIM}系统将自动为代理生成密钥。${NC}"
+    echo -e "  ${DIM}用户连接时需要此密钥，请为其设置便于识别的标签。${NC}"
+    echo -en "  ${DIM}请输入标签 [default]：${NC} "
     local first_label
     read -r first_label
     [ -z "$first_label" ] && first_label="default"
     if ! [[ "$first_label" =~ ^[a-zA-Z0-9_-]+$ ]] || [ ${#first_label} -gt 32 ]; then
-        log_warn "标签无效, using 'default'"
+        log_warn "标签无效，将使用 'default'"
         first_label="default"
     fi
 
@@ -13020,11 +13020,11 @@ run_installer() {
 
     # Start proxy
     echo ""
-    draw_header "STARTING PROXY"
+    draw_header "正在启动代理"
     echo ""
     run_proxy_container || {
-        log_error "无法 start proxy"
-        echo -e "  ${DIM}Check: docker logs mtproxymax${NC}"
+        log_error "无法启动代理"
+        echo -e "  ${DIM}请检查：docker logs mtproxymax${NC}"
     }
 
     # Setup autostart
@@ -13032,8 +13032,8 @@ run_installer() {
 
     # Telegram setup offer
     echo ""
-    echo -e "  ${BOLD}Telegram bot${NC} ${DIM}(manage your proxy from your phone)${NC}"
-    echo -en "  ${DIM}Set up Telegram bot now? [y/N]:${NC} "
+    echo -e "  ${BOLD}Telegram 机器人${NC} ${DIM}（通过手机管理代理）${NC}"
+    echo -en "  ${DIM}现在设置 Telegram 机器人吗？[y/N]：${NC} "
     local tg_choice
     read -r tg_choice
     case "$tg_choice" in
@@ -13045,7 +13045,7 @@ run_installer() {
 
     # Transition to main menu
     echo ""
-    echo -en "  ${DIM}Press any key to open the management menu...${NC}"
+    echo -en "  ${DIM}按任意键打开管理菜单...${NC}"
     read -rsn1
     read -rn 256 -t 0.05 _ 2>/dev/null || true
     load_settings
@@ -13074,7 +13074,7 @@ AUTOSTART_EOF
 
         systemctl daemon-reload
         systemctl enable mtproxymax.service 2>/dev/null
-        log_success "Auto-start enabled (systemd)"
+        log_success "已启用 systemd 开机自启"
     fi
 }
 
@@ -13083,7 +13083,7 @@ show_install_summary() {
     local w=$TERM_WIDTH
 
     draw_box_top "$w"
-    draw_box_center "${BRIGHT_GREEN}${BOLD}INSTALLATION COMPLETE${NC}" "$w"
+    draw_box_center "${BRIGHT_GREEN}${BOLD}安装完成${NC}" "$w"
     draw_box_sep "$w"
     draw_box_empty "$w"
 
@@ -13093,12 +13093,12 @@ show_install_summary() {
     draw_box_line "  ${BOLD}服务器:${NC} ${server_ip:-detecting...}" "$w"
     draw_box_line "  ${BOLD}端口：${NC}   ${PROXY_PORT}" "$w"
     draw_box_line "  ${BOLD}域名：${NC} ${PROXY_DOMAIN}" "$w"
-    draw_box_line "  ${BOLD}Engine:${NC} telemt (Rust)" "$w"
+    draw_box_line "  ${BOLD}引擎：${NC} telemt (Rust)" "$w"
     draw_box_empty "$w"
 
     if [ -n "$server_ip" ]; then
         draw_box_sep "$w"
-        draw_box_center "${BOLD}PROXY LINKS${NC}" "$w"
+        draw_box_center "${BOLD}代理链接${NC}" "$w"
         draw_box_empty "$w"
 
         local i
@@ -13114,20 +13114,20 @@ show_install_summary() {
     fi
 
     draw_box_sep "$w"
-    draw_box_center "${BOLD}COMMANDS & ANTI-DPI SUITE${NC}" "$w"
+    draw_box_center "${BOLD}命令与抗 DPI 套件${NC}" "$w"
     draw_box_empty "$w"
-    draw_box_line "  ${GREEN}mtproxymax${NC}              Open TUI Menu -> ${CYAN}[p] Performance Suite${NC}" "$w"
-    draw_box_line "  ${GREEN}mtproxymax status${NC}       Show proxy status & live health" "$w"
-    draw_box_line "  ${GREEN}mtproxymax secret add${NC}   Add a new user secret" "$w"
-    draw_box_line "  ${GREEN}mtproxymax bbr on${NC}       Toggle BBRv3 & ECN Network Booster" "$w"
-    draw_box_line "  ${GREEN}mtproxymax shield on${NC}    Toggle Anti-DPI Packet Padding Shield" "$w"
-    draw_box_line "  ${GREEN}mtproxymax syn-shield on${NC} Toggle Kernel SYN Flood Tarpit Shield" "$w"
+    draw_box_line "  ${GREEN}mtproxymax${NC}              打开 TUI 菜单 -> ${CYAN}[p] 性能套件${NC}" "$w"
+    draw_box_line "  ${GREEN}mtproxymax status${NC}       查看代理状态和实时健康信息" "$w"
+    draw_box_line "  ${GREEN}mtproxymax secret add${NC}   添加用户密钥" "$w"
+    draw_box_line "  ${GREEN}mtproxymax bbr on${NC}       切换 BBRv3 与 ECN 网络加速器" "$w"
+    draw_box_line "  ${GREEN}mtproxymax shield on${NC}    切换抗 DPI 数据包填充防护" "$w"
+    draw_box_line "  ${GREEN}mtproxymax syn-shield on${NC} 切换内核 SYN 洪泛诱捕防护" "$w"
     draw_box_empty "$w"
     draw_box_sep "$w"
-    draw_box_line "  ${CYAN}💡 Tip: 13+ anti-DPI shields & boosters are available inside menu [p]${NC}" "$w"
-    draw_box_line "  ${DIM}For complete details & recommendations, read Quick Start in README.md${NC}" "$w"
+    draw_box_line "  ${CYAN}💡 提示：菜单 [p] 中提供 13 项以上抗 DPI 防护和加速功能${NC}" "$w"
+    draw_box_line "  ${DIM}完整说明和建议请阅读 README.md 的快速安装章节${NC}" "$w"
     draw_box_sep "$w"
-    draw_box_line "  ${YELLOW}Firewall: Allow TCP port ${PROXY_PORT}${NC}" "$w"
+    draw_box_line "  ${YELLOW}防火墙：请放行 TCP 端口 ${PROXY_PORT}${NC}" "$w"
     draw_box_bottom "$w"
     echo ""
 
@@ -13375,7 +13375,7 @@ instance_remove() {
 
 instance_list() {
     echo ""
-    draw_header "PROXY INSTANCES"
+    draw_header "代理实例"
     echo ""
     echo -e "  ${BOLD}Primary:${NC} port ${PROXY_PORT} (container: ${CONTAINER_NAME})"
     local running; is_proxy_running && running="${GREEN}running${NC}" || running="${RED}stopped${NC}"
@@ -13476,7 +13476,7 @@ list_backups() {
         return
     fi
     echo ""
-    draw_header "BACKUPS"
+    draw_header "备份"
     echo ""
     echo "$files" | while read -r f; do
         local size; size=$(du -h "$f" 2>/dev/null | awk '{print $1}')
@@ -13551,7 +13551,7 @@ show_cli_help() {
     echo -e "    ${GREEN}port${NC} [get|<number>]       Show or change proxy port"
     echo -e "    ${GREEN}bind${NC} [get|<ip4> <ip6>]    Show or change proxy binding addresses"
     echo -e "    ${GREEN}ip${NC} [get|auto|<address>]   Show, reset, or set custom IP/domain for links"
-    echo -e "    ${GREEN}domain${NC} [get|clear|<host>] Show, clear, or change FakeTLS domain"
+    echo -e "    ${GREEN}domain${NC} [get|clear|<host>] 显示、清除或更改 FakeTLS 域名"
     echo -e "    ${GREEN}domain-pool${NC} [get|<pool>] Configure multi-domain SNI pool (comma-separated)"
     echo -e "    ${GREEN}syn-shield${NC} [on|off|status] Kernel SYN Shield rate limiter (>15 SYN/5s tarpit)"
     echo -e "    ${GREEN}stealth${NC} [ultra|normal|status]  Switch stealth defense preset (anti-replay tuning)"
@@ -13876,7 +13876,7 @@ show_metrics() {
     local me_rate_disp
     [ "${me_att:-0}" -gt 0 ] && me_rate_disp="${me_rate}%" || me_rate_disp="—"
 
-    draw_header "METRICS"
+    draw_header "指标"
     echo -e "  ${DIM}uptime:${NC} $(format_duration "${uptime:-0}")   ${DIM}upstream:${NC} ${up_status}   ${DIM}active:${NC} ${c_cur:-0}   ${DIM}writers:${NC} ${me_wa:-0}/${me_ww:-0}"
     echo ""
 
@@ -15122,7 +15122,7 @@ cli_main() {
                 load_settings
                 load_secrets
             echo ""
-            draw_header "TRAFFIC"
+            draw_header "流量"
             local t_in t_out conns
             read -r t_in t_out conns <<< "$(get_cumulative_proxy_stats)"
             # Batch-load all user stats
@@ -15270,7 +15270,7 @@ cli_main() {
                 log_success "Connection log cleared"
             elif [ -f "$CONNECTION_LOG" ] && [ -s "$CONNECTION_LOG" ]; then
                 echo ""
-                draw_header "CONNECTION LOG"
+                draw_header "连接日志"
                 echo ""
                 tail -n "${1:-50}" "$CONNECTION_LOG"
                 echo ""
@@ -15608,7 +15608,7 @@ cli_main() {
                     portal_serve "${1:-}"
                     ;;
                 status|"")
-                    echo -e "  ${BOLD}状态 Portal:${NC} $([ "${PORTAL_ENABLED:-false}" = "true" ] && echo "${GREEN}ENABLED${NC}" || echo "${YELLOW}DISABLED${NC}") (端口： ${PORTAL_PORT:-8080})"
+                    echo -e "  ${BOLD}状态 Portal:${NC} $([ "${PORTAL_ENABLED:-false}" = "true" ] && echo "${GREEN}已启用${NC}" || echo "${YELLOW}已禁用${NC}") (端口： ${PORTAL_PORT:-8080})"
                     ;;
                 *) log_error "用法： mtproxymax portal [enable|disable|port|generate|serve|status]"; return 1 ;;
             esac
@@ -15638,7 +15638,7 @@ cli_main() {
                     scanner_shield_update
                     ;;
                 status|"")
-                    echo -e "  ${BOLD}Scanner Threat Shield:${NC} $([ "${SCANNER_SHIELD_ENABLED:-false}" = "true" ] && echo "${GREEN}ENABLED${NC}" || echo "${YELLOW}DISABLED${NC}")"
+                    echo -e "  ${BOLD}Scanner Threat Shield:${NC} $([ "${SCANNER_SHIELD_ENABLED:-false}" = "true" ] && echo "${GREEN}已启用${NC}" || echo "${YELLOW}已禁用${NC}")"
                     if command -v ipset &>/dev/null && ipset list mtproxymax-scanners &>/dev/null; then
                         local _cnt; _cnt=$(ipset list mtproxymax-scanners 2>/dev/null | grep -E '^[0-9]' | wc -l || echo 0)
                         echo -e "  ${DIM}Blocked scanner IPs/Subnets in ipset:${NC} ${_cnt}"
@@ -15738,11 +15738,11 @@ cli_main() {
 show_stealth_menu() {
     while true; do
         clear_screen
-        draw_header "ANTI-DPI & STEALTH DEFENSES"
+        draw_header "抗 DPI 与隐身防护"
         echo ""
-        echo -e "  ${BOLD}内核 SYN 防护：${NC}     $([ "${STEALTH_SHIELD:-false}" = "true" ] && echo "${GREEN}ENABLED${NC}" || echo "${YELLOW}DISABLED${NC}")"
+        echo -e "  ${BOLD}内核 SYN 防护：${NC}     $([ "${STEALTH_SHIELD:-false}" = "true" ] && echo "${GREEN}已启用${NC}" || echo "${YELLOW}已禁用${NC}")"
         echo -e "  ${BOLD}隐身预设：${NC}        $([ "${STEALTH_PRESET:-normal}" = "ultra" ] && echo "${RED}${BOLD}ULTRA${NC}" || echo "${GREEN}正常${NC}")"
-        echo -e "  ${BOLD}TCP MSS 钳制：${NC}      $([ "${STEALTH_MSS_CLAMP:-false}" = "true" ] && echo "${GREEN}ENABLED${NC}" || echo "${YELLOW}DISABLED${NC}")"
+        echo -e "  ${BOLD}TCP MSS 钳制：${NC}      $([ "${STEALTH_MSS_CLAMP:-false}" = "true" ] && echo "${GREEN}已启用${NC}" || echo "${YELLOW}已禁用${NC}")"
         echo -e "  ${BOLD}Telemt Client MSS:${NC}     $([ -n "${CLIENT_MSS:-}" ] && echo "${GREEN}${CLIENT_MSS}${NC}" || echo "${DIM}off (default, max throughput)${NC}")"
         echo -e "  ${BOLD}Domain SNI Pool:${NC}       ${CYAN}${PROXY_DOMAIN:-not set}${NC}"
         echo -e "  ${BOLD}Emergency Lockdown:${NC}    $([ "${LOCKDOWN_MODE:-false}" = "true" ] && echo "${RED}${BOLD}ACTIVE${NC}" || echo "${GREEN}INACTIVE${NC}")"
@@ -15760,7 +15760,7 @@ show_stealth_menu() {
         echo -e "  ${DIM}[0]${NC} 返回"
 
         local choice
-        choice=$(read_choice "Choice" "0")
+        choice=$(read_choice "选项" "0")
         case "$choice" in
             1)
                 if [ "${STEALTH_SHIELD:-false}" = "true" ]; then
@@ -15810,7 +15810,7 @@ show_stealth_menu() {
             8)
                 echo -e "\n  ${BOLD}[1] Add port to pool   [2] Remove port from pool${NC}"
                 local _pchoice=$(read_choice "Action" "1")
-                echo -en "  ${BOLD}Enter port number:${NC} "
+                echo -en "  ${BOLD}请输入端口号：${NC} "
                 local _pport; read -r _pport
                 if [ "$_pchoice" = "1" ]; then
                     run_port_pool add "$_pport"
@@ -15823,7 +15823,7 @@ show_stealth_menu() {
                 echo -e "\n  ── ${BOLD}Telemt Client MSS Mode${NC} ──"
                 echo -e "  ${DIM}[1] Off / 已禁用 (normal TCP behavior, max throughput — default)${NC}"
                 echo -e "  ${DIM}[2] TSPU (DPI / censorship circumvention mode)${NC}"
-                local _mchoice; _mchoice=$(read_choice "Choice" "1")
+                local _mchoice; _mchoice=$(read_choice "选项" "1")
                 case "$_mchoice" in
                     1) run_client_mss off ;;
                     2) run_client_mss tspu ;;
@@ -15850,7 +15850,7 @@ show_speed_limit_menu() {
         echo -e "  ${DIM}[0]${NC} 返回"
         echo ""
         local choice
-        choice=$(read_choice "Choice" "0")
+        choice=$(read_choice "选项" "0")
         case "$choice" in
             1)
                 echo -en "  ${BOLD}Target (global or port number):${NC} "
@@ -15887,12 +15887,12 @@ show_speed_limit_menu() {
 show_qos_menu() {
     while true; do
         clear_screen
-        draw_header "QOS BANDWIDTH & QUOTA INTELLIGENCE"
+        draw_header "QOS 带宽与配额管理"
         echo ""
         load_settings
-        local qos_status="${YELLOW}DISABLED${NC}"
+        local qos_status="${YELLOW}已禁用${NC}"
         [ "${QOS_LIMIT_MBPS:-0}" -gt 0 ] && qos_status="${GREEN}${QOS_LIMIT_MBPS} Mbps / IP${NC}"
-        local happy_status="${YELLOW}DISABLED${NC}"
+        local happy_status="${YELLOW}已禁用${NC}"
         if [ -n "${HAPPY_HOURS_WINDOW:-}" ]; then
             happy_status="${CYAN}${HAPPY_HOURS_WINDOW}${NC} ($([ $(check_in_happy_hours "${HAPPY_HOURS_WINDOW}" >/dev/null 2>&1; echo $?) -eq 0 ] && echo "${GREEN}ACTIVE NOW${NC}" || echo "INACTIVE"))"
         fi
@@ -15906,7 +15906,7 @@ show_qos_menu() {
         echo ""
 
         local choice
-        choice=$(read_choice "Choice" "0")
+        choice=$(read_choice "选项" "0")
         case "$choice" in
             1)
                 echo ""
@@ -15950,7 +15950,7 @@ show_qos_menu() {
 show_security_menu() {
     while true; do
         clear_screen
-        draw_header "SECURITY & ROUTING"
+        draw_header "安全与路由"
         echo ""
         local sni_label
         if [ "$UNKNOWN_SNI_ACTION" = "drop" ]; then
@@ -15968,7 +15968,7 @@ show_security_menu() {
         echo -e "  ${DIM}[0]${NC} 返回"
 
         local choice
-        choice=$(read_choice "Choice" "0")
+        choice=$(read_choice "选项" "0")
         case "$choice" in
             1) show_geoblock_menu ;;
             2) show_upstream_menu ;;
@@ -15985,7 +15985,7 @@ show_security_menu() {
                 echo -e "        domain will stop working."
                 echo ""
                 local sni_choice
-                sni_choice=$(read_choice "Choice" "0")
+                sni_choice=$(read_choice "选项" "0")
                 case "$sni_choice" in
                     1) UNKNOWN_SNI_ACTION="mask"; save_settings; reload_proxy_config; log_success "未知 SNI policy set to Mask" ;;
                     2) UNKNOWN_SNI_ACTION="drop"; save_settings; reload_proxy_config; log_success "未知 SNI policy set to Drop" ;;
@@ -15996,7 +15996,7 @@ show_security_menu() {
             4)
                 bans_list
                 echo -e "  ${DIM}[1] Ban IP/CIDR  [2] Unban IP/CIDR  [0] 返回${NC}"
-                local bc; bc=$(read_choice "Choice" "0")
+                local bc; bc=$(read_choice "选项" "0")
                 case "$bc" in
                     1)
                         echo -en "  ${BOLD}IP or CIDR to ban:${NC} "
@@ -16023,7 +16023,7 @@ show_security_menu() {
 show_upstream_menu() {
     while true; do
         clear_screen
-        draw_header "PROXY CHAINING"
+        draw_header "代理链"
 
         load_upstreams
         upstream_list
@@ -16035,7 +16035,7 @@ show_upstream_menu() {
         echo -e "  ${DIM}[0]${NC} 返回"
 
         local choice
-        choice=$(read_choice "Choice" "0")
+        choice=$(read_choice "选项" "0")
         case "$choice" in
             1)
                 echo ""
@@ -16104,7 +16104,7 @@ show_upstream_menu() {
 show_voucher_menu() {
     while true; do
         clear_screen
-        draw_header "COMMERCIAL VOUCHER SYSTEM"
+        draw_header "商业兑换码系统"
         echo ""
         voucher_list active | head -n 15
         echo ""
@@ -16115,7 +16115,7 @@ show_voucher_menu() {
         echo -e "  ${DIM}[0]${NC} 返回"
         echo ""
         local choice
-        choice=$(read_choice "Choice" "0")
+        choice=$(read_choice "选项" "0")
         case "$choice" in
             1)
                 echo -en "  ${BOLD}Number of vouchers to generate (default 1):${NC} "
@@ -16129,7 +16129,7 @@ show_voucher_menu() {
                 ;;
             2)
                 clear_screen
-                draw_header "ALL VOUCHERS"
+                draw_header "全部兑换码"
                 voucher_list all
                 press_any_key
                 ;;
@@ -16165,7 +16165,7 @@ show_rbac_menu() {
         echo -e "  ${DIM}[0]${NC} 返回"
         echo ""
         local choice
-        choice=$(read_choice "Choice" "0")
+        choice=$(read_choice "选项" "0")
         case "$choice" in
             1)
                 echo -en "  ${BOLD}Enter Telegram Chat ID:${NC} "
@@ -16190,10 +16190,10 @@ show_rbac_menu() {
 show_portal_menu() {
     while true; do
         clear_screen
-        draw_header "SELF-SERVICE STATUS PORTAL"
+        draw_header "自助状态门户"
         echo ""
         load_settings
-        echo -e "  ${BOLD}状态:${NC} $([ "${PORTAL_ENABLED:-false}" = "true" ] && echo "${GREEN}ENABLED${NC}" || echo "${YELLOW}DISABLED${NC}")"
+        echo -e "  ${BOLD}状态:${NC} $([ "${PORTAL_ENABLED:-false}" = "true" ] && echo "${GREEN}已启用${NC}" || echo "${YELLOW}已禁用${NC}")"
         echo -e "  ${BOLD}端口：${NC}   ${PORTAL_PORT:-8080}"
         echo -e "  ${BOLD}Directory:${NC} ${PORTAL_DIR}"
         echo ""
@@ -16204,7 +16204,7 @@ show_portal_menu() {
         echo -e "  ${DIM}[0]${NC} 返回"
         echo ""
         local choice
-        choice=$(read_choice "Choice" "0")
+        choice=$(read_choice "选项" "0")
         case "$choice" in
             1)
                 if [ "${PORTAL_ENABLED:-false}" = "true" ]; then
@@ -16250,10 +16250,10 @@ show_portal_menu() {
 show_scanner_shield_menu() {
     while true; do
         clear_screen
-        draw_header "AUTOMATED HOSTILE SCANNER SHIELD"
+        draw_header "自动化恶意扫描器防护"
         echo ""
         load_settings
-        echo -e "  ${BOLD}状态:${NC} $([ "${SCANNER_SHIELD_ENABLED:-false}" = "true" ] && echo "${GREEN}ENABLED${NC}" || echo "${YELLOW}DISABLED${NC}")"
+        echo -e "  ${BOLD}状态:${NC} $([ "${SCANNER_SHIELD_ENABLED:-false}" = "true" ] && echo "${GREEN}已启用${NC}" || echo "${YELLOW}已禁用${NC}")"
         if command -v ipset &>/dev/null && ipset list mtproxymax-scanners &>/dev/null; then
             local _cnt; _cnt=$(ipset list mtproxymax-scanners 2>/dev/null | grep -E '^[0-9]' | wc -l || echo 0)
             echo -e "  ${BOLD}有效 Blocked Subnets/IP 数：${NC} ${_cnt}"
@@ -16264,7 +16264,7 @@ show_scanner_shield_menu() {
         echo -e "  ${DIM}[0]${NC} 返回"
         echo ""
         local choice
-        choice=$(read_choice "Choice" "0")
+        choice=$(read_choice "选项" "0")
         case "$choice" in
             1)
                 if [ "${SCANNER_SHIELD_ENABLED:-false}" = "true" ]; then
@@ -16292,14 +16292,14 @@ show_scanner_shield_menu() {
 show_fleet_menu() {
     while true; do
         clear_screen
-        draw_header "FLEET FEDERATION TELEMETRY DASHBOARD"
+        draw_header "联邦集群遥测面板"
         echo ""
         fleet_status
         echo -e "  ${BRIGHT_CYAN}[1]${NC} Collect & Publish Node Telemetry Now"
         echo -e "  ${DIM}[0]${NC} 返回"
         echo ""
         local choice
-        choice=$(read_choice "Choice" "0")
+        choice=$(read_choice "选项" "0")
         case "$choice" in
             1)
                 fleet_collect_slave_metrics
@@ -16322,7 +16322,7 @@ show_ssl_menu() {
         echo -e "  ${DIM}[0]${NC} 返回"
         echo ""
         local choice
-        choice=$(read_choice "Choice" "0")
+        choice=$(read_choice "选项" "0")
         case "$choice" in
             1)
                 echo -en "  ${BOLD}Enter Domain Name (e.g. proxy.example.com):${NC} "
@@ -16345,7 +16345,7 @@ show_ssl_menu() {
 show_backup_cloud_menu() {
     while true; do
         clear_screen
-        draw_header "AUTOMATED OFF-SITE CLOUD & TELEGRAM BACKUPS"
+        draw_header "自动化异地云端与 TELEGRAM 备份"
         echo ""
         backup_cloud_status
         echo -e "  ${BRIGHT_CYAN}[1]${NC} Configure / Toggle Backup Mode (telegram, rclone, s3, off)"
@@ -16354,7 +16354,7 @@ show_backup_cloud_menu() {
         echo -e "  ${DIM}[0]${NC} 返回"
         echo ""
         local choice
-        choice=$(read_choice "Choice" "0")
+        choice=$(read_choice "选项" "0")
         case "$choice" in
             1)
                 echo -en "  ${BOLD}Select mode [telegram|rclone|s3|off]:${NC} "
@@ -16384,24 +16384,24 @@ show_backup_cloud_menu() {
 show_enterprise_menu() {
     while true; do
         clear_screen
-        draw_header "ENTERPRISE COMMERCIAL & SHIELD SUITE"
+        draw_header "企业商业与防护套件"
         echo ""
         load_settings
-        echo -e "  ${BOLD}状态 Portal:${NC}   $([ "${PORTAL_ENABLED:-false}" = "true" ] && echo "${GREEN}ENABLED${NC}" || echo "${YELLOW}DISABLED${NC}") (端口： ${PORTAL_PORT:-8080})"
-        echo -e "  ${BOLD}Scanner Shield:${NC}  $([ "${SCANNER_SHIELD_ENABLED:-false}" = "true" ] && echo "${GREEN}ENABLED${NC}" || echo "${YELLOW}DISABLED${NC}")"
+        echo -e "  ${BOLD}状态门户：${NC} $([ "${PORTAL_ENABLED:-false}" = "true" ] && echo "${GREEN}已启用${NC}" || echo "${YELLOW}已禁用${NC}")（端口：${PORTAL_PORT:-8080}）"
+        echo -e "  ${BOLD}扫描器防护：${NC} $([ "${SCANNER_SHIELD_ENABLED:-false}" = "true" ] && echo "${GREEN}已启用${NC}" || echo "${YELLOW}已禁用${NC}")"
         echo ""
-        echo -e "  ${BRIGHT_CYAN}[1]${NC} Commercial Voucher & Gift Code System"
-        echo -e "  ${BRIGHT_CYAN}[2]${NC} Role-Based Access Control (Admin / RBAC)"
-        echo -e "  ${BRIGHT_CYAN}[3]${NC} Self-Service 状态 Portal Management"
-        echo -e "  ${BRIGHT_CYAN}[4]${NC} Automated Hostile Scanner Shield"
-        echo -e "  ${BRIGHT_CYAN}[5]${NC} Fleet Federation Telemetry Dashboard"
-        echo -e "  ${BRIGHT_CYAN}[6]${NC} Automated Let's Encrypt / ACME SSL 防护"
-        echo -e "  ${BRIGHT_CYAN}[7]${NC} Automated Off-Site Cloud & Telegram Backups"
+        echo -e "  ${BRIGHT_CYAN}[1]${NC} 商业兑换码与礼品码系统"
+        echo -e "  ${BRIGHT_CYAN}[2]${NC} 基于角色的访问控制（管理员 / RBAC）"
+        echo -e "  ${BRIGHT_CYAN}[3]${NC} 自助状态门户管理"
+        echo -e "  ${BRIGHT_CYAN}[4]${NC} 自动化恶意扫描器防护"
+        echo -e "  ${BRIGHT_CYAN}[5]${NC} 联邦集群遥测面板"
+        echo -e "  ${BRIGHT_CYAN}[6]${NC} 自动化 Let's Encrypt / ACME SSL 防护"
+        echo -e "  ${BRIGHT_CYAN}[7]${NC} 自动化异地云端与 Telegram 备份"
         echo -e "  ${DIM}[0]${NC} 返回"
         echo ""
 
         local choice
-        choice=$(read_choice "Choice" "0")
+        choice=$(read_choice "选项" "0")
         case "$choice" in
             1) show_voucher_menu ;;
             2) show_rbac_menu ;;
@@ -16518,7 +16518,7 @@ show_main_menu() {
 show_proxy_menu() {
     while true; do
         clear_screen
-        draw_header "PROXY MANAGEMENT"
+        draw_header "代理管理"
         echo ""
         local _pstatus
         docker ps --format '{{.Names}}' 2>/dev/null | grep -q "^${CONTAINER_NAME}$" && _pstatus="running" || _pstatus="stopped"
@@ -16534,7 +16534,7 @@ show_proxy_menu() {
         echo -e "  ${DIM}[0]${NC} 返回"
 
         local choice
-        choice=$(read_choice "Choice" "0")
+        choice=$(read_choice "选项" "0")
         case "$choice" in
             1) start_proxy_container || true; press_any_key ;;
             2) stop_proxy_container || true; press_any_key ;;
@@ -16558,7 +16558,7 @@ show_proxy_menu() {
 show_secrets_menu() {
     while true; do
         clear_screen
-        draw_header "SECRET MANAGEMENT"
+        draw_header "密钥管理"
 
         secret_list
 
@@ -16592,7 +16592,7 @@ show_secrets_menu() {
         echo -e "  ${DIM}[0]${NC} 返回"
 
         local choice
-        choice=$(read_choice "Choice" "0")
+        choice=$(read_choice "选项" "0")
         case "$choice" in
             1)
                 echo -en "  ${BOLD}标签:${NC} "
@@ -16690,7 +16690,7 @@ show_secrets_menu() {
                 ;;
             9)
                 echo -e "  ${DIM}[1] Single rename  [2] Bulk rename by prefix${NC}"
-                local rc; rc=$(read_choice "Choice" "1")
+                local rc; rc=$(read_choice "选项" "1")
                 case "$rc" in
                     1)
                         echo -en "  ${BOLD}标签 or # to rename:${NC} "
@@ -16750,7 +16750,7 @@ show_secrets_menu() {
                 ;;
             d|D)
                 echo -e "  ${DIM}[1] Disable expired  [2] Permanently PURGE disabled/expired${NC}"
-                local dc; dc=$(read_choice "Choice" "1")
+                local dc; dc=$(read_choice "选项" "1")
                 case "$dc" in
                     1) secret_disable_expired ;;
                     2) secret_purge_disabled ;;
@@ -16760,7 +16760,7 @@ show_secrets_menu() {
             s|S) secret_stats; press_any_key ;;
             t|T)
                 echo -e "  ${DIM}[1] By traffic  [2] By connections  [3] By date  [4] By name${NC}"
-                local sort_choice; sort_choice=$(read_choice "Choice" "1")
+                local sort_choice; sort_choice=$(read_choice "选项" "1")
                 case "$sort_choice" in
                     1) secret_sort traffic ;;
                     2) secret_sort conns ;;
@@ -16771,7 +16771,7 @@ show_secrets_menu() {
                 ;;
             i|I)
                 echo -e "  ${DIM}[1] Export CSV  [2] Import CSV  [3] Export JSON${NC}"
-                local io_choice; io_choice=$(read_choice "Choice" "0")
+                local io_choice; io_choice=$(read_choice "选项" "0")
                 case "$io_choice" in
                     1)
                         local exp_file="$(get_export_dir)/mtproxymax-secrets-$(date +%Y%m%d).csv"
@@ -16810,7 +16810,7 @@ show_secrets_menu() {
                 ;;
             p|P)
                 echo -e "  ${DIM}[1] By traffic  [2] By connections${NC}"
-                local tc; tc=$(read_choice "Choice" "1")
+                local tc; tc=$(read_choice "选项" "1")
                 case "$tc" in
                     1) secret_top traffic 5 ;;
                     2) secret_top conns 5 ;;
@@ -16819,7 +16819,7 @@ show_secrets_menu() {
                 ;;
             g|G)
                 echo -e "  ${DIM}[1] Text file  [2] HTML with QR codes${NC}"
-                local gc; gc=$(read_choice "Choice" "1")
+                local gc; gc=$(read_choice "选项" "1")
                 case "$gc" in
                     1) secret_generate_links txt ;;
                     2) secret_generate_links html ;;
@@ -16828,7 +16828,7 @@ show_secrets_menu() {
                 ;;
             a|A)
                 echo -e "  ${DIM}[1] Archive a secret  [2] Unarchive  [3] List archived${NC}"
-                local ac; ac=$(read_choice "Choice" "0")
+                local ac; ac=$(read_choice "选项" "0")
                 case "$ac" in
                     1)
                         echo -en "  ${BOLD}标签 or # to archive:${NC} "
@@ -16850,7 +16850,7 @@ show_secrets_menu() {
                 ;;
             y|Y)
                 echo -e "  ${DIM}[1] Set tags  [2] Clear tags  [3] Filter by tag  [4] Show all tags${NC}"
-                local tc; tc=$(read_choice "Choice" "0")
+                local tc; tc=$(read_choice "选项" "0")
                 case "$tc" in
                     1)
                         echo -en "  ${BOLD}标签 or #:${NC} "
@@ -16919,7 +16919,7 @@ show_secrets_menu() {
                 ;;
             r|R)
                 echo -e "  ${DIM}[1] Dry run (preview)  [2] Rotate ALL now${NC}"
-                local rc; rc=$(read_choice "Choice" "1")
+                local rc; rc=$(read_choice "选项" "1")
                 case "$rc" in
                     1) secret_rotate_all "true" ;;
                     2) secret_rotate_all "false" ;;
@@ -16929,7 +16929,7 @@ show_secrets_menu() {
             k|K)
                 template_list
                 echo -e "  ${DIM}[1] Save new  [2] Apply to secret  [3] Delete${NC}"
-                local tc; tc=$(read_choice "Choice" "0")
+                local tc; tc=$(read_choice "选项" "0")
                 case "$tc" in
                     1)
                         echo -en "  ${BOLD}Name:${NC} "; local tn; read -r tn
@@ -16977,7 +16977,7 @@ show_secrets_menu() {
 
 show_links_menu() {
     clear_screen
-    draw_header "SHARE LINKS & QR"
+    draw_header "分享链接与二维码"
 
     local server_ip
     server_ip=$(get_public_ip)
@@ -17028,7 +17028,7 @@ show_links_menu() {
 show_telegram_menu() {
     while true; do
         clear_screen
-        draw_header "TELEGRAM BOT"
+        draw_header "TELEGRAM 机器人"
         echo ""
         if [ "$TELEGRAM_ENABLED" = "true" ]; then
             echo -e "  状态: $(draw_status running '已启用')"
@@ -17048,7 +17048,7 @@ show_telegram_menu() {
         echo -e "  ${DIM}[0]${NC} 返回"
 
         local choice
-        choice=$(read_choice "Choice" "0")
+        choice=$(read_choice "选项" "0")
         case "$choice" in
             1) telegram_setup_wizard || true ;;
             2) telegram_test_message || true; press_any_key ;;
@@ -17153,7 +17153,7 @@ confirm_settings_restart() {
 show_settings_menu() {
     while true; do
         clear_screen
-        draw_header "SETTINGS"
+        draw_header "设置"
         echo ""
         echo -e "  ${BOLD}端口：${NC}        ${PROXY_PORT}"
         echo -e "  ${BOLD}IP:${NC}          ${CUSTOM_IP:-$(get_public_ip) ${DIM}(auto)${NC}}"
@@ -17187,7 +17187,7 @@ show_settings_menu() {
         echo -e "  ${DIM}[0]${NC} 返回"
 
         local choice
-        choice=$(read_choice "Choice" "0")
+        choice=$(read_choice "选项" "0")
         case "$choice" in
             1)
                 echo -en "  ${BOLD}New port:${NC} "
@@ -17233,7 +17233,7 @@ show_settings_menu() {
                 ;;
             3)
                 echo -e "  ${DIM}[1] cloudflare.com  [2] google.com  [3] microsoft.com  [4] Custom${NC}"
-                local d; d=$(read_choice "Choice" "1")
+                local d; d=$(read_choice "选项" "1")
                 local _domain_changed=true
                 local _new_domain="$PROXY_DOMAIN"
                 case "$d" in
@@ -17328,7 +17328,7 @@ show_settings_menu() {
                 fi
                 MASKING_ENABLED="$_new_masking"
                 save_settings
-                log_success "Traffic masking: ${MASKING_ENABLED}"
+                log_success "流量伪装：${MASKING_ENABLED}"
                 if is_proxy_running; then
                     load_secrets
                     restart_proxy_container || true
@@ -17472,7 +17472,7 @@ show_settings_menu() {
             k|K) port_check; press_any_key ;;
             r|R)
                 echo -e "  ${DIM}[1] Save current config  [2] Load profile  [3] List  [4] Delete${NC}"
-                local pc; pc=$(read_choice "Choice" "3")
+                local pc; pc=$(read_choice "选项" "3")
                 case "$pc" in
                     1)
                         echo -en "  ${BOLD}Profile name:${NC} "
@@ -17510,7 +17510,7 @@ show_settings_menu() {
                 echo -e "  ${DIM}[3] Set getProxyConfigV6 URL${NC}"
                 echo -e "  ${DIM}[4] Clear all (back to defaults)${NC}"
                 echo -e "  ${DIM}[0] 返回${NC}"
-                local uc; uc=$(read_choice "Choice" "0")
+                local uc; uc=$(read_choice "选项" "0")
                 local _url _field=""
                 case "$uc" in
                     1) _field="secret" ;;
@@ -17556,7 +17556,7 @@ show_settings_menu() {
             n|N)
                 tune_list_params
                 echo -e "  ${DIM}[1] Set param  [2] Clear param  [3] Clear all  [0] 返回${NC}"
-                local tch; tch=$(read_choice "Choice" "0")
+                local tch; tch=$(read_choice "选项" "0")
                 case "$tch" in
                     1)
                         echo -en "  ${BOLD}Param name:${NC} "
@@ -17616,7 +17616,7 @@ show_settings_menu() {
 show_engine_menu() {
     while true; do
         clear_screen
-        draw_header "ENGINE MANAGEMENT"
+        draw_header "引擎管理"
         echo ""
         echo -e "  ${BOLD}Engine:${NC}    telemt v$(get_telemt_version)"
         echo -e "  ${BOLD}Pinned to:${NC} commit ${TELEMT_COMMIT}"
@@ -17636,7 +17636,7 @@ show_engine_menu() {
         echo -e "  ${DIM}[0]${NC} 返回"
 
         local choice
-        choice=$(read_choice "Choice" "0")
+        choice=$(read_choice "选项" "0")
         case "$choice" in
             1)
                 echo -en "  ${DIM}Force rebuild from commit ${TELEMT_COMMIT}? [Y/n]:${NC} "
@@ -17659,7 +17659,7 @@ show_engine_menu() {
 
 show_traffic_menu() {
     clear_screen
-    draw_header "LOGS & TRAFFIC"
+    draw_header "日志与流量"
 
     if ! is_proxy_running; then
         echo ""
@@ -17704,7 +17704,7 @@ show_traffic_menu() {
     echo -e "  ${DIM}[0]${NC} 返回"
 
     local choice
-    choice=$(read_choice "Choice" "0")
+    choice=$(read_choice "选项" "0")
     case "$choice" in
         1) echo -e "  ${DIM}Press Ctrl+C to stop...${NC}"; docker logs -f --tail 30 "$CONTAINER_NAME" 2>&1 || true ;;
         2)
@@ -17735,7 +17735,7 @@ show_traffic_menu() {
 
 show_info_faketls() {
     clear_screen
-    draw_header "FAKETLS OBFUSCATION"
+    draw_header "FAKETLS 混淆"
     echo ""
     echo -e "  ${BOLD}What is FakeTLS?${NC}"
     echo -e "  FakeTLS makes your proxy traffic look identical to normal"
@@ -17745,7 +17745,7 @@ show_info_faketls() {
     echo ""
     echo -e "  ${BOLD}How it works:${NC}"
     echo -e "  1. Clients initiate a TLS handshake to a \"cover\" domain"
-    echo -e "     (e.g., cloudflare.com) — this is the FakeTLS domain."
+    echo -e "     （例如 cloudflare.com）——这就是 FakeTLS 域名。"
     echo -e "  2. The handshake looks exactly like a real TLS 1.3 session"
     echo -e "     to any network observer or firewall."
     echo -e "  3. Inside the encrypted tunnel, the actual MTProxy protocol"
@@ -17770,7 +17770,7 @@ show_info_faketls() {
 
 show_info_masking() {
     clear_screen
-    draw_header "TRAFFIC MASKING"
+    draw_header "流量伪装"
     echo ""
     echo -e "  ${BOLD}What is Traffic Masking?${NC}"
     echo -e "  When enabled, your server responds to non-proxy connections"
@@ -17787,7 +17787,7 @@ show_info_masking() {
     echo ""
     echo -e "  ${BOLD}Configuration:${NC}"
     echo -e "  ${DIM}mask = true${NC}       Enable masking in telemt config"
-    echo -e "  ${DIM}mask_host${NC}         Domain to forward probes to (default: your FakeTLS domain)"
+    echo -e "  ${DIM}mask_host${NC}         探测流量的转发域名（默认使用 FakeTLS 域名）"
     echo -e "  ${DIM}mask_port = 443${NC}   Port on the target website"
     echo ""
     echo -e "  ${BOLD}Why it matters:${NC}"
@@ -17801,7 +17801,7 @@ show_info_masking() {
 
 show_info_multisecret() {
     clear_screen
-    draw_header "MULTI-SECRET MANAGEMENT"
+    draw_header "多密钥管理"
     echo ""
     echo -e "  ${BOLD}What are 密钥?${NC}"
     echo -e "  Each secret is a unique key that grants a user access to your"
@@ -17833,7 +17833,7 @@ show_info_multisecret() {
 
 show_info_adtag() {
     clear_screen
-    draw_header "AD-TAG / PROMOTED CHANNEL"
+    draw_header "广告标签与推广频道"
     echo ""
     echo -e "  ${BOLD}What is an Ad-Tag?${NC}"
     echo -e "  Telegram's official feature that lets proxy operators show a"
@@ -17863,7 +17863,7 @@ show_info_adtag() {
 
 show_info_telegram() {
     clear_screen
-    draw_header "TELEGRAM BOT INTEGRATION"
+    draw_header "TELEGRAM 机器人集成"
     echo ""
     echo -e "  ${BOLD}What does the bot do?${NC}"
     echo -e "  Control your proxy from your phone via Telegram. The bot runs"
@@ -17900,7 +17900,7 @@ show_info_telegram() {
 
 show_info_qrcode() {
     clear_screen
-    draw_header "QR CODE SHARING"
+    draw_header "二维码分享"
     echo ""
     echo -e "  ${BOLD}What are proxy QR codes?${NC}"
     echo -e "  QR codes encode your proxy link so users can connect by"
@@ -17930,7 +17930,7 @@ show_info_qrcode() {
 
 show_info_geoblock() {
     clear_screen
-    draw_header "GEO-BLOCKING"
+    draw_header "地理位置屏蔽"
     echo ""
     echo -e "  ${BOLD}What is Geo-Blocking?${NC}"
     echo -e "  Block connections from specific countries using IP-based"
@@ -17960,7 +17960,7 @@ show_info_geoblock() {
 
 show_info_autoupdate() {
     clear_screen
-    draw_header "AUTO-UPDATE"
+    draw_header "自动更新"
     echo ""
     echo -e "  ${BOLD}How Auto-Update works:${NC}"
     echo -e "  MTProxyMax checks GitHub for new releases and can update"
@@ -17989,7 +17989,7 @@ show_info_autoupdate() {
 
 show_info_health() {
     clear_screen
-    draw_header "HEALTH MONITORING"
+    draw_header "健康监控"
     echo ""
     echo -e "  ${BOLD}What does 健康监控 do?${NC}"
     echo -e "  Continuously checks that your proxy is running and accessible."
@@ -18022,7 +18022,7 @@ show_info_health() {
 
 show_info_userlimits() {
     clear_screen
-    draw_header "USER LIMITS"
+    draw_header "用户限制"
     echo ""
     echo -e "  ${BOLD}${YELLOW}Per-User Connection & Bandwidth Limits${NC}"
     echo ""
@@ -18090,7 +18090,7 @@ show_info_userlimits() {
 
 show_info_proxychaining() {
     clear_screen
-    draw_header "PROXY CHAINING"
+    draw_header "代理链"
     echo ""
     echo -e "  ${BOLD}${YELLOW}Route Traffic Through Intermediate Proxies${NC}"
     echo ""
@@ -18149,7 +18149,7 @@ show_info_proxychaining() {
 
 show_info_upstreams() {
     clear_screen
-    draw_header "UPSTREAM TYPES"
+    draw_header "上游类型"
     echo ""
     echo -e "  ${BOLD}${YELLOW}Understanding Upstream Connection Types${NC}"
     echo ""
@@ -18281,7 +18281,7 @@ show_info_menu() {
 
 show_port_forward_guide() {
     clear_screen
-    draw_header "PORT FORWARDING GUIDE"
+    draw_header "端口转发指南"
     echo ""
     echo -e "  ${BOLD}${YELLOW}For Home Users 运行中 Behind a Router${NC}"
     echo ""
@@ -18350,7 +18350,7 @@ show_port_forward_guide() {
 
 show_firewall_guide() {
     clear_screen
-    draw_header "FIREWALL CONFIGURATION"
+    draw_header "防火墙配置"
     echo ""
     echo -e "  ${BOLD}${YELLOW}必须在防火墙中放行 TCP 端口 ${PROXY_PORT} through your firewall${NC}"
     echo ""
@@ -18448,7 +18448,7 @@ show_about() {
         draw_box_center "${BOLD}FEATURES${NC}" "$w"
         draw_box_empty "$w"
         draw_box_line "  ${GREEN}${SYM_CHECK}${NC} FakeTLS obfuscation (deep TLS 1.3 fidelity)" "$w"
-        draw_box_line "  ${GREEN}${SYM_CHECK}${NC} Traffic masking (undetectable to DPI probes)" "$w"
+        draw_box_line "  ${GREEN}${SYM_CHECK}${NC} 流量伪装（避免被 DPI 探测识别）" "$w"
         draw_box_line "  ${GREEN}${SYM_CHECK}${NC} Multi-secret user management with per-user stats" "$w"
         draw_box_line "  ${GREEN}${SYM_CHECK}${NC} Ad-tag / promoted channel support" "$w"
         draw_box_line "  ${GREEN}${SYM_CHECK}${NC} 用于远程管理的 Telegram 机器人" "$w"
@@ -18476,7 +18476,7 @@ show_about() {
         echo -e "  ${DIM}[0]${NC} 返回"
 
         local choice
-        choice=$(read_choice "Choice" "0")
+        choice=$(read_choice "选项" "0")
         case "$choice" in
             1)
                 self_update || true
@@ -18539,7 +18539,7 @@ show_about() {
 show_port_hop_menu() {
     while true; do
         clear_screen
-        draw_header "DYNAMIC PORT RANGE SHADOWING"
+        draw_header "动态端口范围映射"
         echo ""
         load_settings
         echo -e "  ${BOLD}有效 Shadow Port Ranges:${NC} ${CYAN}${PORT_HOP_RANGES:-none}${NC}"
@@ -18551,7 +18551,7 @@ show_port_hop_menu() {
         echo -e "  ${DIM}[0]${NC} 返回"
 
         local choice
-        choice=$(read_choice "Choice" "0")
+        choice=$(read_choice "选项" "0")
         case "$choice" in
             1) run_port_hop list; press_any_key ;;
             2)
@@ -18582,22 +18582,22 @@ show_port_hop_menu() {
 show_performance_menu() {
     while true; do
         clear_screen
-        draw_header "PERFORMANCE & SELF-HEALING SUITE"
+        draw_header "性能与自愈套件"
         echo ""
         load_settings
-        echo -e "  ${BOLD}1. TCP BBR Booster:${NC}     $([ "${TCP_BOOST_ENABLED:-false}" = "true" ] && echo "${GREEN}ENABLED${NC}" || echo "${YELLOW}DISABLED${NC}")"
-        echo -e "  ${BOLD}2. Dead Socket Reaper:${NC}  $([ "${TCP_CLEAN_ENABLED:-false}" = "true" ] && echo "${GREEN}ENABLED${NC}" || echo "${YELLOW}DISABLED${NC}")"
-        echo -e "  ${BOLD}3. Socket Low-Latency:${NC}  $([ "${SOCKET_BOOST_ENABLED:-false}" = "true" ] && echo "${GREEN}ENABLED${NC}" || echo "${YELLOW}DISABLED${NC}")"
-        echo -e "  ${BOLD}4. FakeTLS Pad Rotation:${NC} $([ "${TLS_PAD_ENABLED:-false}" = "true" ] && echo "${GREEN}ENABLED${NC}" || echo "${YELLOW}DISABLED${NC}")"
-        echo -e "  ${BOLD}5. 有效 Probe Honeypot:${NC} $([ "${HONEYPOT_ENABLED:-false}" = "true" ] && echo "${GREEN}ENABLED${NC}" || echo "${YELLOW}DISABLED${NC}")"
-        echo -e "  ${BOLD}6. TCP Fast-Path Window:${NC} $([ "${TCP_FASTPATH_ENABLED:-false}" = "true" ] && echo "${GREEN}ENABLED${NC}" || echo "${YELLOW}DISABLED${NC}")"
-        echo -e "  ${BOLD}7. Dynamic RAM Auto-Tune:${NC} $([ "${RAM_TUNE_ENABLED:-false}" = "true" ] && echo "${GREEN}ENABLED${NC}" || echo "${YELLOW}DISABLED${NC}")"
+        echo -e "  ${BOLD}1. TCP BBR Booster:${NC}     $([ "${TCP_BOOST_ENABLED:-false}" = "true" ] && echo "${GREEN}已启用${NC}" || echo "${YELLOW}已禁用${NC}")"
+        echo -e "  ${BOLD}2. Dead Socket Reaper:${NC}  $([ "${TCP_CLEAN_ENABLED:-false}" = "true" ] && echo "${GREEN}已启用${NC}" || echo "${YELLOW}已禁用${NC}")"
+        echo -e "  ${BOLD}3. Socket Low-Latency:${NC}  $([ "${SOCKET_BOOST_ENABLED:-false}" = "true" ] && echo "${GREEN}已启用${NC}" || echo "${YELLOW}已禁用${NC}")"
+        echo -e "  ${BOLD}4. FakeTLS Pad Rotation:${NC} $([ "${TLS_PAD_ENABLED:-false}" = "true" ] && echo "${GREEN}已启用${NC}" || echo "${YELLOW}已禁用${NC}")"
+        echo -e "  ${BOLD}5. 有效 Probe Honeypot:${NC} $([ "${HONEYPOT_ENABLED:-false}" = "true" ] && echo "${GREEN}已启用${NC}" || echo "${YELLOW}已禁用${NC}")"
+        echo -e "  ${BOLD}6. TCP Fast-Path Window:${NC} $([ "${TCP_FASTPATH_ENABLED:-false}" = "true" ] && echo "${GREEN}已启用${NC}" || echo "${YELLOW}已禁用${NC}")"
+        echo -e "  ${BOLD}7. Dynamic RAM Auto-Tune:${NC} $([ "${RAM_TUNE_ENABLED:-false}" = "true" ] && echo "${GREEN}已启用${NC}" || echo "${YELLOW}已禁用${NC}")"
         echo -e "  ${BOLD}8. Port Range Shadowing:${NC} ${CYAN}${PORT_HOP_RANGES:-none}${NC}"
-        echo -e "  ${BOLD}9. Multi-Core IRQ Spread:${NC} $([ "${CPU_TUNE_ENABLED:-false}" = "true" ] && echo "${GREEN}ENABLED${NC}" || echo "${YELLOW}DISABLED${NC}")"
-        echo -e "  ${BOLD}a. BBRv3 & ECN Tuning:${NC}    $([ "${BBR_ECN_ENABLED:-false}" = "true" ] && echo "${GREEN}ENABLED${NC}" || echo "${YELLOW}DISABLED${NC}")"
-        echo -e "  ${BOLD}b. Anti-DPI Shield:${NC}       $([ "${ANTI_DPI_SHIELD_ENABLED:-false}" = "true" ] && echo "${GREEN}ENABLED${NC}" || echo "${YELLOW}DISABLED${NC}")"
-        echo -e "  ${BOLD}c. Cover Probe Shield:${NC}    $([ "${COVER_SHIELD_ENABLED:-false}" = "true" ] && echo "${GREEN}ENABLED${NC}" || echo "${YELLOW}DISABLED${NC}")"
-        echo -e "  ${BOLD}h. Background Auto-Heal:${NC} $([ "${AUTO_HEAL_ENABLED:-false}" = "true" ] && echo "${GREEN}ENABLED${NC}" || echo "${YELLOW}DISABLED${NC}")"
+        echo -e "  ${BOLD}9. Multi-Core IRQ Spread:${NC} $([ "${CPU_TUNE_ENABLED:-false}" = "true" ] && echo "${GREEN}已启用${NC}" || echo "${YELLOW}已禁用${NC}")"
+        echo -e "  ${BOLD}a. BBRv3 & ECN Tuning:${NC}    $([ "${BBR_ECN_ENABLED:-false}" = "true" ] && echo "${GREEN}已启用${NC}" || echo "${YELLOW}已禁用${NC}")"
+        echo -e "  ${BOLD}b. Anti-DPI Shield:${NC}       $([ "${ANTI_DPI_SHIELD_ENABLED:-false}" = "true" ] && echo "${GREEN}已启用${NC}" || echo "${YELLOW}已禁用${NC}")"
+        echo -e "  ${BOLD}c. Cover Probe Shield:${NC}    $([ "${COVER_SHIELD_ENABLED:-false}" = "true" ] && echo "${GREEN}已启用${NC}" || echo "${YELLOW}已禁用${NC}")"
+        echo -e "  ${BOLD}h. Background Auto-Heal:${NC} $([ "${AUTO_HEAL_ENABLED:-false}" = "true" ] && echo "${GREEN}已启用${NC}" || echo "${YELLOW}已禁用${NC}")"
         echo ""
         echo -e "  ${DIM}[1]${NC} 切换 Linux 内核 TCP BBR 与 Fast Open 加速器"
         echo -e "  ${DIM}[2]${NC} 切换失效移动连接清理器（45 秒超时）"
@@ -18616,7 +18616,7 @@ show_performance_menu() {
         echo -e "  ${DIM}[0]${NC} 返回"
 
         local choice
-        choice=$(read_choice "Choice" "0")
+        choice=$(read_choice "选项" "0")
         case "$choice" in
             1) [ "${TCP_BOOST_ENABLED:-false}" = "true" ] && run_tcp_boost off || run_tcp_boost on; press_any_key ;;
             2) [ "${TCP_CLEAN_ENABLED:-false}" = "true" ] && run_tcp_clean off || run_tcp_clean on; press_any_key ;;
@@ -18642,7 +18642,7 @@ show_performance_menu() {
 show_replication_menu() {
     while true; do
         clear_screen
-        draw_header "REPLICATION"
+        draw_header "主从复制"
         echo ""
         load_settings
         load_replication
@@ -18684,7 +18684,7 @@ show_replication_menu() {
         echo ""
 
         local choice
-        choice=$(read_choice "Choice" "0")
+        choice=$(read_choice "选项" "0")
         case "$choice" in
             1) check_root; replication_setup_wizard ;;
             2)
