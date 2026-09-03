@@ -1976,7 +1976,7 @@ secret_remove() {
 
     # Prevent removing the last secret
     if [ ${#SECRETS_LABELS[@]} -le 1 ]; then
-        log_error "不能移除最后一个密钥 — proxy needs at least one"
+        log_error "不能移除最后一个密钥——代理至少需要保留一个密钥"
         return 1
     fi
 
@@ -1985,11 +1985,11 @@ secret_remove() {
         if [ ! -t 0 ]; then
             force="true"
         else
-            echo -e "  ${YELLOW}移除密钥 '${label}'? Users with this key will be disconnected.${NC}"
-            echo -en "  ${BOLD}Type 'yes' to confirm:${NC} "
+            echo -e "  ${YELLOW}是否移除密钥 '${label}'？使用此密钥的用户将断开连接。${NC}"
+            echo -en "  ${BOLD}请输入 'yes' 确认：${NC} "
             local confirm
             read -r confirm
-            [ "$confirm" != "yes" ] && { log_info "Cancelled"; return 0; }
+            [ "$confirm" != "yes" ] && { log_info "操作已取消"; return 0; }
         fi
     fi
 
@@ -2026,7 +2026,7 @@ secret_remove() {
         reload_proxy_config
     fi
 
-    log_success "密钥 '${label}' removed"
+    log_success "密钥 '${label}' 已移除"
     audit_log "secret remove ${label}"
 }
 
@@ -2058,7 +2058,7 @@ secret_add_batch() {
     fi
 
     echo ""
-    log_success "Batch complete: ${added} added, ${failed} failed"
+    log_success "批量操作完成：成功添加 ${added} 个，失败 ${failed} 个"
 }
 
 # Batch remove multiple secrets (single restart)
@@ -2086,18 +2086,18 @@ secret_remove_batch() {
     done
 
     if [ "${match_count:-0}" -ge ${#SECRETS_LABELS[@]} ]; then
-        log_error "Cannot remove all secrets — proxy needs at least one"
+        log_error "不能移除全部密钥——代理至少需要保留一个密钥"
         return 1
     fi
 
     # Confirm unless forced
     if [ "$force" != "true" ] && [ -t 0 ]; then
-        echo -e "  ${YELLOW}Remove ${#labels[@]} secrets? Users with these keys will be disconnected.${NC}"
+        echo -e "  ${YELLOW}是否移除 ${#labels[@]} 个密钥？使用这些密钥的用户将断开连接。${NC}"
         echo -e "  ${DIM}标签: ${labels[*]}${NC}"
-        echo -en "  ${BOLD}Type 'yes' to confirm:${NC} "
+        echo -en "  ${BOLD}请输入 'yes' 确认：${NC} "
         local confirm
         read -r confirm
-        [ "$confirm" != "yes" ] && { log_info "Cancelled"; return 0; }
+        [ "$confirm" != "yes" ] && { log_info "操作已取消"; return 0; }
     fi
 
     local removed=0 failed=0
@@ -4530,7 +4530,7 @@ secret_rotate_all() {
         for i in "${!SECRETS_LABELS[@]}"; do
             [ "${SECRETS_ENABLED[$i]}" = "true" ] && dry_count=$((dry_count + 1))
         done
-        log_info "DRY RUN — would rotate ${dry_count} enabled secret(s):"
+        log_info "模拟执行——将轮换 ${dry_count} 个已启用密钥："
         for i in "${!SECRETS_LABELS[@]}"; do
             [ "${SECRETS_ENABLED[$i]}" = "true" ] && echo "  - ${SECRETS_LABELS[$i]}"
         done
@@ -4538,9 +4538,9 @@ secret_rotate_all() {
     fi
 
     if [ -t 0 ]; then
-        echo -en "  ${YELLOW}This will rotate ALL ${#SECRETS_LABELS[@]} secret(s). Existing links will stop working. Type 'yes' to confirm:${NC} "
+        echo -en "  ${YELLOW}此操作将轮换全部 ${#SECRETS_LABELS[@]} 个密钥，现有链接将失效。请输入 'yes' 确认：${NC} "
         local confirm; read -r confirm
-        [ "$confirm" != "yes" ] && { log_info "Cancelled"; return 0; }
+        [ "$confirm" != "yes" ] && { log_info "操作已取消"; return 0; }
     fi
 
     local now; now=$(date +%s)
@@ -12754,7 +12754,7 @@ replication_show_logs() {
 
     if command -v journalctl &>/dev/null; then
         echo ""
-        echo -e "  ${BOLD}Systemd journal (last 10 entries):${NC}"
+        echo -e "  ${BOLD}systemd 日志（最近 10 条）：${NC}"
         echo ""
         journalctl -u mtproxymax-sync.service --no-pager -n 10 2>/dev/null || true
     fi
@@ -12764,10 +12764,10 @@ replication_show_logs() {
 # Remove all replication config
 replication_reset() {
     echo ""
-    echo -e "  ${RED}${BOLD}Remove all replication config, SSH keys, and sync service?${NC}"
-    echo -en "  Confirm [y/N]: "
+    echo -e "  ${RED}${BOLD}是否移除全部复制配置、SSH 密钥和同步服务？${NC}"
+    echo -en "  确认 [y/N]："
     local confirm; read -r confirm
-    [[ "$confirm" =~ ^[Yy]$ ]] || { log_info "Cancelled"; return 0; }
+    [[ "$confirm" =~ ^[Yy]$ ]] || { log_info "操作已取消"; return 0; }
 
     remove_replication_service
     REPLICATION_ENABLED="false"
@@ -12775,31 +12775,31 @@ replication_reset() {
     save_settings
     rm -f "${REPLICATION_FILE}"
     rm -rf "${REPLICATION_SSH_DIR}"
-    log_success "Replication config removed"
+    log_success "复制配置已移除"
 }
 
 # Promote slave to master
 replication_promote() {
     load_settings
     if [ "${REPLICATION_ROLE}" = "master" ]; then
-        log_warn "Already a master"
+        log_warn "当前节点已经是主节点"
         return 0
     fi
 
     echo ""
-    echo -e "  ${BOLD}Promote this server from Slave to Master?${NC}"
-    echo -e "  ${DIM}Disable the old master first to avoid config conflicts.${NC}"
+    echo -e "  ${BOLD}是否将此服务器从从节点提升为主节点？${NC}"
+    echo -e "  ${DIM}请先禁用旧主节点，以避免配置冲突。${NC}"
     echo ""
-    echo -en "  Confirm [y/N]: "
+    echo -en "  确认 [y/N]："
     local confirm; read -r confirm
-    [[ "$confirm" =~ ^[Yy]$ ]] || { log_info "Cancelled"; return 0; }
+    [[ "$confirm" =~ ^[Yy]$ ]] || { log_info "操作已取消"; return 0; }
 
     REPLICATION_ROLE="master"
     save_settings
-    log_success "Role changed to: Master"
+    log_success "角色已更改为：主节点"
     if [ ! -f "${REPLICATION_SSH_KEY_PATH}" ]; then
-        log_warn "No SSH key found at ${REPLICATION_SSH_KEY_PATH}"
-        log_info "Run 'mtproxymax replication setup' to generate a key and configure slaves"
+        log_warn "在 ${REPLICATION_SSH_KEY_PATH} 未找到 SSH 密钥"
+        log_info "请运行 'mtproxymax replication setup' 生成密钥并配置从节点"
     fi
     log_info "添加从节点s:  mtproxymax replication add <host>"
     log_info "Enable sync: mtproxymax replication enable"
@@ -13148,35 +13148,35 @@ show_install_summary() {
 uninstall() {
     clear_screen
     echo ""
-    echo -e "  ${BRIGHT_RED}${BOLD}UNINSTALL MTPROXYMAX${NC}"
+    echo -e "  ${BRIGHT_RED}${BOLD}卸载 MTPROXYMAX${NC}"
     echo ""
-    echo -e "  ${YELLOW}This will remove:${NC}"
-    echo -e "  ${DIM}- Proxy container and Docker image${NC}"
-    echo -e "  ${DIM}- All configuration and secrets${NC}"
-    echo -e "  ${DIM}- Systemd services${NC}"
-    echo -e "  ${DIM}- /usr/local/bin/mtproxymax symlink${NC}"
+    echo -e "  ${YELLOW}此操作将移除：${NC}"
+    echo -e "  ${DIM}- 代理容器和 Docker 镜像${NC}"
+    echo -e "  ${DIM}- 全部配置和密钥${NC}"
+    echo -e "  ${DIM}- systemd 服务${NC}"
+    echo -e "  ${DIM}- /usr/local/bin/mtproxymax 符号链接${NC}"
     echo ""
-    echo -e "  ${RED}Docker itself will NOT be removed.${NC}"
+    echo -e "  ${RED}不会卸载 Docker 本身。${NC}"
     echo ""
 
-    echo -en "  ${BOLD}Type 'yes' to confirm:${NC} "
+    echo -en "  ${BOLD}请输入 'yes' 确认：${NC} "
     local confirm
     read -r confirm
-    [ "$confirm" != "yes" ] && { log_info "Cancelled"; return; }
+    [ "$confirm" != "yes" ] && { log_info "操作已取消"; return; }
 
     # Offer secrets export
-    echo -en "  ${BOLD}Export secrets before removal? [y/N]:${NC} "
+    echo -en "  ${BOLD}移除前是否导出密钥？[y/N]：${NC} "
     local export_choice
     read -r export_choice
     if [ "$export_choice" = "y" ] || [ "$export_choice" = "Y" ]; then
         local export_file="${HOME}/mtproxymax-secrets-backup.txt"
         cp "$SECRETS_FILE" "$export_file" 2>/dev/null
         chmod 600 "$export_file" 2>/dev/null
-        log_success "密钥 exported to ${export_file}"
+        log_success "密钥已导出到 ${export_file}"
     fi
 
     echo ""
-    log_info "Removing services..."
+    log_info "正在移除服务..."
     systemctl stop mtproxymax-telegram.service 2>/dev/null || true
     systemctl disable mtproxymax-telegram.service 2>/dev/null || true
     rm -f /etc/systemd/system/mtproxymax-telegram.service
@@ -13187,32 +13187,32 @@ uninstall() {
 
     systemctl daemon-reload 2>/dev/null || true
 
-    log_info "Removing geo-blocking rules..."
+    log_info "正在移除地理位置屏蔽规则..."
     geoblock_remove_all
 
-    log_info "Removing traffic tracking..."
+    log_info "正在移除流量跟踪规则..."
     traffic_tracking_teardown
 
-    log_info "Removing QoS bandwidth shaping and scanner shields..."
+    log_info "正在移除 QoS 带宽整形和扫描器防护..."
     speed_limit_clear 2>/dev/null || true
     scanner_shield_off 2>/dev/null || true
     syn_shield_off 2>/dev/null || true
 
-    log_info "Removing container..."
+    log_info "正在移除容器..."
     docker stop "$CONTAINER_NAME" 2>/dev/null || true
     docker rm -f "$CONTAINER_NAME" 2>/dev/null || true
 
-    log_info "Removing Docker image..."
+    log_info "正在移除 Docker 镜像..."
     docker images --format '{{.Repository}}:{{.Tag}}' 2>/dev/null | grep "^${DOCKER_IMAGE_BASE}:" | xargs -r docker rmi 2>/dev/null || true
     # Clean up dangling build cache from Rust compilation
     docker builder prune -f 2>/dev/null || true
 
-    log_info "Removing files..."
+    log_info "正在移除文件..."
     [ -n "$INSTALL_DIR" ] && [ "$INSTALL_DIR" != "/" ] && rm -rf "$INSTALL_DIR"
     rm -f /usr/local/bin/mtproxymax
 
     echo ""
-    log_success "MTProxyMax has been fully uninstalled"
+    log_success "MTProxyMax 已完全卸载"
     echo ""
 }
 
