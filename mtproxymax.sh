@@ -528,6 +528,7 @@ check_dependencies() {
     command -v curl &>/dev/null || missing+=("curl")
     command -v awk &>/dev/null || missing+=("awk")
     command -v openssl &>/dev/null || missing+=("openssl")
+    command -v python3 &>/dev/null || missing+=("python3")
 
     if [ ${#missing[@]} -gt 0 ]; then
         log_warn "缺少依赖项： ${missing[*]}"
@@ -10975,6 +10976,8 @@ PID_FILE="${INSTALL_DIR}/mtproxymax-telegram.pid"
 
 # Source the main script functions
 SCRIPT_PATH="${INSTALL_DIR}/mtproxymax"
+VERSION=$(grep -m1 '^VERSION=' "$SCRIPT_PATH" 2>/dev/null | cut -d'"' -f2)
+VERSION="${VERSION:-unknown}"
 
 # Keep the generated bot daemon self-contained.  It does not source the main
 # manager script, so helpers used by Telegram command handlers must be defined
@@ -11104,37 +11107,37 @@ tg_send_to() {
 
 tg_public_menu() {
     local cid="$1" msg="${2:-请选择需要的服务：}"
-    local kb='{"keyboard":[[{"text":"📊 我的状态"},{"text":"🎟 兑换码"}],[{"text":"💬 联系支持"},{"text":"❓ 帮助"}]],"resize_keyboard":true,"is_persistent":true}'
+    local kb='{"inline_keyboard":[[{"text":"📊 我的状态","callback_data":"public_status"},{"text":"🎟 兑换码","callback_data":"public_redeem"}],[{"text":"💬 联系支持","callback_data":"public_support"},{"text":"❓ 帮助","callback_data":"menu_help"}]]}'
     tg_send_to "$cid" "$msg" "$kb"
 }
 
 tg_admin_menu() {
     local cid="$1" msg="${2:-请选择管理操作：}"
-    local kb='{"keyboard":[[{"text":"📊 运行状态"},{"text":"📈 流量报告"}],[{"text":"🔑 密钥管理"},{"text":"🔗 代理链接"}],[{"text":"🩺 健康检查"},{"text":"🛡 安全管理"}],[{"text":"⚙️ 更多功能"},{"text":"❓ 帮助"}]],"resize_keyboard":true,"is_persistent":true}'
+    local kb='{"inline_keyboard":[[{"text":"📊 运行状态","callback_data":"admin_status"},{"text":"📈 流量报告","callback_data":"admin_traffic"}],[{"text":"🔑 密钥管理","callback_data":"menu_secrets"},{"text":"🔗 代理链接","callback_data":"admin_link"}],[{"text":"🩺 健康检查","callback_data":"admin_health"},{"text":"🛡 安全管理","callback_data":"menu_security"}],[{"text":"⚙️ 更多功能","callback_data":"menu_more"},{"text":"❓ 帮助","callback_data":"menu_help"}]]}'
     tg_send_to "$cid" "$msg" "$kb"
 }
 
 tg_secret_menu() {
     local cid="$1"
-    local kb='{"keyboard":[[{"text":"📋 密钥列表"},{"text":"➕ 添加密钥"}],[{"text":"✅ 启用密钥"},{"text":"⛔ 禁用密钥"}],[{"text":"🔄 轮换密钥"},{"text":"🗑 删除密钥"}],[{"text":"📏 用户限制"},{"text":"✏️ 设置限制"}],[{"text":"⬅️ 返回主菜单"}]],"resize_keyboard":true,"is_persistent":true}'
+    local kb='{"inline_keyboard":[[{"text":"📋 密钥列表","callback_data":"secret_list"},{"text":"➕ 添加密钥","callback_data":"secret_add"}],[{"text":"✅ 启用密钥","callback_data":"secret_enable"},{"text":"⛔ 禁用密钥","callback_data":"secret_disable"}],[{"text":"🔄 轮换密钥","callback_data":"secret_rotate"},{"text":"🗑 删除密钥","callback_data":"secret_remove"}],[{"text":"📏 用户限制","callback_data":"secret_limits"},{"text":"✏️ 设置限制","callback_data":"secret_setlimit"}],[{"text":"⬅️ 返回主菜单","callback_data":"menu_main"}]]}'
     tg_send_to "$cid" "🔑 *密钥管理*\n\n请选择操作，机器人会继续提示所需信息。" "$kb"
 }
 
 tg_security_menu() {
     local cid="$1"
-    local kb='{"keyboard":[[{"text":"🔒 锁定状态"},{"text":"🚨 启用锁定"}],[{"text":"🔓 关闭锁定"},{"text":"📊 系统摘要"}],[{"text":"⬅️ 返回主菜单"}]],"resize_keyboard":true,"is_persistent":true}'
+    local kb='{"inline_keyboard":[[{"text":"🔒 锁定状态","callback_data":"security_status"},{"text":"🚨 启用锁定","callback_data":"security_on"}],[{"text":"🔓 关闭锁定","callback_data":"security_off"},{"text":"📊 系统摘要","callback_data":"admin_digest"}],[{"text":"⬅️ 返回主菜单","callback_data":"menu_main"}]]}'
     tg_send_to "$cid" "🛡 *安全管理*" "$kb"
 }
 
 tg_more_menu() {
     local cid="$1"
-    local kb='{"keyboard":[[{"text":"🌐 上游代理"},{"text":"🌍 集群状态"}],[{"text":"🎟 兑换码管理"},{"text":"💬 回复工单"}],[{"text":"📢 广播消息"},{"text":"⬆️ 检查更新"}],[{"text":"🔄 重启代理"},{"text":"⬅️ 返回主菜单"}]],"resize_keyboard":true,"is_persistent":true}'
+    local kb='{"inline_keyboard":[[{"text":"🌐 上游代理","callback_data":"admin_upstreams"},{"text":"🌍 集群状态","callback_data":"admin_fleet"}],[{"text":"🎟 兑换码管理","callback_data":"menu_vouchers"},{"text":"💬 回复工单","callback_data":"admin_reply"}],[{"text":"📢 广播消息","callback_data":"admin_broadcast"},{"text":"⬆️ 检查更新","callback_data":"admin_update"}],[{"text":"🔄 重启代理","callback_data":"admin_restart"},{"text":"⬅️ 返回主菜单","callback_data":"menu_main"}]]}'
     tg_send_to "$cid" "⚙️ *更多功能*" "$kb"
 }
 
 tg_voucher_menu() {
     local cid="$1"
-    local kb='{"keyboard":[[{"text":"➕ 生成兑换码"},{"text":"📋 有效兑换码"}],[{"text":"⬅️ 返回主菜单"}]],"resize_keyboard":true,"is_persistent":true}'
+    local kb='{"inline_keyboard":[[{"text":"➕ 生成兑换码","callback_data":"voucher_create"},{"text":"📋 有效兑换码","callback_data":"voucher_list"}],[{"text":"⬅️ 返回主菜单","callback_data":"menu_main"}]]}'
     tg_send_to "$cid" "🎟 *兑换码管理*" "$kb"
 }
 
@@ -11151,6 +11154,14 @@ tg_prompt() {
     local cid="$1" state="$2" msg="$3"
     tg_set_state "$cid" "$state"
     tg_send_to "$cid" "$msg" '{"force_reply":true,"selective":true,"input_field_placeholder":"输入内容，或发送“取消”"}'
+}
+
+tg_answer_callback() {
+    local callback_id="$1"
+    [ -z "$callback_id" ] && return 0
+    curl -s --max-time 5 -X POST \
+        -K <(printf 'url = "https://api.telegram.org/bot%s/answerCallbackQuery"\n' "$TELEGRAM_BOT_TOKEN") \
+        --data-urlencode "callback_query_id=${callback_id}" >/dev/null 2>&1 || true
 }
 
 tg_send_photo() {
@@ -11431,14 +11442,22 @@ try:
     data=json.load(sys.stdin)
     for r in data.get('result',[]):
         uid=r['update_id']
-        txt=r.get('message',{}).get('text','').split('\n')[0][:200]
-        cid=r.get('message',{}).get('chat',{}).get('id','')
-        print(f'{uid}\t{cid}\t{txt}')
+        callback=r.get('callback_query',{})
+        message=r.get('message',{})
+        if callback:
+            txt=callback.get('data','')[:200]
+            cid=callback.get('message',{}).get('chat',{}).get('id','')
+            callback_id=callback.get('id','')
+        else:
+            txt=message.get('text','').split('\n')[0][:200]
+            cid=message.get('chat',{}).get('id','')
+            callback_id=''
+        print(f'{uid}\t{cid}\t{txt}\t{callback_id}')
 except Exception:
     pass
-" 2>/dev/null | while IFS=$'\t' read -r _uid _cid _txt || [ -n "$_uid" ]; do
+" 2>/dev/null | while IFS=$'\t' read -r _uid _cid _txt _callback_id || [ -n "$_uid" ]; do
             [ -z "$_uid" ] && continue
-            _process_cmd "$_uid" "$_cid" "$_txt"
+            _process_cmd "$_uid" "$_cid" "$_txt" "$_callback_id"
         done
     else
         # Fallback: grep-based parsing (no python)
@@ -11468,12 +11487,49 @@ _check_tg_role() {
 }
 
 _process_cmd() {
-    local update_id="$1" chat_id="$2" text="$3"
+    local update_id="$1" chat_id="$2" text="$3" callback_id="${4:-}"
     echo "$((update_id + 1))" > "$OFFSET_FILE"
+    tg_answer_callback "$callback_id"
 
     local role
     role=$(_check_tg_role "$chat_id")
     TG_REPLY_CHAT_ID="$chat_id"
+
+    case "$text" in
+        public_status) text="📊 我的状态" ;;
+        public_redeem) text="🎟 兑换码" ;;
+        public_support) text="💬 联系支持" ;;
+        admin_status) text="📊 运行状态" ;;
+        admin_traffic) text="📈 流量报告" ;;
+        admin_link) text="🔗 代理链接" ;;
+        admin_health) text="🩺 健康检查" ;;
+        admin_digest) text="📊 系统摘要" ;;
+        admin_upstreams) text="🌐 上游代理" ;;
+        admin_fleet) text="🌍 集群状态" ;;
+        admin_reply) text="💬 回复工单" ;;
+        admin_broadcast) text="📢 广播消息" ;;
+        admin_update) text="⬆️ 检查更新" ;;
+        admin_restart) text="🔄 重启代理" ;;
+        secret_list) text="📋 密钥列表" ;;
+        secret_add) text="➕ 添加密钥" ;;
+        secret_enable) text="✅ 启用密钥" ;;
+        secret_disable) text="⛔ 禁用密钥" ;;
+        secret_rotate) text="🔄 轮换密钥" ;;
+        secret_remove) text="🗑 删除密钥" ;;
+        secret_limits) text="📏 用户限制" ;;
+        secret_setlimit) text="✏️ 设置限制" ;;
+        security_status) text="🔒 锁定状态" ;;
+        security_on) text="🚨 启用锁定" ;;
+        security_off) text="🔓 关闭锁定" ;;
+        voucher_create) text="➕ 生成兑换码" ;;
+        voucher_list) text="📋 有效兑换码" ;;
+        menu_secrets) text="🔑 密钥管理" ;;
+        menu_security) text="🛡 安全管理" ;;
+        menu_more) text="⚙️ 更多功能" ;;
+        menu_vouchers) text="🎟 兑换码管理" ;;
+        menu_help) text="❓ 帮助" ;;
+        menu_main) text="⬅️ 返回主菜单" ;;
+    esac
 
     mkdir -p "$INSTALL_DIR" 2>/dev/null || true
     if [ -n "$chat_id" ]; then
