@@ -11102,7 +11102,15 @@ tg_send_to() {
         --data-urlencode "parse_mode=Markdown"
     )
     [ -n "$reply_markup" ] && send_args+=(--data-urlencode "reply_markup=${reply_markup}")
-    curl "${send_args[@]}" >/dev/null 2>&1
+    local response rc=0 description=""
+    response=$(curl "${send_args[@]}" 2>/dev/null) || rc=$?
+    if [ "$rc" -ne 0 ] || ! printf '%s' "$response" | grep -q '"ok":true'; then
+        description=$(printf '%s' "$response" | sed -n 's/.*"description"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)
+        [ -z "$description" ] && description="curl 状态码 ${rc}"
+        logger -t mtproxymax-telegram -- "sendMessage 失败（chat_id=${target_cid}）：${description}" 2>/dev/null || true
+        return 1
+    fi
+    return 0
 }
 
 tg_public_menu() {
@@ -11434,6 +11442,12 @@ process_commands() {
         -K <(printf 'url = "https://api.telegram.org/bot%s/getUpdates?offset=%s&timeout=25"\n' "$TELEGRAM_BOT_TOKEN" "$offset") \
         2>/dev/null) || true
     [ -z "$updates" ] && return
+    if ! printf '%s' "$updates" | grep -q '"ok":true'; then
+        local api_error
+        api_error=$(printf '%s' "$updates" | sed -n 's/.*"description"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)
+        logger -t mtproxymax-telegram -- "getUpdates 失败：${api_error:-Telegram API 返回异常}" 2>/dev/null || true
+        return
+    fi
 
     if command -v python3 &>/dev/null; then
         echo "$updates" | python3 -c "
