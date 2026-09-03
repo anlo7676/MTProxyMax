@@ -51,11 +51,11 @@ echo "Upload mechanism diagnostics tests"
 # 1. Default run_upload_test output structure
 CLIENT_MSS=""
 out=$(run_upload_test 2>&1)
-assert_contains "upload-test header present" "UPLOAD MECHANISM DIAGNOSTICS" "$out"
-assert_contains "client_mss audit line present" "Telemt Client MSS mode:" "$out"
-assert_contains "kernel wmem audit line present" "Kernel TCP Write Buffer" "$out"
-assert_contains "qos upload rules line present" "QoS Bandwidth Shaping Upload Rules:" "$out"
-assert_contains "default CLIENT_MSS reported as off" "off (disabled" "$out"
+assert_contains "upload-test header present" "上传机制诊断" "$out"
+assert_contains "client_mss audit line present" "Telemt 客户端 MSS 模式：" "$out"
+assert_contains "kernel wmem audit line present" "内核 TCP 写入缓冲区" "$out"
+assert_contains "qos upload rules line present" "QoS 带宽整形上传规则：" "$out"
+assert_contains "default CLIENT_MSS reported as off" "off（已禁用" "$out"
 
 # 2. Warning trigger when CLIENT_MSS="tspu"
 CLIENT_MSS="tspu"
@@ -66,7 +66,7 @@ assert_contains "client-mss off recommendation present" "mtproxymax client-mss o
 # 3. CLI routing via cli_main upload-test
 CLIENT_MSS=""
 cli_out=$(run_upload_test 2>&1)
-assert_contains "cli_main upload-test routes correctly" "UPLOAD MECHANISM DIAGNOSTICS" "$cli_out"
+assert_contains "cli_main upload-test routes correctly" "上传机制诊断" "$cli_out"
 
 printf '\n%d tests, %d failures\n' "$TESTS_RUN" "$TESTS_FAILED"
 [ "$TESTS_FAILED" -eq 0 ]

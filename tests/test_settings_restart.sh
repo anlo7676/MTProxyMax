@@ -53,7 +53,7 @@ if confirm_settings_change "test=new" <<< ""; then
 fi
 assert_eq "empty answer declines non-restart change" "old" "$TEST_SETTING"
 assert_eq "declined non-restart change is not saved" 0 "$SAVE_COUNT"
-assert_eq "non-restart decline reports cancellation" "Change cancelled; settings were not modified" "$LAST_INFO"
+assert_eq "non-restart decline reports cancellation" "更改已取消，设置未修改" "$LAST_INFO"
 
 TEST_SETTING="old"
 SAVE_COUNT=0
@@ -72,7 +72,7 @@ apply_test_setting "new" <<< "n"
 assert_eq "decline keeps in-memory value" "old" "$TEST_SETTING"
 assert_eq "decline does not save" 0 "$SAVE_COUNT"
 assert_eq "decline does not restart" 0 "$RESTART_COUNT"
-assert_eq "decline reports cancellation" "Change cancelled; settings were not modified" "$LAST_INFO"
+assert_eq "decline reports cancellation" "更改已取消，设置未修改" "$LAST_INFO"
 
 TEST_SETTING="old"
 SAVE_COUNT=0

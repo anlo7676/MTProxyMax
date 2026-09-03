@@ -15,6 +15,9 @@ mkdir -p "$INSTALL_DIR"
 MTPROXYMAX_SOURCE_ONLY=true source "$(dirname "${BASH_SOURCE[0]}")/../mtproxymax.sh"
 set +e
 trap 'rm -rf "$TEST_TMPDIR"' EXIT
+mkdir -p "$CONFIG_DIR"
+
+check_root() { :; }
 
 TESTS_RUN=0
 TESTS_FAILED=0
@@ -42,7 +45,8 @@ assert_eq "out-of-the-box default CLIENT_MSS is empty" "" "$CLIENT_MSS"
 
 # 2. Config generation when CLIENT_MSS is empty (off)
 CLIENT_MSS=""
-cfg=$(generate_telemt_config)
+generate_telemt_config
+cfg=$(cat "$CONFIG_DIR/config.toml")
 if echo "$cfg" | grep -q 'client_mss'; then
     assert_eq "client_mss omitted when off" "absent" "present"
 else
@@ -51,7 +55,8 @@ fi
 
 # 3. Config generation when CLIENT_MSS="tspu"
 CLIENT_MSS="tspu"
-cfg=$(generate_telemt_config)
+generate_telemt_config
+cfg=$(cat "$CONFIG_DIR/config.toml")
 if echo "$cfg" | grep -q 'client_mss = "tspu"'; then
     assert_eq "client_mss emitted when set to tspu" "present" "present"
 else
@@ -61,7 +66,7 @@ fi
 # 4. run_client_mss status output
 CLIENT_MSS=""
 status_out=$(run_client_mss status)
-if echo "$status_out" | grep -q 'off / disabled'; then
+if echo "$status_out" | grep -q '关闭 / 已禁用'; then
     assert_eq "status reports off mode" "present" "present"
 else
     assert_eq "status reports off mode" "present" "absent"

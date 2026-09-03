@@ -830,9 +830,9 @@ save_secrets() {
     local tmp
     tmp=$(_mktemp) || { log_error "无法创建临时文件"; return 1; }
 
-    echo "# MTProxyMax 密钥 Database — v${VERSION}" > "$tmp"
+    echo "# MTProxyMax 密钥数据库——v${VERSION}" > "$tmp"
     echo "# Format: LABEL|SECRET|CREATED_TS|ENABLED|MAX_CONNS|MAX_IPS|QUOTA_BYTES|EXPIRES|NOTES|AD_TAG" >> "$tmp"
-    echo "# DO NOT EDIT MANUALLY — use 'mtproxymax secret' commands" >> "$tmp"
+    echo "# 请勿手动编辑，请使用 'mtproxymax secret' 命令" >> "$tmp"
 
     if [ ${#SECRETS_LABELS[@]} -gt 0 ]; then
         local i
@@ -928,9 +928,9 @@ save_upstreams() {
     local tmp
     tmp=$(_mktemp) || { log_error "无法创建临时文件"; return 1; }
 
-    echo "# MTProxyMax 上游代理 Database — v${VERSION}" > "$tmp"
+    echo "# MTProxyMax 上游代理数据库——v${VERSION}" > "$tmp"
     echo "# Format: NAME|TYPE|ADDR|USER|PASS|WEIGHT|IFACE|ENABLED" >> "$tmp"
-    echo "# DO NOT EDIT MANUALLY — use 'mtproxymax upstream' commands" >> "$tmp"
+    echo "# 请勿手动编辑，请使用 'mtproxymax upstream' 命令" >> "$tmp"
 
     if [ ${#UPSTREAM_NAMES[@]} -gt 0 ]; then
         local i
@@ -1119,7 +1119,7 @@ build_telemt_image() {
 
     # Strategy 3: Build from source (slow first time, cached after)
     log_warn "预构建镜像不可用，正在从源码编译..."
-    log_info "Includes: Prometheus metrics, ME perf fixes, critical ME bug fixes"
+    log_info "包含：Prometheus 指标、ME 性能修复及 ME 关键错误修复"
 
     local build_dir
     build_dir=$(mktemp -d "${TMPDIR:-/tmp}/mtproxymax-build.XXXXXX")
@@ -1153,7 +1153,7 @@ DOCKERFILE_EOF
         --build-arg "TELEMT_COMMIT=${commit}" \
         -t "${DOCKER_IMAGE_BASE}:${version}" "$build_dir"; then
         docker tag "${DOCKER_IMAGE_BASE}:${version}" "${DOCKER_IMAGE_BASE}:latest" 2>/dev/null || true
-        log_success "已构建 telemt v${version} from source"
+        log_success "已从源代码构建 telemt v${version}"
         mkdir -p "$INSTALL_DIR"
         echo "$version" > "${INSTALL_DIR}/.telemt_version"
     else
@@ -1267,7 +1267,7 @@ generate_telemt_config() {
 
     # Build config in a temp file for atomic write (same-dir for atomic mv)
     local tmp
-    tmp=$(_mktemp "$CONFIG_DIR") || { log_error "无法创建临时文件 for config"; return 1; }
+    tmp=$(_mktemp "$CONFIG_DIR") || { log_error "无法为配置创建临时文件"; return 1; }
 
     cat > "$tmp" << TOML_EOF
 # MTProxyMax — telemt configuration
@@ -1278,7 +1278,7 @@ prefer_ipv6 = false
 fast_mode = true
 use_middle_proxy = true
 log_level = "normal"
-$([ -n "$ad_tag" ] && echo "ad_tag = \"$ad_tag\"" || echo "# ad_tag = \"\"  # Get from @MTProxyBot")
+$([ -n "$ad_tag" ] && echo "ad_tag = \"$ad_tag\"" || echo "# ad_tag = \"\"  # 从 @MTProxyBot 获取")
 $([ -n "${PROXY_SECRET_URL:-}" ] && echo "proxy_secret_url = \"${PROXY_SECRET_URL}\"")
 $([ -n "${PROXY_CONFIG_V4_URL:-}" ] && echo "proxy_config_v4_url = \"${PROXY_CONFIG_V4_URL}\"")
 $([ -n "${PROXY_CONFIG_V6_URL:-}" ] && echo "proxy_config_v6_url = \"${PROXY_CONFIG_V6_URL}\"")
@@ -1879,15 +1879,15 @@ secret_add() {
 
     # Validate label
     if [ -z "$label" ]; then
-        log_error "标签 is required"
+        log_error "必须提供标签"
         return 1
     fi
     if ! [[ "$label" =~ ^[a-zA-Z0-9_-]+$ ]]; then
-        log_error "标签 must be alphanumeric (a-z, 0-9, _, -)"
+        log_error "标签只能包含字母、数字、下划线和连字符"
         return 1
     fi
     if [ ${#label} -gt 32 ]; then
-        log_error "标签 must be 32 characters or less"
+        log_error "标签长度不得超过 32 个字符"
         return 1
     fi
 
@@ -1895,7 +1895,7 @@ secret_add() {
     local i
     for i in "${!SECRETS_LABELS[@]}"; do
         if [ "${SECRETS_LABELS[$i]}" = "$label" ]; then
-            log_error "密钥 with label '${label}' 已存在"
+            log_error "标签为 '${label}' 的密钥已存在"
             return 1
         fi
     done
@@ -1909,7 +1909,7 @@ secret_add() {
     fi
 
     if [ -z "$raw_secret" ] || ! [[ "$raw_secret" =~ ^[0-9a-fA-F]{32}$ ]]; then
-        log_error "密钥 must be exactly 32 hex characters"
+        log_error "密钥必须恰好为 32 位十六进制字符"
         return 1
     fi
 
@@ -1941,10 +1941,10 @@ secret_add() {
     log_success "密钥 '${label}' created"
     audit_log "secret add ${label}"
     echo ""
-    echo -e "  ${BOLD}Proxy Link:${NC}"
+    echo -e "  ${BOLD}代理链接：${NC}"
     echo -e "  ${CYAN}tg://proxy?server=${server_ip}&port=${PROXY_PORT}&secret=${full_secret}${NC}"
     echo ""
-    echo -e "  ${BOLD}Web Link:${NC}"
+    echo -e "  ${BOLD}网页链接：${NC}"
     echo -e "  ${CYAN}https://t.me/proxy?server=${server_ip}&port=${PROXY_PORT}&secret=${full_secret}${NC}"
 
     # Show QR code inline if qrencode is available
@@ -2115,7 +2115,7 @@ secret_remove_batch() {
     fi
 
     echo ""
-    log_success "Batch complete: ${removed} removed, ${failed} failed"
+    log_success "批量操作完成：已移除 ${removed} 个，失败 ${failed} 个"
 }
 
 # List all secrets
@@ -2123,8 +2123,8 @@ secret_list() {
     load_secrets
 
     if [ ${#SECRETS_LABELS[@]} -eq 0 ]; then
-        log_info "No secrets configured"
-        echo -e "  ${DIM}Run: mtproxymax secret add <label>${NC}"
+        log_info "尚未配置密钥"
+        echo -e "  ${DIM}请运行：mtproxymax secret add <label>${NC}"
         return
     fi
 
@@ -2136,7 +2136,7 @@ secret_list() {
     _load_all_cumulative_user_stats 2>/dev/null
 
     # Table header
-    printf "  ${BOLD}%-4s %-16s %-10s %-10s %-12s %-12s${NC}\n" "#" "LABEL" "STATUS" "CREATED" "TRAFFIC IN" "TRAFFIC OUT"
+    printf "  ${BOLD}%-4s %-16s %-10s %-10s %-12s %-12s${NC}\n" "#" "标签" "状态" "创建时间" "入站流量" "出站流量"
     echo -e "  ${DIM}$(_repeat '─' 70)${NC}"
 
     local i
@@ -2226,7 +2226,7 @@ secret_rotate() {
     local new_secret
     new_secret=$(generate_secret)
     if [ -z "$new_secret" ] || ! [[ "$new_secret" =~ ^[0-9a-fA-F]{32}$ ]]; then
-        log_error "无法 generate secret"
+        log_error "无法生成密钥"
         return 1
     fi
     SECRETS_KEYS[$idx]="$new_secret"
@@ -2243,7 +2243,7 @@ secret_rotate() {
     log_success "密钥 '${label}' rotated"
     audit_log "secret rotate ${label}"
     echo ""
-    echo -e "  ${BOLD}New Proxy Link:${NC}"
+    echo -e "  ${BOLD}新代理链接：${NC}"
     echo -e "  ${CYAN}tg://proxy?server=${server_ip}&port=${PROXY_PORT}&secret=${full_secret}${NC}"
     echo ""
 
@@ -2285,7 +2285,7 @@ secret_toggle() {
                 SECRETS_ENABLED[$idx]="true"
             fi
             ;;
-        *) log_error "Invalid action: $action"; return 1 ;;
+        *) log_error "无效操作：$action"; return 1 ;;
     esac
 
     # Prevent disabling the last active secret
@@ -2297,7 +2297,7 @@ secret_toggle() {
         if [ "$_en_count" -eq 0 ]; then
             # Revert — restore original state
             SECRETS_ENABLED[$idx]="true"
-            log_error "Cannot disable the last enabled secret — proxy needs at least one"
+            log_error "无法禁用最后一个已启用的密钥，代理至少需要一个可用密钥"
             return 1
         fi
     fi
@@ -2305,7 +2305,7 @@ secret_toggle() {
     save_secrets
     reload_proxy_config
 
-    log_success "密钥 '${label}' is now ${SECRETS_ENABLED[$idx]}"
+    log_success "密钥 '${label}' 当前状态为 ${SECRETS_ENABLED[$idx]}"
 }
 
 # Get proxy link for a specific secret
@@ -2325,7 +2325,7 @@ get_proxy_link() {
         done
     fi
 
-    [ -z "$label" ] && { log_error "No active secrets"; return 1; }
+    [ -z "$label" ] && { log_error "没有有效密钥"; return 1; }
 
     local idx=-1
     local i
@@ -2370,19 +2370,19 @@ secret_set_limits() {
 
     # Update only provided values (validate numeric)
     if [ -n "$max_conns" ]; then
-        [[ "$max_conns" =~ ^[0-9]+$ ]] || { log_error "Max connections must be a number"; return 1; }
-        [ "$max_conns" -gt 1000000 ] && { log_error "Max connections cannot exceed 1000000"; return 1; }
-        [ "$max_conns" -gt 0 ] && [ "$max_conns" -lt 5 ] && log_warn "Telegram uses ~3 connections per device; values below 5 may break connectivity"
+        [[ "$max_conns" =~ ^[0-9]+$ ]] || { log_error "最大连接数必须是数字"; return 1; }
+        [ "$max_conns" -gt 1000000 ] && { log_error "最大连接数不能超过 1000000"; return 1; }
+        [ "$max_conns" -gt 0 ] && [ "$max_conns" -lt 5 ] && log_warn "Telegram 每台设备约使用 3 个连接；设置低于 5 可能导致无法连接"
         SECRETS_MAX_CONNS[$idx]="$max_conns"
     fi
     if [ -n "$max_ips" ]; then
-        [[ "$max_ips" =~ ^[0-9]+$ ]] || { log_error "Max IPs must be a number"; return 1; }
-        [ "$max_ips" -gt 1000000 ] && { log_error "Max IPs cannot exceed 1000000"; return 1; }
+        [[ "$max_ips" =~ ^[0-9]+$ ]] || { log_error "最大 IP 数必须是数字"; return 1; }
+        [ "$max_ips" -gt 1000000 ] && { log_error "最大 IP 数不能超过 1000000"; return 1; }
         SECRETS_MAX_IPS[$idx]="$max_ips"
     fi
     if [ -n "$quota" ]; then
         local quota_bytes
-        quota_bytes=$(parse_human_bytes "$quota") || { log_error "Invalid quota format (e.g. 5G, 500M, 0)"; return 1; }
+        quota_bytes=$(parse_human_bytes "$quota") || { log_error "配额格式无效（例如 5G、500M、0）"; return 1; }
         SECRETS_QUOTA[$idx]="$quota_bytes"
     fi
     if [ -n "$expires" ]; then
@@ -2394,7 +2394,7 @@ secret_set_limits() {
         elif [[ "$expires" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T ]]; then
             SECRETS_EXPIRES[$idx]="$expires"
         else
-            log_error "Invalid expiry format (use YYYY-MM-DD or 0 for never)"
+            log_error "到期日期格式无效（使用 YYYY-MM-DD，永不过期则使用 0）"
             return 1
         fi
     fi
@@ -2421,23 +2421,23 @@ secret_edit_note() {
 
     # Interactive prompt if no note provided
     if [ -z "$note" ]; then
-        echo -e "  ${DIM}Current note: ${SECRETS_NOTES[$idx]:-${DIM}(none)${NC}}${NC}"
-        echo -en "  ${BOLD}New note (empty to clear):${NC} "
+        echo -e "  ${DIM}当前备注：${SECRETS_NOTES[$idx]:-${DIM}（无）${NC}}${NC}"
+        echo -en "  ${BOLD}新备注（留空以清除）：${NC} "
         read -r note
     fi
 
     # Validate: no pipe characters or newlines
     if [[ "$note" == *"|"* ]]; then
-        log_error "Notes cannot contain the pipe character (|)"
+        log_error "备注不能包含竖线字符（|）"
         return 1
     fi
 
     SECRETS_NOTES[$idx]="$note"
     save_secrets
     if [ -n "$note" ]; then
-        log_success "Note set for '${label}': ${note}"
+        log_success "已为 '${label}' 设置备注：${note}"
     else
-        log_success "Note cleared for '${label}'"
+        log_success "已清除 '${label}' 的备注"
     fi
 }
 
@@ -2470,7 +2470,7 @@ secret_set_adtag() {
     if [ "$no_restart" != "true" ]; then
         reload_proxy_config
     fi
-    log_success "Set per-secret ad-tag '${ad_tag}' for secret '${label}'"
+    log_success "已为密钥 '${label}' 设置专用广告标签 '${ad_tag}'"
     audit_log "secret adtag set ${label} ${ad_tag}"
 }
 
@@ -2489,7 +2489,7 @@ secret_clear_adtag() {
     if [ "$no_restart" != "true" ]; then
         reload_proxy_config
     fi
-    log_success "Cleared per-secret ad-tag for secret '${label}' (reverted to global default)"
+    log_success "已清除密钥 '${label}' 的专用广告标签（恢复使用全局默认值）"
     audit_log "secret adtag clear ${label}"
 }
 
@@ -2504,7 +2504,7 @@ secret_reenable() {
     [ "$idx" = "-1" ] && { log_error "密钥 '${label}' 未找到"; return 1; }
 
     if [ "${SECRETS_ENABLED[$idx]}" = "true" ]; then
-        log_info "密钥 '${label}' is already enabled"
+        log_info "密钥 '${label}' 已经启用"
         return 0
     fi
 
@@ -2515,11 +2515,11 @@ secret_reenable() {
     # Offer quota reset
     local _quota="${SECRETS_QUOTA[$idx]:-0}"
     if [ "$_quota" -gt 0 ] 2>/dev/null; then
-        echo -en "  ${BOLD}Reset traffic counter for quota? [y/N]:${NC} "
+        echo -en "  ${BOLD}是否重置配额流量计数器？[y/N]：${NC} "
         local _ans; read -r _ans
         if [[ "$_ans" =~ ^[yY] ]]; then
             secret_reset_traffic "$label" "no_reload" >/dev/null 2>&1 || true
-            log_success "Traffic counter reset for '${label}'"
+            log_success "已重置 '${label}' 的流量计数器"
         fi
     fi
 
@@ -2548,7 +2548,7 @@ secret_reset_traffic() {
     # Prometheus counters would appear as newly consumed traffic immediately.
     local _reset_metrics
     if ! _reset_metrics=$(_fetch_metrics 2>/dev/null) || [ -z "$_reset_metrics" ]; then
-        log_error "Cannot reset traffic: live metrics are unavailable."
+        log_error "无法重置流量：实时指标不可用。"
         return 1
     fi
 
@@ -2558,7 +2558,7 @@ secret_reset_traffic() {
     exec 9>"${STATS_DIR}/.traffic.lock"
     if command -v flock &>/dev/null; then
         flock -w 5 9 2>/dev/null || {
-            log_error "无法 acquire traffic lock. Telegram daemon may be busy."
+            log_error "无法获取流量锁，Telegram 守护进程可能正忙。"
             exec 9>&-
             return 1
         }
@@ -2591,7 +2591,7 @@ secret_reset_traffic() {
         fi
         printf 'users-all\n' >> "$_pending"
         chmod 600 "$_ut" "$_qa" "$_snap" "$_pending" 2>/dev/null || true
-        log_success "Traffic counters reset for all users"
+        log_success "已重置所有用户的流量计数器"
     else
         # Verify label exists
         local found=false i
@@ -2622,7 +2622,7 @@ secret_reset_traffic() {
         echo "${label}|${live_in}|${live_out}" >> "$_snap"
         printf 'user|%s|%s|%s\n' "$label" "$live_in" "$live_out" >> "$_pending"
         chmod 600 "$_ut" "$_qa" "$_snap" "$_pending" 2>/dev/null || true
-        log_success "Traffic counters reset for '${label}'"
+        log_success "已重置 '${label}' 的流量计数器"
     fi
 
     exec 9>&-
@@ -2647,7 +2647,7 @@ secret_show_limits() {
         echo ""
         draw_header "用户限制"
         echo ""
-        printf "  ${BOLD}%-4s %-16s %-10s %-8s %-12s %-14s${NC}\n" "#" "LABEL" "MAX CONN" "MAX IP" "QUOTA" "EXPIRES"
+        printf "  ${BOLD}%-4s %-16s %-10s %-8s %-12s %-14s${NC}\n" "#" "标签" "最大连接" "最大 IP" "配额" "到期时间"
         echo -e "  ${DIM}$(_repeat '─' 70)${NC}"
 
         local i
@@ -2686,11 +2686,11 @@ secret_show_limits() {
     local exp="${SECRETS_EXPIRES[$idx]:-0}"
 
     echo ""
-    echo -e "  ${BOLD}Limits for '${label}':${NC}"
-    echo -e "  Max TCP connections:  $([ "$conns" = "0" ] && echo "${DIM}unlimited${NC}" || echo "$conns")"
-    echo -e "  Max unique IP 数：       $([ "$ips" = "0" ] && echo "${DIM}unlimited${NC}" || echo "$ips")"
-    echo -e "  Data quota:           $([ "$quota" = "0" ] && echo "${DIM}unlimited${NC}" || echo "$(format_bytes "$quota")")"
-    echo -e "  Expires:              $([ "$exp" = "0" ] && echo "${DIM}never${NC}" || echo "$exp")"
+    echo -e "  ${BOLD}'${label}' 的限制：${NC}"
+    echo -e "  最大 TCP 连接数：$([ "$conns" = "0" ] && echo "${DIM}不限${NC}" || echo "$conns")"
+    echo -e "  最大唯一 IP 数： $([ "$ips" = "0" ] && echo "${DIM}不限${NC}" || echo "$ips")"
+    echo -e "  流量配额：       $([ "$quota" = "0" ] && echo "${DIM}不限${NC}" || echo "$(format_bytes "$quota")")"
+    echo -e "  到期时间：$([ "$exp" = "0" ] && echo "${DIM}永不过期${NC}" || echo "$exp")"
     echo ""
 }
 
@@ -2700,8 +2700,8 @@ secret_rename() {
     [ -z "$old_label" ] || [ -z "$new_label" ] && { log_error "用法： mtproxymax secret rename <old-label> <new-label>"; return 1; }
 
     # Validate new label
-    [[ "$new_label" =~ ^[a-zA-Z0-9_-]+$ ]] || { log_error "标签 must be alphanumeric (a-z, 0-9, _, -)"; return 1; }
-    [ ${#new_label} -gt 32 ] && { log_error "标签 must be 32 characters or less"; return 1; }
+    [[ "$new_label" =~ ^[a-zA-Z0-9_-]+$ ]] || { log_error "标签只能包含字母、数字、下划线和连字符"; return 1; }
+    [ ${#new_label} -gt 32 ] && { log_error "标签长度不得超过 32 个字符"; return 1; }
 
     # Find old label
     local idx=-1 i
@@ -2727,8 +2727,8 @@ secret_clone() {
     [ -z "$src_label" ] || [ -z "$new_label" ] && { log_error "用法： mtproxymax secret clone <source-label> <new-label>"; return 1; }
 
     # Validate new label
-    [[ "$new_label" =~ ^[a-zA-Z0-9_-]+$ ]] || { log_error "标签 must be alphanumeric (a-z, 0-9, _, -)"; return 1; }
-    [ ${#new_label} -gt 32 ] && { log_error "标签 must be 32 characters or less"; return 1; }
+    [[ "$new_label" =~ ^[a-zA-Z0-9_-]+$ ]] || { log_error "标签只能包含字母、数字、下划线和连字符"; return 1; }
+    [ ${#new_label} -gt 32 ] && { log_error "标签长度不得超过 32 个字符"; return 1; }
 
     # Find source
     local idx=-1 i
@@ -2759,7 +2759,7 @@ secret_clone() {
     local full_secret server_ip
     full_secret=$(build_faketls_secret "${SECRETS_KEYS[${#SECRETS_KEYS[@]}-1]}")
     server_ip=$(get_public_ip)
-    log_success "密钥 '${new_label}' cloned from '${src_label}'"
+    log_success "已从 '${src_label}' 克隆密钥 '${new_label}'"
     echo -e "  ${CYAN}tg://proxy?server=${server_ip}&port=${PROXY_PORT}&secret=${full_secret}${NC}"
     echo ""
 }
@@ -2768,7 +2768,7 @@ secret_clone() {
 secret_bulk_extend() {
     local days="$1"
     [ -z "$days" ] && { log_error "用法： mtproxymax secret bulk-extend <days>"; return 1; }
-    [[ "$days" =~ ^[0-9]+$ ]] && [ "$days" -gt 0 ] || { log_error "Days must be a positive number"; return 1; }
+    [[ "$days" =~ ^[0-9]+$ ]] && [ "$days" -gt 0 ] || { log_error "天数必须是正数"; return 1; }
 
     local now_epoch extended=0
     now_epoch=$(date +%s)
@@ -2800,7 +2800,7 @@ secret_bulk_extend() {
         reload_proxy_config
         log_success "Extended ${extended} secret(s) by ${days} days"
     else
-        log_info "No secrets with expiry dates to extend"
+        log_info "没有设置到期日期、可供延长的密钥"
     fi
 }
 
@@ -2832,8 +2832,8 @@ secret_import() {
             continue
         fi
         # Validate
-        [[ "$label" =~ ^[a-zA-Z0-9_-]+$ ]] || { log_warn "Skipping invalid label: ${label}"; continue; }
-        [[ "$key" =~ ^[a-fA-F0-9]{32}$ ]] || { log_warn "Skipping invalid key for ${label}"; continue; }
+        [[ "$label" =~ ^[a-zA-Z0-9_-]+$ ]] || { log_warn "跳过无效标签：${label}"; continue; }
+        [[ "$key" =~ ^[a-fA-F0-9]{32}$ ]] || { log_warn "跳过 ${label} 的无效密钥"; continue; }
 
         local created enabled max_conns max_ips quota expires notes ad_tag
         if [ "$col3" = "true" ] || [ "$col3" = "false" ]; then
@@ -2874,14 +2874,14 @@ secret_import() {
         save_secrets
         reload_proxy_config
     fi
-    log_success "Imported ${added} secrets (${skipped} skipped as duplicates)"
+    log_success "已导入 ${added} 个密钥（跳过 ${skipped} 个重复项）"
 }
 
 # Show live active connections per user
 show_connections() {
     local m
     if ! m=$(_fetch_metrics 2>/dev/null); then
-        log_error "Metrics endpoint unavailable — is the proxy running?"
+        log_error "指标端点不可用，请确认代理是否正在运行"
         return 1
     fi
 
@@ -2917,13 +2917,13 @@ show_connections() {
 
     draw_header "活跃连接"
     echo ""
-    echo -e "  ${BOLD}Total active:${NC} ${total:-0}"
+    echo -e "  ${BOLD}当前活跃总数：${NC}${total:-0}"
     echo ""
 
     local user_lines
     user_lines=$(echo "$parsed" | grep '^U|' | sort -t'|' -k3 -rn)
     if [ -n "$user_lines" ]; then
-        printf "  ${BOLD}%-16s %8s %8s %6s %12s %12s${NC}\n" "USER" "ACTIVE" "TOTAL" "IPs" "DOWN" "UP"
+        printf "  ${BOLD}%-16s %8s %8s %6s %12s %12s${NC}\n" "用户" "活动" "总计" "IP 数" "下载" "上传"
         echo -e "  ${DIM}$(_repeat '─' 68)${NC}"
         while IFS='|' read -r _ uname ucur utot uips urx utx; do
             [ -z "$uname" ] && continue
@@ -2932,7 +2932,7 @@ show_connections() {
             printf "  %-16s %8s %8s %6s %12s %12s\n" "$uname" "$ucur" "$utot" "$uips" "$(format_bytes "$down")" "$(format_bytes "$up")"
         done <<< "$user_lines"
     else
-        echo -e "  ${DIM}No users connected${NC}"
+        echo -e "  ${DIM}当前没有用户连接${NC}"
     fi
     echo ""
 }
@@ -2956,7 +2956,7 @@ secret_disable_expired() {
             SECRETS_ENABLED[$i]="false"
             disabled=$((disabled + 1))
             _disabled_list+="${_disabled_list:+\n}  • *$(_esc "${SECRETS_LABELS[$i]}")* (exp: ${exp%%T*})"
-            log_info "已禁用 expired secret: ${SECRETS_LABELS[$i]} (expired ${exp%%T*})"
+            log_info "已禁用过期密钥：${SECRETS_LABELS[$i]}（到期日 ${exp%%T*}）"
         fi
     done
 
@@ -2964,11 +2964,11 @@ secret_disable_expired() {
         save_secrets
         reload_proxy_config
         if [ "${TELEGRAM_ENABLED:-false}" = "true" ]; then
-            tg_send "⏳ *Expired 密钥 Deactivated*\n\nAutomatically disabled ${disabled} user secret(s) whose expiration date passed:\n${_disabled_list}"
+            tg_send "⏳ *已停用过期密钥*\n\n已自动禁用 ${disabled} 个超过到期日期的用户密钥：\n${_disabled_list}"
         fi
-        log_success "已禁用 ${disabled} expired secret(s)"
+        log_success "已禁用 ${disabled} 个过期密钥"
     else
-        log_info "No expired secrets found"
+        log_info "未发现过期密钥"
     fi
 }
 
@@ -2976,7 +2976,7 @@ secret_disable_expired() {
 secret_extend() {
     local label="$1" days="$2"
     [ -z "$label" ] || [ -z "$days" ] && { log_error "用法： mtproxymax secret extend <label> <days>"; return 1; }
-    [[ "$days" =~ ^[0-9]+$ ]] && [ "$days" -gt 0 ] || { log_error "Days must be a positive number"; return 1; }
+    [[ "$days" =~ ^[0-9]+$ ]] && [ "$days" -gt 0 ] || { log_error "天数必须是正数"; return 1; }
 
     local idx=-1 i
     for i in "${!SECRETS_LABELS[@]}"; do
@@ -3002,14 +3002,14 @@ secret_extend() {
     new_date=$(date -u -r "$new_epoch" '+%Y-%m-%dT23:59:59Z' 2>/dev/null) || \
     new_date=$(python3 -c "import datetime;print(datetime.datetime.utcfromtimestamp(${new_epoch}).strftime('%Y-%m-%dT23:59:59Z'))" 2>/dev/null)
 
-    [ -z "$new_date" ] && { log_error "无法 compute new expiry date"; return 1; }
+    [ -z "$new_date" ] && { log_error "无法计算新的到期日期"; return 1; }
 
     SECRETS_EXPIRES[$idx]="$new_date"
     # Re-enable if it was disabled due to expiry
     [ "${SECRETS_ENABLED[$idx]}" = "false" ] && SECRETS_ENABLED[$idx]="true"
     save_secrets
     reload_proxy_config
-    log_success "密钥 '${label}' expiry extended by ${days}d → ${new_date%%T*}"
+    log_success "密钥 '${label}' 已延长 ${days} 天 → ${new_date%%T*}"
 }
 
 # Compact per-user stats
@@ -3144,7 +3144,7 @@ secret_sort() {
     SECRETS_AD_TAGS=("${new_adtags[@]}")
 
     save_secrets
-    log_success "密钥 sorted by ${field}"
+    log_success "密钥已按 ${field} 排序"
 }
 
 # Doctor: comprehensive diagnostics
@@ -3156,46 +3156,46 @@ run_doctor() {
 
     # Docker
     if command -v docker &>/dev/null; then
-        echo -e "  ${GREEN}${SYM_CHECK}${NC} Docker installed"
+        echo -e "  ${GREEN}${SYM_CHECK}${NC} Docker 已安装"
     else
-        echo -e "  ${RED}${SYM_CROSS}${NC} Docker not installed"
+        echo -e "  ${RED}${SYM_CROSS}${NC} Docker 未安装"
         issues=$((issues + 1))
     fi
 
     # Container
     if is_proxy_running; then
-        echo -e "  ${GREEN}${SYM_CHECK}${NC} Engine running"
+        echo -e "  ${GREEN}${SYM_CHECK}${NC} 引擎正在运行"
     else
-        echo -e "  ${RED}${SYM_CROSS}${NC} Engine not running"
+        echo -e "  ${RED}${SYM_CROSS}${NC} 引擎未运行"
         issues=$((issues + 1))
     fi
 
     # Port listening
     if ! is_port_available "$PROXY_PORT" 2>/dev/null; then
-        echo -e "  ${GREEN}${SYM_CHECK}${NC} Port ${PROXY_PORT} listening"
+        echo -e "  ${GREEN}${SYM_CHECK}${NC} 端口 ${PROXY_PORT} 正在监听"
     elif is_proxy_running; then
-        echo -e "  ${RED}${SYM_CROSS}${NC} Port ${PROXY_PORT} not listening (engine running but port not bound)"
+        echo -e "  ${RED}${SYM_CROSS}${NC} 端口 ${PROXY_PORT} 未监听（引擎正在运行但未绑定端口）"
         issues=$((issues + 1))
     else
-        echo -e "  ${DIM}—${NC}  Port ${PROXY_PORT} (engine stopped)"
+        echo -e "  ${DIM}—${NC}  端口 ${PROXY_PORT}（引擎已停止）"
     fi
 
     # Metrics endpoint
     if curl -s --max-time 2 "http://127.0.0.1:${PROXY_METRICS_PORT:-9090}/metrics" &>/dev/null; then
-        echo -e "  ${GREEN}${SYM_CHECK}${NC} Metrics endpoint responding"
+        echo -e "  ${GREEN}${SYM_CHECK}${NC} 指标端点响应正常"
     elif is_proxy_running; then
-        echo -e "  ${RED}${SYM_CROSS}${NC} Metrics endpoint not responding"
+        echo -e "  ${RED}${SYM_CROSS}${NC} 指标端点无响应"
         issues=$((issues + 1))
     else
-        echo -e "  ${DIM}—${NC}  Metrics endpoint (engine stopped)"
+        echo -e "  ${DIM}—${NC}  指标端点（引擎已停止）"
     fi
 
     # Domain reachable
     local domain="${PROXY_DOMAIN:-cloudflare.com}"
     if curl -s --max-time 5 -o /dev/null "https://${domain}" 2>/dev/null; then
-        echo -e "  ${GREEN}${SYM_CHECK}${NC} Domain ${domain} reachable (TLS cert fetch will work)"
+        echo -e "  ${GREEN}${SYM_CHECK}${NC} 域名 ${domain} 可访问（可获取 TLS 证书）"
     else
-        echo -e "  ${YELLOW}!${NC}  Domain ${domain} unreachable (engine will use fallback cert)"
+        echo -e "  ${YELLOW}!${NC}  域名 ${domain} 无法访问（引擎将使用备用证书）"
         issues=$((issues + 1))
     fi
 
@@ -3220,32 +3220,32 @@ run_doctor() {
     done
 
     if [ "${active:-0}" -gt 0 ]; then
-        echo -e "  ${GREEN}${SYM_CHECK}${NC} ${active} active secret(s)"
+        echo -e "  ${GREEN}${SYM_CHECK}${NC} ${active} 个有效密钥"
     else
-        echo -e "  ${RED}${SYM_CROSS}${NC} No active secrets"
+        echo -e "  ${RED}${SYM_CROSS}${NC} 没有有效密钥"
         issues=$((issues + 1))
     fi
 
-    [ "${expired:-0}" -gt 0 ] && { echo -e "  ${YELLOW}!${NC}  ${expired} expired secret(s) — run: mtproxymax secret disable-expired"; issues=$((issues + 1)); }
-    [ "${near_expiry:-0}" -gt 0 ] && echo -e "  ${YELLOW}!${NC}  ${near_expiry} secret(s) expiring within 3 days"
+    [ "${expired:-0}" -gt 0 ] && { echo -e "  ${YELLOW}!${NC}  ${expired} 个过期密钥，请运行：mtproxymax secret disable-expired"; issues=$((issues + 1)); }
+    [ "${near_expiry:-0}" -gt 0 ] && echo -e "  ${YELLOW}!${NC}  ${near_expiry} 个密钥将在 3 天内到期"
 
     # Disk space
     local disk_pct
     disk_pct=$(df -h "${INSTALL_DIR:-/opt/mtproxymax}" 2>/dev/null | awk 'NR==2{gsub(/%/,"",$5); print $5}')
     if [ -n "$disk_pct" ] && [ "$disk_pct" -ge 90 ] 2>/dev/null; then
-        echo -e "  ${RED}${SYM_CROSS}${NC} Disk usage ${disk_pct}% — critically low"
+        echo -e "  ${RED}${SYM_CROSS}${NC} 磁盘使用率 ${disk_pct}%，剩余空间严重不足"
         issues=$((issues + 1))
     elif [ -n "$disk_pct" ] && [ "$disk_pct" -ge 80 ] 2>/dev/null; then
-        echo -e "  ${YELLOW}!${NC}  Disk usage ${disk_pct}%"
+        echo -e "  ${YELLOW}!${NC}  磁盘使用率 ${disk_pct}%"
     elif [ -n "$disk_pct" ]; then
-        echo -e "  ${GREEN}${SYM_CHECK}${NC} Disk usage ${disk_pct}%"
+        echo -e "  ${GREEN}${SYM_CHECK}${NC} 磁盘使用率 ${disk_pct}%"
     fi
 
     # Config file
     if [ -f "${CONFIG_DIR}/config.toml" ]; then
-        echo -e "  ${GREEN}${SYM_CHECK}${NC} Config file exists"
+        echo -e "  ${GREEN}${SYM_CHECK}${NC} 配置文件存在"
     else
-        echo -e "  ${RED}${SYM_CROSS}${NC} Config file missing — run: mtproxymax restart"
+        echo -e "  ${RED}${SYM_CROSS}${NC} 配置文件缺失，请运行：mtproxymax restart"
         issues=$((issues + 1))
     fi
 
@@ -3255,9 +3255,9 @@ run_doctor() {
         if [ -n "$_cfg" ]; then
             printf 'url = "https://api.telegram.org/bot%s/getMe"\n' "$TELEGRAM_BOT_TOKEN" > "$_cfg"
             if curl -s --max-time 5 -K "$_cfg" 2>/dev/null | grep -q '"ok":true'; then
-                echo -e "  ${GREEN}${SYM_CHECK}${NC} Telegram bot reachable"
+                echo -e "  ${GREEN}${SYM_CHECK}${NC} Telegram 机器人可访问"
             else
-                echo -e "  ${YELLOW}!${NC}  Telegram bot unreachable (can't reach api.telegram.org)"
+                echo -e "  ${YELLOW}!${NC}  Telegram 机器人不可访问（无法连接 api.telegram.org）"
                 issues=$((issues + 1))
             fi
             rm -f "$_cfg"
@@ -3268,29 +3268,29 @@ run_doctor() {
     load_ssl_config 2>/dev/null || true
     if [ "${SSL_ENABLED:-false}" = "true" ] && [ -n "${SSL_DOMAIN:-}" ]; then
         if [ -f "${SSL_DIR}/${SSL_DOMAIN}.crt" ]; then
-            echo -e "  ${GREEN}${SYM_CHECK}${NC} SSL 防护 active for ${SSL_DOMAIN}"
+            echo -e "  ${GREEN}${SYM_CHECK}${NC} ${SSL_DOMAIN} 的 SSL 防护已启用"
         else
-            echo -e "  ${RED}${SYM_CROSS}${NC} SSL 防护 enabled for ${SSL_DOMAIN} but cert file missing"
+            echo -e "  ${RED}${SYM_CROSS}${NC} ${SSL_DOMAIN} 的 SSL 防护已启用，但证书文件缺失"
             issues=$((issues + 1))
         fi
     fi
     load_speed_limits 2>/dev/null || true
     if [ "${#SPEED_LIMIT_TARGETS[@]}" -gt 0 ]; then
-        echo -e "  ${GREEN}${SYM_CHECK}${NC} QoS Bandwidth shaping active (${#SPEED_LIMIT_TARGETS[@]} target(s))"
+        echo -e "  ${GREEN}${SYM_CHECK}${NC} QoS 带宽整形已启用（${#SPEED_LIMIT_TARGETS[@]} 个目标）"
     fi
     load_cloud_backup_config 2>/dev/null || true
     if [ "${CLOUD_BACKUP_ENABLED:-false}" = "true" ]; then
-        echo -e "  ${GREEN}${SYM_CHECK}${NC} Cloud Backups enabled (${CLOUD_BACKUP_MODE:-telegram} -> ${CLOUD_BACKUP_TARGET:-admin})"
+        echo -e "  ${GREEN}${SYM_CHECK}${NC} 云备份已启用（${CLOUD_BACKUP_MODE:-telegram} → ${CLOUD_BACKUP_TARGET:-admin}）"
     fi
     if [ -n "${CLIENT_MSS:-}" ]; then
-        echo -e "  ${YELLOW}!${NC}  Telemt Client MSS active (${CLIENT_MSS}) — run 'mtproxymax upload-test' if upload stalls occur"
+        echo -e "  ${YELLOW}!${NC}  Telemt 客户端 MSS 已启用（${CLIENT_MSS}）；如上传停滞，请运行 'mtproxymax upload-test'"
     fi
 
     echo ""
     if [ "${issues:--1}" -eq 0 ]; then
-        echo -e "  ${BRIGHT_GREEN}All checks passed${NC}"
+        echo -e "  ${BRIGHT_GREEN}所有检查均已通过${NC}"
     else
-        echo -e "  ${YELLOW}${issues} issue(s) found${NC}"
+        echo -e "  ${YELLOW}发现 ${issues} 个问题${NC}"
     fi
     echo ""
 }
@@ -3308,12 +3308,12 @@ _startup_warnings() {
         local exp_epoch; exp_epoch=$(_iso_to_epoch "$exp")
         if [ "$exp_epoch" -le "$now_epoch" ]; then
             [ "${warnings:--1}" -eq 0 ] && echo ""
-            log_warn "密钥 '${SECRETS_LABELS[$i]}' is expired"
+            log_warn "密钥 '${SECRETS_LABELS[$i]}' 已过期"
             warnings=$((warnings + 1))
         elif [ $((exp_epoch - now_epoch)) -le 259200 ]; then
             local days_left=$(( (exp_epoch - now_epoch) / 86400 ))
             [ "${warnings:--1}" -eq 0 ] && echo ""
-            log_warn "密钥 '${SECRETS_LABELS[$i]}' expires in ${days_left}d"
+            log_warn "密钥 '${SECRETS_LABELS[$i]}' 将在 ${days_left} 天后到期"
             warnings=$((warnings + 1))
         fi
     done
@@ -3339,19 +3339,19 @@ secret_info() {
     local notes="${SECRETS_NOTES[$idx]:-}"
 
     echo ""
-    draw_header "SECRET: ${label}"
+    draw_header "密钥：${label}"
     echo ""
-    echo -e "  ${BOLD}状态:${NC}      $([ "$enabled" = "true" ] && echo "${GREEN}active${NC}" || echo "${RED}disabled${NC}")"
-    echo -e "  ${BOLD}Created:${NC}     $(date -d "@${created}" '+%Y-%m-%d %H:%M' 2>/dev/null || date -r "$created" '+%Y-%m-%d %H:%M' 2>/dev/null || echo "$created")"
-    [ -n "$notes" ] && echo -e "  ${BOLD}Notes:${NC}       ${notes}"
+    echo -e "  ${BOLD}状态：${NC}$([ "$enabled" = "true" ] && echo "${GREEN}已启用${NC}" || echo "${RED}已禁用${NC}")"
+    echo -e "  ${BOLD}创建时间：${NC}$(date -d "@${created}" '+%Y-%m-%d %H:%M' 2>/dev/null || date -r "$created" '+%Y-%m-%d %H:%M' 2>/dev/null || echo "$created")"
+    [ -n "$notes" ] && echo -e "  ${BOLD}备注：${NC}${notes}"
     local adtag="${SECRETS_AD_TAGS[$idx]:-}"
     if [ -n "$adtag" ]; then
-        echo -e "  ${BOLD}Ad-tag:${NC}      ${adtag}"
+        echo -e "  ${BOLD}广告标签：${NC}${adtag}"
     else
-        echo -e "  ${BOLD}Ad-tag:${NC}      ${DIM}global default (${AD_TAG:-not set})${NC}"
+        echo -e "  ${BOLD}广告标签：${NC}${DIM}全局默认值（${AD_TAG:-未设置}）${NC}"
     fi
     echo ""
-    echo -e "  ${BOLD}Limits:${NC}"
+    echo -e "  ${BOLD}限制：${NC}"
     echo -e "    连接数: $([ "$conns" = "0" ] && echo "unlimited" || echo "$conns")"
     echo -e "    IP 数：         $([ "$ips" = "0" ] && echo "unlimited" || echo "$ips")"
     echo -e "    配额：       $([ "$quota" = "0" ] && echo "unlimited" || echo "$(format_bytes "$quota")")"
@@ -3360,12 +3360,12 @@ secret_info() {
         local now_epoch; now_epoch=$(date +%s)
         local days_left=$(( (exp_epoch - now_epoch) / 86400 ))
         if [ "${days_left:-0}" -lt 0 ]; then
-            echo -e "    Expires:     ${RED}expired${NC} (${exp%%T*})"
+            echo -e "    到期时间：${RED}已过期${NC}（${exp%%T*}）"
         else
-            echo -e "    Expires:     ${exp%%T*} (${days_left}d left)"
+            echo -e "    到期时间：${exp%%T*}（剩余 ${days_left} 天）"
         fi
     else
-        echo -e "    Expires:     never"
+        echo -e "    到期时间：永不过期"
     fi
 
     # Live metrics
@@ -3382,8 +3382,8 @@ secret_info() {
         local lc lrx ltx lip
         IFS='|' read -r lc lrx ltx lip <<< "$live"
         echo ""
-        echo -e "  ${BOLD}Live:${NC}"
-        echo -e "    有效 conns: ${lc}   IP 数： ${lip}"
+        echo -e "  ${BOLD}实时数据：${NC}"
+        echo -e "    活动连接数：${lc}   IP 数：${lip}"
         echo -e "    流量：      ${SYM_DOWN} $(format_bytes "$lrx")  ${SYM_UP} $(format_bytes "$ltx")"
     fi
 
@@ -3392,7 +3392,7 @@ secret_info() {
     full_secret=$(build_faketls_secret "${SECRETS_KEYS[$idx]}")
     server_ip=$(get_public_ip)
     echo ""
-    echo -e "  ${BOLD}Link:${NC}"
+    echo -e "  ${BOLD}链接：${NC}"
     echo -e "  ${CYAN}tg://proxy?server=${server_ip}&port=${PROXY_PORT}&secret=${full_secret}${NC}"
     if command -v qrencode &>/dev/null; then
         echo ""
@@ -3420,7 +3420,7 @@ secret_generate_links() {
                 local fs; fs=$(build_faketls_secret "${SECRETS_KEYS[$i]}")
                 local link="https://t.me/proxy?server=${server_ip}&port=${PROXY_PORT}&secret=${fs}"
                 local qr_url="https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=$(printf '%s' "$link" | sed 's/:/%3A/g;s|/|%2F|g;s/?/%3F/g;s/=/%3D/g;s/&/%26/g')"
-                echo "<div class='user'><h2>${label}</h2><a href='${link}'>${link}</a><br><img src='${qr_url}' alt='QR'></div>"
+                echo "<div class='user'><h2>${label}</h2><a href='${link}'>${link}</a><br><img src='${qr_url}' alt='二维码'></div>"
             done
             echo "</body></html>"
         } > "$outfile"
@@ -3441,7 +3441,7 @@ secret_generate_links() {
         } > "$outfile"
     fi
     chmod 600 "$outfile" 2>/dev/null || true
-    log_success "Links exported to ${outfile}"
+    log_success "链接已导出到 ${outfile}"
 }
 
 # Search secrets by partial label or note content
@@ -3462,8 +3462,8 @@ secret_search() {
             found=$((found + 1))
         fi
     done
-    [ "${found:--1}" -eq 0 ] && log_info "No secrets matching '${query}'"
-    [ "${found:-0}" -gt 0 ] && echo -e "\n  ${DIM}${found} result(s)${NC}"
+    [ "${found:--1}" -eq 0 ] && log_info "没有与 '${query}' 匹配的密钥"
+    [ "${found:-0}" -gt 0 ] && echo -e "\n  ${DIM}共 ${found} 个结果${NC}"
 }
 
 # Archive a secret (soft-delete, restorable)
@@ -3478,7 +3478,7 @@ secret_archive() {
     [ "${idx:--1}" -eq -1 ] && { log_error "密钥 '${label}' 未找到"; return 1; }
 
     # Prevent archiving the last secret
-    [ ${#SECRETS_LABELS[@]} -le 1 ] && { log_error "Cannot archive the last secret"; return 1; }
+    [ ${#SECRETS_LABELS[@]} -le 1 ] && { log_error "无法归档最后一个密钥"; return 1; }
 
     local archive_file="${INSTALL_DIR}/secrets_archive.conf"
     echo "${SECRETS_LABELS[$idx]}|${SECRETS_KEYS[$idx]}|${SECRETS_CREATED[$idx]}|${SECRETS_ENABLED[$idx]}|${SECRETS_MAX_CONNS[$idx]:-0}|${SECRETS_MAX_IPS[$idx]:-0}|${SECRETS_QUOTA[$idx]:-0}|${SECRETS_EXPIRES[$idx]:-0}|${SECRETS_NOTES[$idx]:-}|${SECRETS_AD_TAGS[$idx]:-}" >> "$archive_file"
@@ -3500,7 +3500,7 @@ secret_archive() {
     SECRETS_AD_TAGS=("${_nat[@]}")
     save_secrets
     reload_proxy_config
-    log_success "密钥 '${label}' archived (restore with: mtproxymax secret unarchive ${label})"
+    log_success "密钥 '${label}' 已归档（恢复命令：mtproxymax secret unarchive ${label}）"
 }
 
 # Unarchive (restore) a secret
@@ -3509,10 +3509,10 @@ secret_unarchive() {
     [ -z "$label" ] && { log_error "用法： mtproxymax secret unarchive <label>"; return 1; }
 
     local archive_file="${INSTALL_DIR}/secrets_archive.conf"
-    [ -f "$archive_file" ] || { log_error "No archived secrets"; return 1; }
+    [ -f "$archive_file" ] || { log_error "没有已归档的密钥"; return 1; }
 
     local line; line=$(grep "^${label}|" "$archive_file" | head -1)
-    [ -z "$line" ] && { log_error "密钥 '${label}' 未找到 in archive"; return 1; }
+    [ -z "$line" ] && { log_error "归档中未找到密钥 '${label}'"; return 1; }
 
     # Check not already active
     local i
@@ -3541,14 +3541,14 @@ secret_unarchive() {
 
     save_secrets
     reload_proxy_config
-    log_success "密钥 '${label}' restored from archive"
+    log_success "密钥 '${label}' 已从归档恢复"
 }
 
 # List archived secrets
 secret_archive_list() {
     local archive_file="${INSTALL_DIR}/secrets_archive.conf"
     if [ ! -f "$archive_file" ] || [ ! -s "$archive_file" ]; then
-        log_info "No archived secrets"
+        log_info "没有已归档的密钥"
         return
     fi
     echo ""
@@ -3557,7 +3557,7 @@ secret_archive_list() {
     while IFS='|' read -r label key created enabled _mc _mi _q _ex notes; do
         [ -z "$label" ] && continue
         local date_str; date_str=$(date -d "@${created}" '+%Y-%m-%d' 2>/dev/null || echo "$created")
-        echo -e "  ${DIM}${SYM_OK}${NC} ${BOLD}${label}${NC}  created: ${date_str}$([ -n "$notes" ] && echo "  ${DIM}— ${notes}${NC}")"
+        echo -e "  ${DIM}${SYM_OK}${NC} ${BOLD}${label}${NC}  创建时间：${date_str}$([ -n "$notes" ] && echo "  ${DIM}— ${notes}${NC}")"
     done < "$archive_file"
     echo ""
 }
@@ -3565,7 +3565,7 @@ secret_archive_list() {
 # Top N users by traffic or connections
 secret_top() {
     local field="${1:-traffic}" count="${2:-5}"
-    local m; m=$(_fetch_metrics 2>/dev/null) || { log_error "Metrics unavailable"; return 1; }
+    local m; m=$(_fetch_metrics 2>/dev/null) || { log_error "指标不可用"; return 1; }
 
     local parsed
     parsed=$(echo "$m" | awk '
@@ -3579,7 +3579,7 @@ secret_top() {
     echo ""
     case "$field" in
         traffic|t)
-            draw_header "TOP ${count} BY TRAFFIC"
+            draw_header "流量排名前 ${count}"
             echo ""
             echo "$parsed" | awk -F'|' '{printf "%s|%.0f\n", $0, $3+$4}' | sort -t'|' -k5 -rn | head -n "$count" | \
             while IFS='|' read -r uname conns rx tx total; do
@@ -3587,11 +3587,11 @@ secret_top() {
             done
             ;;
         conns|c)
-            draw_header "TOP ${count} BY CONNECTIONS"
+            draw_header "连接数排名前 ${count}"
             echo ""
             echo "$parsed" | sort -t'|' -k2 -rn | head -n "$count" | \
             while IFS='|' read -r uname conns rx tx; do
-                printf "  %-16s  %s active connections\n" "$uname" "$conns"
+                printf "  %-16s  %s 个活跃连接\n" "$uname" "$conns"
             done
             ;;
     esac
@@ -3617,19 +3617,19 @@ secret_purge_disabled() {
 
     if [ ${#to_purge[@]} -gt 0 ]; then
         if [ ${#to_purge[@]} -ge ${#SECRETS_LABELS[@]} ]; then
-            log_error "Cannot purge all secrets — proxy needs at least one active secret"
+            log_error "无法清除所有密钥，代理至少需要一个有效密钥"
             return 1
         fi
         local l count=0
         for l in "${to_purge[@]}"; do
-            log_info "Purging secret: '${l}'"
+            log_info "正在清除密钥：'${l}'"
             secret_remove "$l" "true" "true"
             count=$((count + 1))
         done
         if is_proxy_running; then restart_proxy_container; fi
-        log_success "Purged ${count} disabled/expired secret(s)"
+        log_success "已清除 ${count} 个已禁用或过期的密钥"
     else
-        log_info "No disabled or expired secrets found to purge"
+        log_info "没有可清除的已禁用或过期密钥"
     fi
 }
 
@@ -3648,7 +3648,7 @@ secret_sub() {
         sub_feed="${sub_feed}${tg_link}\n"
     done
     if [ -z "$sub_feed" ]; then
-        log_info "No enabled secrets found for subscription"
+        log_info "没有可用于订阅的已启用密钥"
         return 0
     fi
     printf "%b" "$sub_feed" | base64 | tr -d '\n'
@@ -3688,16 +3688,16 @@ secret_rename_prefix() {
                 SECRETS_LABELS[$i]="$new_label"
                 count=$((count + 1))
             else
-                log_error "Skipping '${label}' -> '${new_label}' (invalid label format)"
+                log_error "跳过 '${label}' → '${new_label}'（标签格式无效）"
             fi
         fi
     done
     if [ "$count" -gt 0 ]; then
         save_secrets
         reload_proxy_config
-        log_success "Renamed ${count} secret(s) with prefix '${old_p}'"
+        log_success "已重命名 ${count} 个前缀为 '${old_p}' 的密钥"
     else
-        log_info "No secrets found matching prefix '${old_p}'"
+        log_info "未找到前缀为 '${old_p}' 的密钥"
     fi
 }
 
@@ -3711,7 +3711,7 @@ show_config() {
         sed 's/^/  /' "$config"
         echo ""
     else
-        log_error "Config file 未找到 — is the proxy installed?"
+        log_error "未找到配置文件，请确认代理是否已安装"
     fi
 }
 
@@ -3731,28 +3731,28 @@ show_uptime_oneliner() {
 send_notify() {
     local msg="$1"
     [ -z "$msg" ] && { log_error "用法： mtproxymax notify <message>"; return 1; }
-    [ "$TELEGRAM_ENABLED" != "true" ] && { log_error "Telegram bot is not configured"; return 1; }
-    [ -z "$TELEGRAM_BOT_TOKEN" ] || [ -z "$TELEGRAM_CHAT_ID" ] && { log_error "Telegram bot token or chat ID not set"; return 1; }
+    [ "$TELEGRAM_ENABLED" != "true" ] && { log_error "Telegram 机器人尚未配置"; return 1; }
+    [ -z "$TELEGRAM_BOT_TOKEN" ] || [ -z "$TELEGRAM_CHAT_ID" ] && { log_error "尚未设置 Telegram 机器人令牌或会话 ID"; return 1; }
     if telegram_send_message "📢 ${msg}"; then
-        log_success "Notification sent"
+        log_success "通知已发送"
     else
-        log_error "无法 send notification"
+        log_error "无法发送通知"
     fi
 }
 
 # Check if proxy port is reachable from outside
 port_check() {
     local ip; ip=$(get_public_ip)
-    [ -z "$ip" ] && { log_error "Cannot detect public IP"; return 1; }
+    [ -z "$ip" ] && { log_error "无法检测公网 IP"; return 1; }
 
     echo ""
-    echo -e "  ${BOLD}Testing port ${PROXY_PORT} on ${ip}...${NC}"
+    echo -e "  ${BOLD}正在测试 ${ip} 上的端口 ${PROXY_PORT}...${NC}"
 
     # Test 1: local socket check
     if ! is_port_available "$PROXY_PORT" 2>/dev/null; then
-        echo -e "  ${GREEN}${SYM_CHECK}${NC} Port ${PROXY_PORT} is listening locally"
+        echo -e "  ${GREEN}${SYM_CHECK}${NC} 端口 ${PROXY_PORT} 正在本地监听"
     else
-        echo -e "  ${RED}${SYM_CROSS}${NC} Port ${PROXY_PORT} is NOT listening"
+        echo -e "  ${RED}${SYM_CROSS}${NC} 端口 ${PROXY_PORT} 未监听"
         return 1
     fi
 
@@ -3760,10 +3760,10 @@ port_check() {
     local result
     result=$(curl -sv --connect-timeout 5 --max-time 10 "https://${ip}:${PROXY_PORT}" 2>&1) || true
     if echo "$result" | grep -q "Connected to.*${PROXY_PORT}"; then
-        echo -e "  ${GREEN}${SYM_CHECK}${NC} Port ${PROXY_PORT} is reachable from outside"
+        echo -e "  ${GREEN}${SYM_CHECK}${NC} 可从外部访问端口 ${PROXY_PORT}"
     else
-        echo -e "  ${RED}${SYM_CROSS}${NC} Port ${PROXY_PORT} is NOT reachable from outside"
-        echo -e "  ${DIM}Check: firewall rules, cloud security groups, ISP blocking${NC}"
+        echo -e "  ${RED}${SYM_CROSS}${NC} 无法从外部访问端口 ${PROXY_PORT}"
+        echo -e "  ${DIM}请检查防火墙规则、云安全组和运营商屏蔽情况${NC}"
     fi
     echo ""
 }
@@ -3774,7 +3774,7 @@ PROFILES_DIR="${INSTALL_DIR}/profiles"
 profile_save() {
     local name="$1"
     [ -z "$name" ] && { log_error "用法： mtproxymax profile save <name>"; return 1; }
-    [[ "$name" =~ ^[a-zA-Z0-9_-]+$ ]] || { log_error "Profile name must be alphanumeric"; return 1; }
+    [[ "$name" =~ ^[a-zA-Z0-9_-]+$ ]] || { log_error "配置方案名称只能包含字母、数字、下划线和连字符"; return 1; }
 
     local dir="${PROFILES_DIR}/${name}"
     mkdir -p "$dir"
@@ -3807,13 +3807,13 @@ profile_load() {
         reload_proxy_config
     fi
 
-    log_success "Profile '${name}' loaded and applied"
+    log_success "配置方案 '${name}' 已加载并应用"
 }
 
 profile_list() {
-    [ ! -d "$PROFILES_DIR" ] && { log_info "No saved profiles"; return; }
+    [ ! -d "$PROFILES_DIR" ] && { log_info "没有已保存的配置方案"; return; }
     local dirs; dirs=$(ls -1 "$PROFILES_DIR" 2>/dev/null)
-    [ -z "$dirs" ] && { log_info "No saved profiles"; return; }
+    [ -z "$dirs" ] && { log_info "没有已保存的配置方案"; return; }
 
     echo ""
     draw_header "配置方案"
@@ -3823,7 +3823,7 @@ profile_list() {
         local ts="" date_str="unknown"
         [ -f "${PROFILES_DIR}/${name}/.timestamp" ] && ts=$(<"${PROFILES_DIR}/${name}/.timestamp")
         [ -n "$ts" ] && date_str=$(date -d "@${ts}" '+%Y-%m-%d %H:%M' 2>/dev/null || date -r "$ts" '+%Y-%m-%d %H:%M' 2>/dev/null || echo "$ts")
-        echo -e "  ${BOLD}${name}${NC}  ${DIM}saved: ${date_str}${NC}"
+        echo -e "  ${BOLD}${name}${NC}  ${DIM}保存时间：${date_str}${NC}"
     done <<< "$dirs"
     echo ""
 }
@@ -3874,28 +3874,28 @@ secret_tag() {
 
     # Sanitize tags: strip spaces, allow a-z0-9_-
     local _clean; _clean=$(echo "$new_tags" | tr '[:upper:]' '[:lower:]' | tr -s ' ' ',' | sed 's/[^a-z0-9_,-]//g;s/,,*/,/g;s/^,//;s/,$//')
-    [ -z "$_clean" ] && { log_error "No valid tags after sanitization"; return 1; }
+    [ -z "$_clean" ] && { log_error "清理后没有有效标签"; return 1; }
 
     secret_set_tags "$label" "$_clean"
-    log_success "Tags for '${label}': ${_clean}"
+    log_success "'${label}' 的标签：${_clean}"
 }
 
 secret_untag() {
     local label="$1"
     [ -z "$label" ] && { log_error "用法： mtproxymax secret untag <label>"; return 1; }
     secret_set_tags "$label" ""
-    log_success "Tags cleared for '${label}'"
+    log_success "已清除 '${label}' 的标签"
 }
 
 secret_list_by_tag() {
     local tag="$1"
     [ -z "$tag" ] && { log_error "用法： mtproxymax secret list --tag <tag>"; return 1; }
-    [ -f "$_TAGS_FILE" ] || { log_info "No tagged secrets"; return 0; }
+    [ -f "$_TAGS_FILE" ] || { log_info "没有带标签的密钥"; return 0; }
 
     local tag_lower; tag_lower=$(echo "$tag" | tr '[:upper:]' '[:lower:]')
     local found=0
     echo ""
-    draw_header "SECRETS WITH TAG: ${tag_lower}"
+    draw_header "带有标签 ${tag_lower} 的密钥"
     echo ""
     while IFS='|' read -r label tags; do
         [ -z "$label" ] && continue
@@ -3912,7 +3912,7 @@ secret_list_by_tag() {
         echo -e "  ${icon} ${BOLD}${label}${NC}  ${DIM}[${tags}]${NC}"
         found=$((found + 1))
     done < "$_TAGS_FILE"
-    [ "${found:--1}" -eq 0 ] && echo -e "  ${DIM}No secrets with tag '${tag_lower}'${NC}"
+    [ "${found:--1}" -eq 0 ] && echo -e "  ${DIM}没有带标签 '${tag_lower}' 的密钥${NC}"
     echo ""
 }
 
@@ -3929,8 +3929,8 @@ maintenance_on() {
         iptables -I INPUT -p tcp --dport "$port" --syn -j REJECT --reject-with tcp-reset -m comment --comment "mtproxymax-maintenance" 2>/dev/null
     fi
     touch "$MAINTENANCE_FILE"
-    log_success "Maintenance mode ON — new connections rejected on port ${port}"
-    log_info "Existing connections remain active. Use 'mtproxymax maintenance off' to restore."
+    log_success "维护模式已开启，端口 ${port} 将拒绝新连接"
+    log_info "现有连接不受影响。使用 'mtproxymax maintenance off' 恢复服务。"
 }
 
 # Reapply maintenance rule if the marker file exists (called on startup)
@@ -3948,14 +3948,14 @@ maintenance_off() {
         iptables -D INPUT -p tcp --dport "${PROXY_PORT:-443}" --syn -j REJECT --reject-with tcp-reset -m comment --comment "mtproxymax-maintenance" 2>/dev/null
     done
     rm -f "$MAINTENANCE_FILE"
-    log_success "Maintenance mode OFF — accepting new connections"
+    log_success "维护模式已关闭，开始接受新连接"
 }
 
 maintenance_status() {
     if [ -f "$MAINTENANCE_FILE" ]; then
-        echo -e "  Maintenance: ${YELLOW}ON${NC}"
+        echo -e "  维护模式：${YELLOW}开启${NC}"
     else
-        echo -e "  Maintenance: ${GREEN}OFF${NC}"
+        echo -e "  维护模式：${GREEN}关闭${NC}"
     fi
 }
 
@@ -3972,17 +3972,17 @@ ban_ip() {
     check_root
     local ip="$1"
     [ -z "$ip" ] && { log_error "用法： mtproxymax ban <ip|cidr>"; return 1; }
-    _valid_ip_or_cidr "$ip" || { log_error "Invalid IP or CIDR"; return 1; }
+    _valid_ip_or_cidr "$ip" || { log_error "IP 或 CIDR 无效"; return 1; }
 
     # Idempotent: skip if already banned
     if [ -f "$BANLIST_FILE" ] && grep -qFx "$ip" "$BANLIST_FILE" 2>/dev/null; then
-        log_warn "'${ip}' is already banned"
+        log_warn "'${ip}' 已被封禁"
         return 0
     fi
 
     local cmd=iptables
     [[ "$ip" =~ : ]] && cmd=ip6tables
-    $cmd -I INPUT -s "$ip" -j DROP -m comment --comment "mtproxymax-ban" 2>/dev/null || { log_error "无法 add iptables rule"; return 1; }
+    $cmd -I INPUT -s "$ip" -j DROP -m comment --comment "mtproxymax-ban" 2>/dev/null || { log_error "无法添加 iptables 规则"; return 1; }
 
     echo "$ip" >> "$BANLIST_FILE"
     chmod 600 "$BANLIST_FILE"
@@ -4010,7 +4010,7 @@ unban_ip() {
 
 bans_list() {
     echo ""
-    draw_header "BANNED IPs"
+    draw_header "已封禁的 IP"
     echo ""
     if [ -f "$BANLIST_FILE" ] && [ -s "$BANLIST_FILE" ]; then
         local count=0
@@ -4020,9 +4020,9 @@ bans_list() {
             count=$((count + 1))
         done < "$BANLIST_FILE"
         echo ""
-        echo -e "  ${DIM}${count} banned${NC}"
+        echo -e "  ${DIM}已封禁 ${count} 个${NC}"
     else
-        echo -e "  ${DIM}No IPs banned${NC}"
+        echo -e "  ${DIM}没有已封禁的 IP${NC}"
     fi
     echo ""
 }
@@ -4047,16 +4047,16 @@ secret_logs() {
     [[ "$lines" =~ ^[0-9]+$ ]] || lines=50
 
     if [ ! -f "$CONNECTION_LOG" ] || [ ! -s "$CONNECTION_LOG" ]; then
-        log_info "Connection log is empty"
+        log_info "连接日志为空"
         return
     fi
 
     echo ""
-    draw_header "ACTIVITY: ${label}"
+    draw_header "活动记录：${label}"
     echo ""
     local matches; matches=$(grep -F " ${label}: " "$CONNECTION_LOG" | tail -n "$lines")
     if [ -z "$matches" ]; then
-        echo -e "  ${DIM}No activity logged for '${label}'${NC}"
+        echo -e "  ${DIM}没有记录 '${label}' 的活动${NC}"
     else
         echo "$matches" | sed 's/^/  /'
     fi
@@ -4068,7 +4068,7 @@ MIGRATION_FILES=("$SETTINGS_FILE" "$SECRETS_FILE" "$UPSTREAMS_FILE" "$INSTANCES_
 
 migrate_export() {
     local out="${1:-$(get_export_dir)/mtproxymax-migrate-$(date +%Y%m%d-%H%M%S).tar.gz}"
-    local tmp; tmp=$(mktemp -d) || { log_error "Cannot create temp dir"; return 1; }
+    local tmp; tmp=$(mktemp -d) || { log_error "无法创建临时目录"; return 1; }
     _TEMP_FILES+=("$tmp")
     local count=0
     for f in "${MIGRATION_FILES[@]}"; do
@@ -4081,7 +4081,7 @@ migrate_export() {
     [ -d "$STATS_DIR" ] && cp -r "$STATS_DIR" "$tmp/" 2>/dev/null
     [ -f "${INSTALL_DIR}/connection.log" ] && cp "${INSTALL_DIR}/connection.log" "$tmp/" 2>/dev/null
     echo "v${VERSION}" > "$tmp/MIGRATE_VERSION"
-    tar -czf "$out" -C "$tmp" . 2>/dev/null && log_success "Exported ${count} file(s) to ${out}" || { log_error "Export failed"; rm -rf "$tmp"; return 1; }
+    tar -czf "$out" -C "$tmp" . 2>/dev/null && log_success "已将 ${count} 个文件导出到 ${out}" || { log_error "导出失败"; rm -rf "$tmp"; return 1; }
     rm -rf "$tmp"
     chmod 600 "$out"
 }
@@ -4096,11 +4096,11 @@ migrate_import() {
     local backup_before="${BACKUP_DIR}/pre-migrate-$(date +%s).tar.gz"
     mkdir -p "$BACKUP_DIR"
     migrate_export "$backup_before" 2>/dev/null
-    log_info "Current state backed up to: ${backup_before}"
+    log_info "当前状态已备份到：${backup_before}"
 
-    local tmp; tmp=$(mktemp -d) || { log_error "Cannot create temp dir"; return 1; }
+    local tmp; tmp=$(mktemp -d) || { log_error "无法创建临时目录"; return 1; }
     _TEMP_FILES+=("$tmp")
-    tar -xzf "$file" -C "$tmp" 2>/dev/null || { log_error "Invalid tarball"; rm -rf "$tmp"; return 1; }
+    tar -xzf "$file" -C "$tmp" 2>/dev/null || { log_error "归档文件无效"; rm -rf "$tmp"; return 1; }
 
     # Copy each file back (but not replication.conf to preserve role)
     local restored=0 f base
@@ -4129,28 +4129,28 @@ migrate_import() {
 # ── Encrypted backups (openssl AES-256) ──
 backup_create_encrypted() {
     check_root
-    command -v openssl &>/dev/null || { log_error "openssl is required for encrypted backups"; return 1; }
+    command -v openssl &>/dev/null || { log_error "加密备份需要 openssl"; return 1; }
 
     mkdir -p "$BACKUP_DIR"
     local ts; ts=$(date +%Y%m%d-%H%M%S)
     local plain="${BACKUP_DIR}/mtproxymax-${ts}.tar.gz"
     local enc="${plain}.enc"
 
-    migrate_export "$plain" >/dev/null || { log_error "Backup export failed"; return 1; }
+    migrate_export "$plain" >/dev/null || { log_error "备份导出失败"; return 1; }
 
     local pw1 pw2
-    echo -en "  ${BOLD}Encryption password:${NC} "
+    echo -en "  ${BOLD}加密密码：${NC} "
     read -rs pw1; echo ""
-    echo -en "  ${BOLD}Confirm password:${NC} "
+    echo -en "  ${BOLD}确认密码：${NC} "
     read -rs pw2; echo ""
     if [ "$pw1" != "$pw2" ]; then
-        log_error "Passwords don't match"
+        log_error "两次输入的密码不一致"
         rm -f "$plain"
         unset pw1 pw2
         return 1
     fi
     if [ ${#pw1} -lt 8 ]; then
-        log_error "Password must be at least 8 characters"
+        log_error "密码至少需要 8 个字符"
         rm -f "$plain"
         unset pw1 pw2
         return 1
@@ -4163,11 +4163,11 @@ backup_create_encrypted() {
     if [ "$_rc" -eq 0 ]; then
         chmod 600 "$enc"
         rm -f "$plain"
-        log_success "Encrypted backup saved: ${enc}"
+        log_success "加密备份已保存：${enc}"
         backup_cloud_push "$enc" 2>/dev/null || true
-        log_info "Keep your password safe — backup cannot be decrypted without it."
+        log_info "请妥善保管密码；没有密码将无法解密备份。"
     else
-        log_error "Encryption failed"
+        log_error "加密失败"
         rm -f "$plain" "$enc"
         return 1
     fi
@@ -4178,10 +4178,10 @@ backup_restore_encrypted() {
     local file="$1"
     [ -z "$file" ] && { log_error "用法： mtproxymax backup restore-encrypted <file.tar.gz.enc>"; return 1; }
     [ -f "$file" ] || { log_error "File 未找到: ${file}"; return 1; }
-    command -v openssl &>/dev/null || { log_error "openssl is required"; return 1; }
+    command -v openssl &>/dev/null || { log_error "需要安装 openssl"; return 1; }
 
     local pw
-    echo -en "  ${BOLD}Decryption password:${NC} "
+    echo -en "  ${BOLD}解密密码：${NC} "
     read -rs pw; echo ""
     mkdir -p "$BACKUP_DIR"
     local plain; plain=$(_mktemp "${BACKUP_DIR}") || return 1
@@ -4192,7 +4192,7 @@ backup_restore_encrypted() {
         migrate_import "$plain"
         rm -f "$plain"
     else
-        log_error "Decryption failed (wrong password?)"
+        log_error "解密失败（密码是否正确？）"
         rm -f "$plain"
         return 1
     fi
@@ -4210,30 +4210,30 @@ show_server_info() {
     kernel=$(uname -r 2>/dev/null || echo "unknown")
     arch=$(uname -m 2>/dev/null || echo "unknown")
 
-    echo -e "  ${BOLD}System${NC}"
+    echo -e "  ${BOLD}系统${NC}"
     echo -e "    OS:           ${os_name}"
-    echo -e "    Kernel:       ${kernel}"
-    echo -e "    Architecture: ${arch}"
-    echo -e "    Hostname:     $(hostname 2>/dev/null || echo '—')"
+    echo -e "    内核：${kernel}"
+    echo -e "    架构：${arch}"
+    echo -e "    主机名：$(hostname 2>/dev/null || echo '—')"
     echo ""
 
     # Network
     local ip4 ip6
     ip4=$(get_public_ip)
     ip6=$(curl -s --max-time 3 -6 https://api6.ipify.org 2>/dev/null || echo "")
-    echo -e "  ${BOLD}Network${NC}"
-    echo -e "    Public IPv4:  ${ip4:-—}"
-    echo -e "    Public IPv6:  ${ip6:-—}"
+    echo -e "  ${BOLD}网络${NC}"
+    echo -e "    公网 IPv4：${ip4:-—}"
+    echo -e "    公网 IPv6：${ip6:-—}"
     echo -e "    代理端口：    ${PROXY_PORT:-443}"
     echo ""
 
     # Proxy config
-    echo -e "  ${BOLD}Proxy Configuration${NC}"
-    echo -e "    Script ver:   v${VERSION}"
-    echo -e "    Engine ver:   telemt v$(get_telemt_version 2>/dev/null || echo '?')"
+    echo -e "  ${BOLD}代理配置${NC}"
+    echo -e "    脚本版本：v${VERSION}"
+    echo -e "    引擎版本：telemt v$(get_telemt_version 2>/dev/null || echo '?')"
     echo -e "    域名：       ${PROXY_DOMAIN:-cloudflare.com}"
-    echo -e "    Masking:      ${MASKING_ENABLED:-true}"
-    echo -e "    Ad-tag:       ${AD_TAG:-${DIM}not set${NC}}"
+    echo -e "    流量伪装：$([ "${MASKING_ENABLED:-true}" = "true" ] && echo "已启用" || echo "已禁用")"
+    echo -e "    广告标签：${AD_TAG:-${DIM}未设置${NC}}"
     echo ""
 
     # Users
@@ -4244,42 +4244,45 @@ show_server_info() {
     local archived=0
     [ -f "${INSTALL_DIR}/secrets_archive.conf" ] && archived=$(awk 'NF>0 && !/^[[:space:]]*#/{c++} END{print c+0}' "${INSTALL_DIR}/secrets_archive.conf" 2>/dev/null || echo 0)
 
-    echo -e "  ${BOLD}Users${NC}"
-    echo -e "    Total:        ${total}"
-    echo -e "    有效:       ${active}"
-    echo -e "    已禁用:     ${disabled}"
-    echo -e "    Archived:     ${archived}"
+    echo -e "  ${BOLD}用户${NC}"
+    echo -e "    总数：      ${total}"
+    echo -e "    有效：      ${active}"
+    echo -e "    已禁用：    ${disabled}"
+    echo -e "    已归档：    ${archived}"
     echo ""
 
     # Services
-    local proxy_status="stopped"
-    is_proxy_running && proxy_status="running"
-    local bot_status="disabled"
-    [ "${TELEGRAM_ENABLED:-false}" = "true" ] && bot_status="enabled"
-    local repl_role="${REPLICATION_ROLE:-standalone}"
-    local ssl_st="disabled"
+    local proxy_status="已停止"
+    is_proxy_running && proxy_status="运行中"
+    local bot_status="已禁用"
+    [ "${TELEGRAM_ENABLED:-false}" = "true" ] && bot_status="已启用"
+    local repl_role="${REPLICATION_ROLE:-独立}"
+    [ "$repl_role" = "standalone" ] && repl_role="独立"
+    [ "$repl_role" = "master" ] && repl_role="主节点"
+    [ "$repl_role" = "slave" ] && repl_role="从节点"
+    local ssl_st="已禁用"
     load_ssl_config 2>/dev/null || true
-    [ "${SSL_ENABLED:-false}" = "true" ] && ssl_st="active (${SSL_DOMAIN})"
-    local qos_st="disabled"
+    [ "${SSL_ENABLED:-false}" = "true" ] && ssl_st="已启用 (${SSL_DOMAIN})"
+    local qos_st="已禁用"
     load_speed_limits 2>/dev/null || true
-    [ "${#SPEED_LIMIT_TARGETS[@]}" -gt 0 ] && qos_st="active (${#SPEED_LIMIT_TARGETS[@]} 条规则)"
-    local cb_st="disabled"
+    [ "${#SPEED_LIMIT_TARGETS[@]}" -gt 0 ] && qos_st="已启用 (${#SPEED_LIMIT_TARGETS[@]} 条规则)"
+    local cb_st="已禁用"
     load_cloud_backup_config 2>/dev/null || true
-    [ "${CLOUD_BACKUP_ENABLED:-false}" = "true" ] && cb_st="active (${CLOUD_BACKUP_MODE:-telegram})"
+    [ "${CLOUD_BACKUP_ENABLED:-false}" = "true" ] && cb_st="已启用 (${CLOUD_BACKUP_MODE:-telegram})"
 
     echo -e "  ${BOLD}服务${NC}"
     echo -e "    代理：          ${proxy_status}"
     echo -e "    Telegram 机器人：${bot_status}"
     echo -e "    复制：          ${repl_role}"
-    echo -e "    SSL 防护:   ${ssl_st}"
-    echo -e "    QoS shaping:  ${qos_st}"
-    echo -e "    Cloud Backup: ${cb_st}"
+    echo -e "    SSL 防护：    ${ssl_st}"
+    echo -e "    QoS 流量整形：${qos_st}"
+    echo -e "    云端备份：    ${cb_st}"
     if [ -f "$MAINTENANCE_FILE" ]; then
-        echo -e "    Maintenance:  ${YELLOW}ON${NC}"
+        echo -e "    维护模式：    ${YELLOW}已启用${NC}"
     fi
     local ban_count=0
     [ -f "$BANLIST_FILE" ] && ban_count=$(wc -l < "$BANLIST_FILE" 2>/dev/null | tr -d ' ')
-    [ "$ban_count" -gt 0 ] 2>/dev/null && echo -e "    Banned IP 数：   ${ban_count}"
+    [ "$ban_count" -gt 0 ] 2>/dev/null && echo -e "    已封禁 IP 数：${ban_count}"
     echo ""
 
     # Security
@@ -4288,7 +4291,7 @@ show_server_info() {
     echo -e "    SNI 策略：${UNKNOWN_SNI_ACTION:-mask}"
     local geo_count=0
     [ -n "$BLOCKLIST_COUNTRIES" ] && geo_count=$(echo "$BLOCKLIST_COUNTRIES" | tr ',' '\n' | wc -l | tr -d ' ')
-    echo -e "    Geo-block:    ${GEOBLOCK_MODE:-blacklist} (${geo_count} countries)"
+    echo -e "    地理封锁：    ${GEOBLOCK_MODE:-blacklist}（${geo_count} 个国家/地区）"
     echo ""
 
     # Disk
@@ -4331,14 +4334,14 @@ secret_set_quota_reset_day() {
 
     if [ "$day" = "off" ] || [ "$day" = "clear" ] || [ -z "$day" ]; then
         mv "$tmp" "$_QUOTA_RESET_FILE"; chmod 600 "$_QUOTA_RESET_FILE"
-        log_success "Quota reset disabled for '${label}'"
+        log_success "已禁用 '${label}' 的配额重置"
     elif [[ "$day" =~ ^[0-9]+$ ]] && [ "$day" -ge 1 ] && [ "$day" -le 31 ]; then
         echo "${label}|${day}" >> "$tmp"
         mv "$tmp" "$_QUOTA_RESET_FILE"; chmod 600 "$_QUOTA_RESET_FILE"
-        log_success "Quota for '${label}' will reset on day ${day} of each month"
+        log_success "'${label}' 的配额将在每月 ${day} 日重置"
     else
         rm -f "$tmp"
-        log_error "Day must be 1-31, 'off', or 'clear'"
+        log_error "日期必须为 1–31，或使用 'off'、'clear'"
         return 1
     fi
 }
@@ -4370,7 +4373,7 @@ secret_check_quota_resets() {
         # Reset
         if secret_reset_traffic "$label" &>/dev/null; then
             echo "${label}|${today_month}" >> "$_QUOTA_RESET_LOG"
-            log_info "Monthly quota reset for '${label}'"
+            log_info "已重置 '${label}' 的月度配额"
         fi
     done < "$_QUOTA_RESET_FILE"
 }
@@ -4416,8 +4419,8 @@ secret_check_auto_rotate() {
 # ── Backup autoclean ──
 backup_autoclean() {
     local days="${1:-${BACKUP_RETENTION_DAYS:-30}}"
-    [[ "$days" =~ ^[0-9]+$ ]] || { log_error "Days must be a positive integer"; return 1; }
-    [ "$days" -le 0 ] && { log_info "Autoclean disabled (0 = keep all)"; return 0; }
+    [[ "$days" =~ ^[0-9]+$ ]] || { log_error "天数必须是正整数"; return 1; }
+    [ "$days" -le 0 ] && { log_info "已禁用自动清理（0 表示全部保留）"; return 0; }
     [ -d "$BACKUP_DIR" ] || return 0
 
     local before=0 after=0
@@ -4426,7 +4429,7 @@ backup_autoclean() {
     after=$(find "$BACKUP_DIR" -maxdepth 1 -type f 2>/dev/null | wc -l | tr -d ' ')
 
     local removed=$((before - after))
-    log_success "Removed ${removed} backup(s) older than ${days} day(s) (${after} remaining)"
+    log_success "已移除 ${removed} 个超过 ${days} 天的备份（剩余 ${after} 个）"
 }
 
 # ── 密钥 Templates ──
@@ -4436,9 +4439,9 @@ template_save() {
     check_root
     local name="$1" conns="${2:-0}" ips="${3:-0}" quota="${4:-0}" expires="${5:-0}" notes="${6:-}"
     [ -z "$name" ] && { log_error "用法： mtproxymax template save <name> <conns> <ips> <quota> [expires] [notes]"; return 1; }
-    [[ "$name" =~ ^[a-zA-Z0-9_-]+$ ]] || { log_error "Name must be alphanumeric"; return 1; }
-    [[ "$conns" =~ ^[0-9]+$ ]] || { log_error "Conns must be a number"; return 1; }
-    [[ "$ips" =~ ^[0-9]+$ ]] || { log_error "IPs must be a number"; return 1; }
+    [[ "$name" =~ ^[a-zA-Z0-9_-]+$ ]] || { log_error "名称只能包含字母、数字、下划线和连字符"; return 1; }
+    [[ "$conns" =~ ^[0-9]+$ ]] || { log_error "连接数必须是数字"; return 1; }
+    [[ "$ips" =~ ^[0-9]+$ ]] || { log_error "IP 数必须是数字"; return 1; }
 
     # Parse quota (supports 10G, 500M, etc)
     local quota_bytes
@@ -4454,12 +4457,12 @@ template_save() {
     grep -v "^${name}|" "$_TEMPLATES_FILE" > "$tmp" 2>/dev/null || true
     echo "${name}|${conns}|${ips}|${quota_bytes}|${expires}|${notes}" >> "$tmp"
     mv "$tmp" "$_TEMPLATES_FILE"; chmod 600 "$_TEMPLATES_FILE"
-    log_success "Template '${name}' saved: conns=${conns} ips=${ips} quota=${quota} expires=${expires:-never}"
+    log_success "模板 '${name}' 已保存：连接数=${conns}，IP 数=${ips}，配额=${quota}，到期时间=${expires:-永不过期}"
 }
 
 template_list() {
     if [ ! -f "$_TEMPLATES_FILE" ] || [ ! -s "$_TEMPLATES_FILE" ]; then
-        log_info "No templates saved"
+        log_info "尚未保存模板"
         return
     fi
     echo ""
@@ -4480,7 +4483,7 @@ template_delete() {
     check_root
     local name="$1"
     [ -z "$name" ] && { log_error "用法： mtproxymax template delete <name>"; return 1; }
-    [ -f "$_TEMPLATES_FILE" ] || { log_error "No templates saved"; return 1; }
+    [ -f "$_TEMPLATES_FILE" ] || { log_error "尚未保存任何模板"; return 1; }
 
     local tmp; tmp=$(_mktemp) || return 1
     grep -v "^${name}|" "$_TEMPLATES_FILE" > "$tmp" 2>/dev/null || true
@@ -4493,7 +4496,7 @@ template_apply() {
     check_root
     local name="$1" label="$2"
     [ -z "$name" ] || [ -z "$label" ] && { log_error "用法： mtproxymax template apply <name> <label>"; return 1; }
-    [ -f "$_TEMPLATES_FILE" ] || { log_error "No templates saved"; return 1; }
+    [ -f "$_TEMPLATES_FILE" ] || { log_error "尚未保存任何模板"; return 1; }
 
     local line; line=$(grep "^${name}|" "$_TEMPLATES_FILE" | head -1)
     [ -z "$line" ] && { log_error "Template '${name}' 未找到"; return 1; }
@@ -4507,7 +4510,7 @@ template_apply() {
             save_secrets
         fi
     fi
-    log_success "Template '${name}' applied to '${label}'"
+    log_success "模板 '${name}' 已应用到 '${label}'"
 }
 
 _get_secret_idx() {
@@ -4523,7 +4526,7 @@ secret_rotate_all() {
     check_root
     local dry_run="${1:-false}"
 
-    [ ${#SECRETS_LABELS[@]} -eq 0 ] && { log_info "No secrets to rotate"; return 0; }
+    [ ${#SECRETS_LABELS[@]} -eq 0 ] && { log_info "没有可轮换的密钥"; return 0; }
 
     if [ "$dry_run" = "true" ]; then
         local i dry_count=0
@@ -4553,7 +4556,7 @@ secret_rotate_all() {
     done
     save_secrets
     reload_proxy_config
-    log_success "Rotated ${count} secret(s) — share new links with your users"
+    log_success "已轮换 ${count} 个密钥，请向用户分享新链接"
     audit_log "secret rotate --all (${count} secrets)"
 }
 
@@ -4623,7 +4626,7 @@ tune_list_params() {
     done
     echo ""
     [ -f "$_TUNE_FILE" ] && [ -s "$_TUNE_FILE" ] && {
-        echo -e "  ${BOLD}Currently set:${NC}"
+        echo -e "  ${BOLD}当前设置：${NC}"
         while IFS='|' read -r p v; do
             [ -z "$p" ] && continue
             echo "    ${p} = ${v}"
@@ -4637,15 +4640,15 @@ tune_set() {
     local param="$1" value="$2"
     [ -z "$param" ] && { log_error "用法： mtproxymax tune set <param> <value>"; return 1; }
 
-    local entry; entry=$(_tune_lookup "$param") || { log_error "未知 param '${param}'. Run: mtproxymax tune list"; return 1; }
+    local entry; entry=$(_tune_lookup "$param") || { log_error "未知参数 '${param}'。请运行：mtproxymax tune list"; return 1; }
     local p sect regex
     IFS=':' read -r p sect regex <<< "$entry"
 
     if [ -z "$value" ]; then
-        log_error "Value required"
+        log_error "必须提供值"
         return 1
     fi
-    [[ "$value" =~ $regex ]] || { log_error "Invalid value for '${param}' (expected pattern: ${regex})"; return 1; }
+    [[ "$value" =~ $regex ]] || { log_error "'${param}' 的值无效（应匹配：${regex}）"; return 1; }
 
     if ! confirm_settings_restart "engine tune '${param}=${value}'"; then
         return 0
@@ -4668,7 +4671,7 @@ tune_clear() {
     check_root
     local param="$1"
     [ -z "$param" ] && { log_error "用法： mtproxymax tune clear <param|all>"; return 1; }
-    [ ! -f "$_TUNE_FILE" ] && { log_info "No tunings set"; return 0; }
+    [ ! -f "$_TUNE_FILE" ] && { log_info "尚未设置调优参数"; return 0; }
 
     if ! confirm_settings_restart "clearing engine tune '${param}'"; then
         return 0
@@ -4676,7 +4679,7 @@ tune_clear() {
 
     if [ "$param" = "all" ]; then
         rm -f "$_TUNE_FILE"
-        log_success "All tunings cleared"
+        log_success "已清除全部调优参数"
     else
         local tmp; tmp=$(_mktemp) || return 1
         grep -v "^${param}|" "$_TUNE_FILE" > "$tmp" 2>/dev/null || true
@@ -4693,7 +4696,7 @@ tune_get() {
     local param="$1"
     if [ -z "$param" ]; then
         if [ ! -f "$_TUNE_FILE" ] || [ ! -s "$_TUNE_FILE" ]; then
-            log_info "No tunings set"
+            log_info "尚未设置调优参数"
             return
         fi
         echo ""
@@ -4704,7 +4707,7 @@ tune_get() {
         echo ""
     else
         local v; v=$(awk -F'|' -v u="$param" '$1==u{print $2; exit}' "$_TUNE_FILE" 2>/dev/null)
-        [ -n "$v" ] && echo "  ${param} = ${v}" || echo -e "  ${DIM}${param}: not set${NC}"
+        [ -n "$v" ] && echo "  ${param} = ${v}" || echo -e "  ${DIM}${param}：未设置${NC}"
     fi
 }
 
@@ -4744,30 +4747,30 @@ run_verify() {
         fi
     }
 
-    _check "Docker installed"           "command -v docker"
-    _check "Engine container running"   "is_proxy_running"
-    _check "Port ${PROXY_PORT} listening" "ss -tln 2>/dev/null | grep -qE ':${PROXY_PORT}[[:space:]]'"
-    _check "Metrics endpoint responds"  "curl -fsS --max-time 3 http://127.0.0.1:${PROXY_METRICS_PORT:-9090}/metrics -o /dev/null"
-    _check "TLS handshake on proxy port" "echo | timeout 5 openssl s_client -connect 127.0.0.1:${PROXY_PORT} -servername ${PROXY_DOMAIN:-cloudflare.com} 2>&1 | grep -q 'CONNECTED'"
-    _check "Domain ${PROXY_DOMAIN:-cloudflare.com} reachable" "curl -fsS --max-time 5 -o /dev/null https://${PROXY_DOMAIN:-cloudflare.com}"
-    _check "api.telegram.org reachable" "curl -fsS --max-time 5 -o /dev/null https://api.telegram.org"
-    _check "At least one active secret"  "[ ${#SECRETS_LABELS[@]} -gt 0 ]"
-    _check "Config file exists"          "[ -f '${CONFIG_DIR}/config.toml' ]"
+    _check "Docker 已安装"           "command -v docker"
+    _check "引擎容器正在运行"   "is_proxy_running"
+    _check "端口 ${PROXY_PORT} 正在监听" "ss -tln 2>/dev/null | grep -qE ':${PROXY_PORT}[[:space:]]'"
+    _check "指标端点正常响应"  "curl -fsS --max-time 3 http://127.0.0.1:${PROXY_METRICS_PORT:-9090}/metrics -o /dev/null"
+    _check "代理端口 TLS 握手正常" "echo | timeout 5 openssl s_client -connect 127.0.0.1:${PROXY_PORT} -servername ${PROXY_DOMAIN:-cloudflare.com} 2>&1 | grep -q 'CONNECTED'"
+    _check "域名 ${PROXY_DOMAIN:-cloudflare.com} 可访问" "curl -fsS --max-time 5 -o /dev/null https://${PROXY_DOMAIN:-cloudflare.com}"
+    _check "api.telegram.org 可访问" "curl -fsS --max-time 5 -o /dev/null https://api.telegram.org"
+    _check "至少有一个活动密钥"  "[ ${#SECRETS_LABELS[@]} -gt 0 ]"
+    _check "配置文件存在"          "[ -f '${CONFIG_DIR}/config.toml' ]"
 
     # Telegram bot if configured
     if [ "$TELEGRAM_ENABLED" = "true" ] && [ -n "$TELEGRAM_BOT_TOKEN" ]; then
         local _cfg; _cfg=$(_mktemp)
         printf 'url = "https://api.telegram.org/bot%s/getMe"\n' "$TELEGRAM_BOT_TOKEN" > "$_cfg"
-        _check "Telegram bot token valid" "curl -fsS --max-time 5 -K '$_cfg' | grep -q '\"ok\":true'"
+        _check "Telegram 机器人令牌有效" "curl -fsS --max-time 5 -K '$_cfg' | grep -q '\"ok\":true'"
         rm -f "$_cfg"
     fi
 
     unset -f _check
     echo ""
     if [ "${fail:--1}" -eq 0 ]; then
-        echo -e "  ${BRIGHT_GREEN}${BOLD}All ${pass} checks passed${NC}"
+        echo -e "  ${BRIGHT_GREEN}${BOLD}${pass} 项检查全部通过${NC}"
     else
-        echo -e "  ${YELLOW}${pass} passed, ${RED}${fail} failed${NC}"
+        echo -e "  ${YELLOW}${pass} 项通过，${RED}${fail} 项失败${NC}"
     fi
     echo ""
     return "$fail"
@@ -4797,11 +4800,11 @@ show_history() {
     local lines="${1:-50}"
     [[ "$lines" =~ ^[0-9]+$ ]] || lines=50
     if [ ! -f "$_AUDIT_LOG" ] || [ ! -s "$_AUDIT_LOG" ]; then
-        log_info "No audit history yet"
+        log_info "暂无审计历史"
         return
     fi
     echo ""
-    draw_header "AUDIT HISTORY (last ${lines})"
+    draw_header "审计历史（最近 ${lines} 条）"
     echo ""
     tail -n "$lines" "$_AUDIT_LOG" | sed 's/^/  /'
     echo ""
@@ -4939,7 +4942,7 @@ run_speedtest() {
     echo ""
     draw_header "速度测试"
     echo ""
-    echo -e "  ${DIM}Measuring outbound bandwidth from server...${NC}"
+    echo -e "  ${DIM}正在测量服务器出站带宽...${NC}"
     echo ""
 
     # Parallel arrays: label + url
@@ -4955,16 +4958,16 @@ run_speedtest() {
         local label="${labels[$i]}" url="${urls[$i]}"
         printf "  ${BOLD}%-28s${NC}  " "$label"
         local result
-        result=$(curl -so /dev/null -w '%{http_code}|%{time_total}|%{speed_download}' --max-time 15 "$url" 2>/dev/null) || { echo -e "${RED}FAILED${NC}"; continue; }
+        result=$(curl -so /dev/null -w '%{http_code}|%{time_total}|%{speed_download}' --max-time 15 "$url" 2>/dev/null) || { echo -e "${RED}失败${NC}"; continue; }
         local code time speed
         IFS='|' read -r code time speed <<< "$result"
         local speed_fmt="—"
         local speed_int="${speed%.*}"
         [[ "$speed_int" =~ ^[0-9]+$ ]] && [ "$speed_int" -gt 0 ] 2>/dev/null && speed_fmt="$(format_bytes "$speed_int")/s"
-        printf "code=%s  time=%.2fs  speed=%s\n" "$code" "$time" "$speed_fmt"
+        printf "状态码=%s  用时=%.2f秒  速度=%s\n" "$code" "$time" "$speed_fmt"
     done
     echo ""
-    echo -e "  ${DIM}Note: measures server ↔ internet bandwidth, not proxy throughput.${NC}"
+    echo -e "  ${DIM}注意：测量的是服务器与互联网之间的带宽，并非代理吞吐量。${NC}"
     echo ""
 }
 
@@ -4997,12 +5000,12 @@ run_digest() {
     local bot_str="已禁用"
     [ "$TELEGRAM_ENABLED" = "true" ] && bot_str="有效"
 
-    echo -e "  ${BOLD}代理状态:${NC}   $(draw_status "$_pstatus")  (运行时长: ${uptime_str})"
-    echo -e "  ${BOLD}有效 Sockets:${NC} ${connections}"
-    echo -e "  ${BOLD}Config Users:${NC}   ${active} active / ${disabled} disabled"
-    echo -e "  ${BOLD}总流量:${NC}  ${SYM_DOWN} $(format_bytes "$traffic_in")  ${SYM_UP} $(format_bytes "$traffic_out")"
-    echo -e "  ${BOLD}Telegram Bot:${NC}   ${bot_str}"
-    echo -e "  ${BOLD}Geo-Blocking:${NC}   ${GEOBLOCK_MODE:-off}"
+    echo -e "  ${BOLD}代理状态：${NC}$(draw_status "$_pstatus")（运行时长：${uptime_str}）"
+    echo -e "  ${BOLD}活动套接字：${NC}${connections}"
+    echo -e "  ${BOLD}配置用户：${NC}${active} 个有效 / ${disabled} 个已禁用"
+    echo -e "  ${BOLD}总流量：${NC}${SYM_DOWN} $(format_bytes "$traffic_in")  ${SYM_UP} $(format_bytes "$traffic_out")"
+    echo -e "  ${BOLD}Telegram 机器人：${NC}${bot_str}"
+    echo -e "  ${BOLD}地理封锁：${NC}${GEOBLOCK_MODE:-off}"
     echo ""
 }
 
@@ -5010,7 +5013,7 @@ run_ping_dc() {
     echo ""
     draw_header "TELEGRAM 数据中心性能测试"
     echo ""
-    echo -e "  ${DIM}Benchmarking TCP handshake latency to global Telegram DCs...${NC}"
+    echo -e "  ${DIM}正在测试到全球 Telegram 数据中心的 TCP 握手延迟...${NC}"
     echo ""
 
     local dc_names=("DC1 (MIA)" "DC2 (AMS)" "DC3 (MIA)" "DC4 (AMS)" "DC5 (SIN)")
@@ -5031,12 +5034,12 @@ run_ping_dc() {
                 best_dc="$name"
             fi
         else
-            echo -e "${RED}FAILED${NC}"
+            echo -e "${RED}失败${NC}"
         fi
     done
     echo ""
     if [ -n "$best_dc" ]; then
-        echo -e "  🏆 ${BOLD}Fastest DC:${NC} ${CYAN}${best_dc}${NC}"
+        echo -e "  🏆 ${BOLD}最快的数据中心：${NC}${CYAN}${best_dc}${NC}"
         echo ""
     fi
 }
@@ -5045,25 +5048,25 @@ run_upload_test() {
     echo ""
     draw_header "上传机制诊断"
     echo ""
-    echo -e "  ${DIM}Auditing proxy upload mechanism, socket write buffers, and DC egress...${NC}"
+    echo -e "  ${DIM}正在审计代理上传机制、套接字写入缓冲区和数据中心出站连接...${NC}"
     echo ""
 
     local issues=0 warnings=0
 
     # 1. Telemt client_mss Audit
     load_settings 2>/dev/null || true
-    printf "  %-35s" "Telemt Client MSS mode:"
+    printf "  %-35s" "Telemt 客户端 MSS 模式："
     if [ -n "${CLIENT_MSS:-}" ]; then
-        echo -e "${YELLOW}${CLIENT_MSS}${NC} (anti-censorship segment sizing)"
-        echo -e "    ${YELLOW}! Note:${NC} 'tspu' mode can throttle or drop large upload chunks on tunneled/wireguard paths."
-        echo -e "      If users experience upload stalls, run: ${BOLD}mtproxymax client-mss off${NC}"
+        echo -e "${YELLOW}${CLIENT_MSS}${NC}（抗审查分段大小）"
+        echo -e "    ${YELLOW}! 注意：${NC}'tspu' 模式在隧道或 WireGuard 路径上可能限制或丢弃较大的上传分块。"
+        echo -e "      如果用户上传停滞，请运行：${BOLD}mtproxymax client-mss off${NC}"
         warnings=$((warnings + 1))
     else
-        echo -e "${GREEN}off (disabled — max throughput default)${NC}"
+        echo -e "${GREEN}off（已禁用，默认采用最大吞吐量）${NC}"
     fi
 
     # 2. Kernel Socket Write Buffer (wmem) Audit
-    printf "  %-35s" "Kernel TCP Write Buffer (wmem_max):"
+    printf "  %-35s" "内核 TCP 写入缓冲区（wmem_max）："
     local wmem_max wmem_def tcp_wmem
     wmem_max=$(sysctl -n net.core.wmem_max 2>/dev/null || echo "212992")
     wmem_def=$(sysctl -n net.core.wmem_default 2>/dev/null || echo "212992")
@@ -5071,16 +5074,16 @@ run_upload_test() {
 
     local wmem_max_int="${wmem_max%.*}"
     if [ "${wmem_max_int:-0}" -ge 8388608 ]; then
-        echo -e "${GREEN}$(format_bytes "$wmem_max_int") (${wmem_max_int} bytes)${NC}"
+        echo -e "${GREEN}$(format_bytes "$wmem_max_int")（${wmem_max_int} 字节）${NC}"
     else
-        echo -e "${YELLOW}$(format_bytes "$wmem_max_int") (${wmem_max_int} bytes)${NC}"
-        echo -e "    ${YELLOW}! Warning:${NC} Low socket write buffer limit may restrict upload throughput."
-        echo -e "      To optimize, run: ${BOLD}mtproxymax tcp-boost on${NC} or ${BOLD}mtproxymax ram-tune auto${NC}"
+        echo -e "${YELLOW}$(format_bytes "$wmem_max_int")（${wmem_max_int} 字节）${NC}"
+        echo -e "    ${YELLOW}! 警告：${NC}套接字写入缓冲区上限过低可能限制上传吞吐量。"
+        echo -e "      如需优化，请运行：${BOLD}mtproxymax tcp-boost on${NC} 或 ${BOLD}mtproxymax ram-tune auto${NC}"
         warnings=$((warnings + 1))
     fi
 
     # 3. Live Traffic Upload vs Download Ratio Audit
-    printf "  %-35s" "Live Ingress vs Egress metrics:"
+    printf "  %-35s" "实时入站与出站指标："
     local _metrics
     _metrics=$(fetch_metrics 2>/dev/null || true)
     if [ -n "$_metrics" ]; then
@@ -5091,19 +5094,19 @@ run_upload_test() {
         local up_fmt; up_fmt=$(format_bytes "${up_bytes:-0}")
         local down_fmt; down_fmt=$(format_bytes "${down_bytes:-0}")
 
-        echo -e "Upload RX: ${CYAN}${up_fmt}${NC} | Download TX: ${CYAN}${down_fmt}${NC}"
+        echo -e "上传接收：${CYAN}${up_fmt}${NC} | 下载发送：${CYAN}${down_fmt}${NC}"
         if [ "${down_bytes:-0}" -gt 1048576 ] && [ "${up_bytes:-0}" -eq 0 ]; then
-            echo -e "    ${RED}${SYM_CROSS} Alert:${NC} Download traffic exists (${down_fmt}) but 0 bytes uploaded!"
-            echo -e "      Check if client_mss is blocking upload packets or if firewall is blocking outbound DC connections."
+            echo -e "    ${RED}${SYM_CROSS} 警报：${NC}存在下载流量（${down_fmt}），但上传量为 0 字节！"
+            echo -e "      请检查 client_mss 是否阻止上传数据包，或防火墙是否阻止到数据中心的出站连接。"
             issues=$((issues + 1))
         fi
     else
-        echo -e "${DIM}Metrics offline (proxy container stopped)${NC}"
+        echo -e "${DIM}指标离线（代理容器已停止）${NC}"
     fi
 
     # 4. Outbound Telegram DC Port 443 Egress Reachability
     echo ""
-    echo -e "  ${BOLD}Outbound Telegram DC Port 443 Egress Check:${NC}"
+    echo -e "  ${BOLD}Telegram 数据中心 443 端口出站检查：${NC}"
     local dc_names=("DC1 (MIA)" "DC2 (AMS)" "DC3 (MIA)" "DC4 (AMS)" "DC5 (SIN)")
     local dc_ips=("149.154.175.50" "149.154.167.51" "149.154.175.100" "149.154.167.91" "91.108.56.130")
 
@@ -5118,31 +5121,31 @@ run_upload_test() {
             time_ms=$(awk -v t="$time_s" 'BEGIN { printf "%.1f", t * 1000 }')
             printf "${GREEN}%s ms${NC}\n" "$time_ms"
         else
-            echo -e "${RED}CONNECTION TIMEOUT / BLOCKED${NC}"
+            echo -e "${RED}连接超时或被阻止${NC}"
             dc_failed=$((dc_failed + 1))
         fi
     done
     if [ "$dc_failed" -gt 0 ]; then
-        echo -e "    ${YELLOW}! Note:${NC} ${dc_failed} DC(s) blocked on port 443. Outbound uploads to those DCs may fail."
+        echo -e "    ${YELLOW}! 注意：${NC}${dc_failed} 个数据中心的 443 端口被阻止，向其上传可能失败。"
         issues=$((issues + 1))
     fi
 
     # 5. QoS Upload Rules Audit
     load_speed_limits 2>/dev/null || true
-    printf "\n  %-35s" "QoS Bandwidth Shaping Upload Rules:"
+    printf "\n  %-35s" "QoS 带宽整形上传规则："
     if [ "${#SPEED_LIMIT_TARGETS[@]}" -gt 0 ]; then
-        echo -e "${GREEN}${#SPEED_LIMIT_TARGETS[@]} active 条规则${NC}"
+        echo -e "${GREEN}${#SPEED_LIMIT_TARGETS[@]} 条活动规则${NC}"
     else
-        echo -e "${DIM}No upload speed limit restrictions active${NC}"
+        echo -e "${DIM}当前没有上传限速规则${NC}"
     fi
 
     echo ""
     if [ "$issues" -eq 0 ] && [ "$warnings" -eq 0 ]; then
-        echo -e "  ${BRIGHT_GREEN}${BOLD}Upload Mechanism 状态: ALL CHECKS OPTIMAL${NC}"
+        echo -e "  ${BRIGHT_GREEN}${BOLD}上传机制状态：所有检查均为最佳${NC}"
     elif [ "$issues" -eq 0 ]; then
-        echo -e "  ${YELLOW}${BOLD}Upload Mechanism 状态: OPTIMAL (${warnings} warning(s))${NC}"
+        echo -e "  ${YELLOW}${BOLD}上传机制状态：良好（${warnings} 项警告）${NC}"
     else
-        echo -e "  ${RED}${BOLD}Upload Mechanism 状态: ${issues} issue(s), ${warnings} warning(s) detected${NC}"
+        echo -e "  ${RED}${BOLD}上传机制状态：发现 ${issues} 个问题、${warnings} 项警告${NC}"
     fi
     echo ""
 }
@@ -5286,21 +5289,21 @@ run_shield() {
             STEALTH_SHIELD="true"
             save_settings
             apply_firewall_rules
-            log_success "Kernel SYN Shield enabled (>15 SYN/5s tarpit on port ${PROXY_PORT})"
+            log_success "内核 SYN 防护已启用（端口 ${PROXY_PORT} 在 5 秒内超过 15 个 SYN 时进入陷阱）"
             ;;
         off|disable|false|0)
             check_root
             STEALTH_SHIELD="false"
             save_settings
             apply_firewall_rules
-            log_success "Kernel SYN Shield disabled"
+            log_success "内核 SYN 防护已禁用"
             ;;
         status)
-            echo -e "\n  🛡️  ${BOLD}Kernel SYN Shield 状态:${NC}"
+            echo -e "\n  🛡️  ${BOLD}内核 SYN 防护状态：${NC}"
             if [ "${STEALTH_SHIELD:-false}" = "true" ]; then
-                echo -e "     状态: ${GREEN}已启用${NC} (有效 protection on port ${PROXY_PORT})"
+                echo -e "     状态：${GREEN}已启用${NC}（正在保护端口 ${PROXY_PORT}）"
             else
-                echo -e "     状态: ${YELLOW}已禁用${NC}"
+                echo -e "     状态：${YELLOW}已禁用${NC}"
             fi
             echo ""
             ;;
@@ -5320,25 +5323,25 @@ run_clamp_mss() {
             STEALTH_MSS_CLAMP="true"
             save_settings
             apply_firewall_rules
-            log_success "TCP MSS Clamping enabled on port ${PROXY_PORT}"
+            log_success "已在端口 ${PROXY_PORT} 启用 TCP MSS 钳制"
             ;;
         off|disable|false|0)
             check_root
             STEALTH_MSS_CLAMP="false"
             save_settings
             apply_firewall_rules
-            log_success "TCP MSS Clamping disabled"
+            log_success "TCP MSS 钳制已禁用"
             ;;
         status)
-            echo -e "\n  📉 ${BOLD}TCP MSS Clamping 状态:${NC}"
+            echo -e "\n  📉 ${BOLD}TCP MSS 钳制状态：${NC}"
             if [ "${STEALTH_MSS_CLAMP:-false}" = "true" ]; then
-                echo -e "     状态: ${GREEN}已启用${NC} (有效 alignment on port ${PROXY_PORT})"
+                echo -e "     状态：${GREEN}已启用${NC}（正在为端口 ${PROXY_PORT} 调整 MSS）"
                 if command -v iptables >/dev/null 2>&1; then
                     local _rule_cnt; _rule_cnt=$(iptables -t mangle -S 2>/dev/null | grep -c "mtproxymax_mss" || echo 0)
-                    echo -e "     Kernel Hooks: ${CYAN}${_rule_cnt} Netfilter rules active across FORWARD, OUTPUT & POSTROUTING${NC}"
+                    echo -e "     内核钩子：${CYAN}${_rule_cnt} 条 Netfilter 规则已在 FORWARD、OUTPUT 和 POSTROUTING 链中生效${NC}"
                 fi
             else
-                echo -e "     状态: ${YELLOW}已禁用${NC}"
+                echo -e "     状态：${YELLOW}已禁用${NC}"
             fi
             echo ""
             ;;
@@ -5354,22 +5357,22 @@ run_client_mss() {
     case "$mode" in
         ""|get|status)
             load_settings 2>/dev/null || true
-            echo -e "  ── ${BOLD}Telemt Client MSS 设置${NC} ──"
+            echo -e "  ── ${BOLD}Telemt 客户端 MSS 设置${NC} ──"
             if [ -n "${CLIENT_MSS:-}" ]; then
-                echo -e "  Mode:               ${GREEN}${CLIENT_MSS}${NC} (anti-censorship segment sizing)"
-                echo -e "  Generated TOML:     ${GREEN}client_mss = \"${CLIENT_MSS}\"${NC}"
+                echo -e "  模式：              ${GREEN}${CLIENT_MSS}${NC}（抗审查分段大小）"
+                echo -e "  生成的 TOML：       ${GREEN}client_mss = \"${CLIENT_MSS}\"${NC}"
             else
-                echo -e "  Mode:               ${DIM}off / disabled${NC} (normal TCP behavior, max throughput — default)"
-                echo -e "  Generated TOML:     ${DIM}<omitted>${NC}"
+                echo -e "  模式：              ${DIM}关闭 / 已禁用${NC}（正常 TCP 行为、最大吞吐量——默认）"
+                echo -e "  生成的 TOML：       ${DIM}<已省略>${NC}"
             fi
 
-            local clamp_status="disabled"
-            [ "${STEALTH_MSS_CLAMP:-false}" = "true" ] && clamp_status="${GREEN}enabled${NC}"
-            echo -e "  Kernel PMTU clamp:  ${clamp_status} (mtproxymax clamp-mss)"
+            local clamp_status="已禁用"
+            [ "${STEALTH_MSS_CLAMP:-false}" = "true" ] && clamp_status="${GREEN}已启用${NC}"
+            echo -e "  内核 PMTU 钳制：    ${clamp_status}（mtproxymax clamp-mss）"
 
             if [ -n "${CLIENT_MSS:-}" ] && [ "${STEALTH_MSS_CLAMP:-false}" = "true" ]; then
-                echo -e "\n  ${YELLOW}! Warning:${NC} Both Telemt client_mss and kernel clamp-mss are active."
-                echo -e "    If media downloads are slow, try turning client-mss off: ${BOLD}mtproxymax client-mss off${NC}"
+                echo -e "\n  ${YELLOW}！警告：${NC}Telemt client_mss 和内核 clamp-mss 均已启用。"
+                echo -e "    如果媒体下载缓慢，请尝试关闭 client-mss：${BOLD}mtproxymax client-mss off${NC}"
             fi
             echo -e "\n  ${DIM}用法： mtproxymax client-mss [status|off|tspu]${NC}"
             return 0
@@ -5382,7 +5385,7 @@ run_client_mss() {
             fi
             CLIENT_MSS=""
             save_settings
-            log_success "Telemt client_mss disabled (using normal TCP behavior for max throughput)"
+            log_success "Telemt client_mss 已禁用（使用正常 TCP 行为以获得最大吞吐量）"
             if is_proxy_running; then
                 load_secrets
                 restart_proxy_container || true
@@ -5396,7 +5399,7 @@ run_client_mss() {
             fi
             CLIENT_MSS="tspu"
             save_settings
-            log_success "Telemt client_mss set to 'tspu' (DPI / censorship circumvention mode)"
+            log_success "Telemt client_mss 已设为 'tspu'（DPI/审查规避模式）"
             if is_proxy_running; then
                 load_secrets
                 restart_proxy_container || true
@@ -5418,7 +5421,7 @@ run_stealth_preset() {
             STEALTH_PRESET="ultra"
             UNKNOWN_SNI_ACTION="drop"
             save_settings
-            log_success "Stealth preset set to ULTRA (Replay window: 180s, Cache: 131072, 未知 SNI: drop)"
+            log_success "隐匿预设已设为超强（重放窗口：180 秒，缓存：131072，未知 SNI：丢弃）"
             if is_proxy_running; then reload_proxy_config; fi
             ;;
         normal|standard|default)
@@ -5426,21 +5429,21 @@ run_stealth_preset() {
             STEALTH_PRESET="normal"
             UNKNOWN_SNI_ACTION="mask"
             save_settings
-            log_success "Stealth preset set to 正常 (Replay window: 1800s, Cache: 65536, 未知 SNI: mask)"
+            log_success "隐匿预设已设为正常（重放窗口：1800 秒，缓存：65536，未知 SNI：伪装）"
             if is_proxy_running; then reload_proxy_config; fi
             ;;
         status)
-            echo -e "\n  🥷 ${BOLD}Stealth Defense Preset:${NC}"
+            echo -e "\n  🥷 ${BOLD}隐匿防御预设：${NC}"
             if [ "${STEALTH_PRESET:-normal}" = "ultra" ]; then
-                echo -e "     Current Preset: ${RED}${BOLD}ULTRA STEALTH${NC}"
-                echo -e "     Replay Window:  180 seconds"
-                echo -e "     Replay Cache:   131,072 entries"
-                echo -e "     未知 SNI:    Drop connection"
+                echo -e "     当前预设：${RED}${BOLD}超强隐匿${NC}"
+                echo -e "     重放窗口：180 秒"
+                echo -e "     重放缓存：131,072 条"
+                echo -e "     未知 SNI：丢弃连接"
             else
-                echo -e "     Current Preset: ${GREEN}正常${NC}"
-                echo -e "     Replay Window:  1800 seconds"
-                echo -e "     Replay Cache:   65,536 entries"
-                echo -e "     未知 SNI:    Mask traffic to cover domain"
+                echo -e "     当前预设：${GREEN}正常${NC}"
+                echo -e "     重放窗口：1800 秒"
+                echo -e "     重放缓存：65,536 条"
+                echo -e "     未知 SNI：将流量伪装到掩护域名"
             fi
             echo ""
             ;;
@@ -5456,8 +5459,8 @@ run_domain_pool() {
     local pool="$1"
     case "$pool" in
         ""|get|list|show)
-            echo -e "\n  🔀 ${BOLD}Multi-Domain SNI Pool:${NC}"
-            echo -e "     Current Pool: ${CYAN}${PROXY_DOMAIN:-<not set>}${NC}"
+            echo -e "\n  🔀 ${BOLD}多域名 SNI 池：${NC}"
+            echo -e "     当前域名池：${CYAN}${PROXY_DOMAIN:-<未设置>}${NC}"
             echo ""
             ;;
         *)
@@ -5466,10 +5469,10 @@ run_domain_pool() {
                 PROXY_DOMAIN="$pool"
                 sync_domain_cert_len "true" "false" || true
                 save_settings
-                log_success "Domain pool updated: ${pool}"
+                log_success "域名池已更新：${pool}"
                 if is_proxy_running; then reload_proxy_config; fi
             else
-                log_error "Invalid domain pool format (use e.g. cloudflare.com,www.microsoft.com)"
+                log_error "域名池格式无效（例如 cloudflare.com,www.microsoft.com）"
                 return 1
             fi
             ;;
@@ -5481,7 +5484,7 @@ run_dpi_inspect() {
     echo ""
     draw_header "DPI 分析与防护就绪度检查"
     echo ""
-    echo -e "  ${DIM}运行中 active 5-point network diagnostics...${NC}"
+    echo -e "  ${DIM}正在执行五项网络诊断...${NC}"
     echo ""
 
     local score=0 total_checks=5
@@ -5490,34 +5493,34 @@ run_dpi_inspect() {
     local primary_dom="${PROXY_DOMAIN:-}"
     primary_dom="${primary_dom%%,*}"
     primary_dom="${primary_dom// /}"
-    printf "  [1/5] Cover Domain 状态 (${CYAN}%s${NC}): " "${primary_dom:-none}"
+    printf "  [1/5] 掩护域名状态（${CYAN}%s${NC}）：" "${primary_dom:-未配置}"
     if [ -n "${primary_dom:-}" ]; then
         local time_s
         time_s=$(curl -o /dev/null -s -w "%{time_connect}" --connect-timeout 4 "https://${primary_dom}:443" 2>/dev/null) || time_s=""
         if [ -n "$time_s" ] && [ "$time_s" != "0.000000" ]; then
             local time_ms
             time_ms=$(awk -v t="$time_s" 'BEGIN { printf "%.1f", t * 1000 }')
-            echo -e "${GREEN}PASS (${time_ms} ms)${NC}"
+            echo -e "${GREEN}通过（${time_ms} 毫秒）${NC}"
             score=$((score + 20))
         else
-            echo -e "${RED}FAIL / BLOCKED${NC}"
+            echo -e "${RED}失败 / 已被阻止${NC}"
         fi
     else
-        echo -e "${YELLOW}NOT CONFIGURED${NC}"
+        echo -e "${YELLOW}未配置${NC}"
     fi
 
     # Check 2: TLS Certificate Parity
-    printf "  [2/5] Auto Cert Synchronization: "
+    printf "  [2/5] 自动同步证书："
     if [ -n "${FAKE_CERT_LEN:-}" ] && [ "${FAKE_CERT_LEN}" != "0" ]; then
-        echo -e "${GREEN}PASS (Cert Len: ${FAKE_CERT_LEN})${NC}"
+        echo -e "${GREEN}通过（证书长度：${FAKE_CERT_LEN}）${NC}"
         score=$((score + 20))
     else
-        echo -e "${YELLOW}WARNING (Using defaults)${NC}"
+        echo -e "${YELLOW}警告（使用默认值）${NC}"
         score=$((score + 10))
     fi
 
     # Check 3: Kernel SYN Shield State
-    printf "  [3/5] Anti-DPI SYN Shield: "
+    printf "  [3/5] 抗 DPI SYN 防护："
     if [ "${STEALTH_SHIELD:-false}" = "true" ]; then
         echo -e "${GREEN}运行中${NC}"
         score=$((score + 20))
@@ -5526,24 +5529,24 @@ run_dpi_inspect() {
     fi
 
     # Check 4: Stealth Preset Engine Hardening
-    printf "  [4/5] Engine Replay Hardening: "
+    printf "  [4/5] 引擎重放防护加固："
     if [ "${STEALTH_PRESET:-normal}" = "ultra" ]; then
-        echo -e "${GREEN}ULTRA STEALTH${NC}"
+        echo -e "${GREEN}超强隐匿${NC}"
         score=$((score + 20))
     else
-        echo -e "${GREEN}正常 STEALTH${NC}"
+        echo -e "${GREEN}正常隐匿${NC}"
         score=$((score + 15))
     fi
 
     # Check 5: TCP MSS Clamping
-    printf "  [5/5] TCP MSS Clamping (PMTU): "
+    printf "  [5/5] TCP MSS 钳制（PMTU）："
     if [ "${STEALTH_MSS_CLAMP:-false}" = "true" ]; then
         local mss_rules=0
         if command -v iptables >/dev/null 2>&1; then
             mss_rules=$(iptables -t mangle -S 2>/dev/null | grep -c "mtproxymax_mss" || echo 0)
         fi
         if [ "$mss_rules" -gt 0 ] 2>/dev/null; then
-            echo -e "${GREEN}ENABLED (${mss_rules} kernel hooks active)${NC}"
+            echo -e "${GREEN}已启用（${mss_rules} 个内核钩子生效）${NC}"
             score=$((score + 20))
         else
             echo -e "${GREEN}已启用${NC}"
@@ -5557,7 +5560,7 @@ run_dpi_inspect() {
     local score_color="${GREEN}"
     [ "$score" -lt 70 ] && score_color="${YELLOW}"
     [ "$score" -lt 40 ] && score_color="${RED}"
-    echo -e "  🛡️  ${BOLD}Anti-DPI Readiness Score:${NC} ${score_color}${BOLD}${score}%${NC}"
+    echo -e "  🛡️  ${BOLD}抗 DPI 就绪度评分：${NC}${score_color}${BOLD}${score}%${NC}"
     echo ""
 }
 
@@ -5569,7 +5572,7 @@ run_cover_watchdog() {
             echo ""
             draw_header "掩护域名健康监控"
             echo ""
-            echo -e "  ${DIM}Testing live latency across domain pool...${NC}"
+            echo -e "  ${DIM}正在测试域名池的实时延迟...${NC}"
             echo ""
             local pool_str="${PROXY_DOMAIN:-}"
             if [ -n "${PROXY_TLS_DOMAINS:-}" ]; then
@@ -5583,7 +5586,7 @@ run_cover_watchdog() {
                 [ -n "$_d" ] && domains+=("$_d")
             done
             if [ ${#domains[@]} -eq 0 ]; then
-                log_info "No cover domains configured."
+                log_info "尚未配置伪装域名。"
                 return 0
             fi
             for _d in "${domains[@]}"; do
@@ -5593,9 +5596,9 @@ run_cover_watchdog() {
                 if [ "$code" != "000" ] && [ "$time_s" != "0" ]; then
                     local time_ms
                     time_ms=$(awk -v t="$time_s" 'BEGIN { printf "%.1f", t * 1000 }')
-                    echo -e "${GREEN}ONLINE (${time_ms} ms | HTTP ${code})${NC}"
+                    echo -e "${GREEN}在线（${time_ms} 毫秒 | HTTP ${code}）${NC}"
                 else
-                    echo -e "${RED}TIMEOUT / BLOCKED${NC}"
+                    echo -e "${RED}超时 / 已被阻止${NC}"
                 fi
             done
             echo ""
@@ -5608,7 +5611,7 @@ run_cover_watchdog() {
             primary="${primary// /}"
             # Test primary domain
             if ! curl -o /dev/null -s --connect-timeout 4 "https://${primary}:443" 2>/dev/null; then
-                log_warning "Primary domain '${primary}' failed watchdog probe. Attempting rotation..."
+                log_warning "主域名 '${primary}' 未通过监测探测，正在尝试轮换..."
                 local pool_str="${PROXY_DOMAIN:-}"
                 if [ -n "${PROXY_TLS_DOMAINS:-}" ]; then
                     pool_str="${pool_str},${PROXY_TLS_DOMAINS}"
@@ -5618,7 +5621,7 @@ run_cover_watchdog() {
                     _cand="${_cand// /}"
                     [ -z "$_cand" ] || [ "$_cand" = "$primary" ] && continue
                     if curl -o /dev/null -s --connect-timeout 4 "https://${_cand}:443" 2>/dev/null; then
-                        log_success "Swapped primary cover domain to healthy backup: ${_cand}"
+                        log_success "已将主伪装域名切换为健康的备用域名：${_cand}"
                         # Put healthy candidate at the front of the pool string
                         local new_pool="${_cand}"
                         for _rem in "${_candidates[@]}"; do
@@ -5655,7 +5658,7 @@ run_lockdown() {
             save_settings
             apply_firewall_rules
             if is_proxy_running; then reload_proxy_config; fi
-            log_success "🚨 紧急锁定已启用: Shield ON | Ultra Stealth ON | MSS Clamp ON"
+            log_success "🚨 紧急锁定已启用：SYN 防护已开启 | 超强隐匿已开启 | MSS 钳制已开启"
             if [ "${TELEGRAM_ENABLED:-false}" = "true" ]; then
                 tg_send "🚨 *紧急锁定已启用*\n\n服务器已进入最高防御状态。\n• 内核 SYN 防护：启用\n• 隐身预设：最高\n• MSS 钳制：启用"
             fi
@@ -5665,10 +5668,10 @@ run_lockdown() {
             load_settings
             LOCKDOWN_MODE="false"
             save_settings
-            log_success "Lockdown deactivated. 服务器已恢复正常运行状态。"
+            log_success "紧急锁定已解除，服务器已恢复正常运行状态。"
             ;;
         status|"")
-            echo -e "  ${BOLD}紧急锁定模式:${NC} $([ "${LOCKDOWN_MODE:-false}" = "true" ] && echo "${RED}${BOLD}ACTIVE${NC}" || echo "${GREEN}INACTIVE${NC}")"
+            echo -e "  ${BOLD}紧急锁定模式：${NC}$([ "${LOCKDOWN_MODE:-false}" = "true" ] && echo "${RED}${BOLD}已启用${NC}" || echo "${GREEN}未启用${NC}")"
             ;;
         *)
             log_error "用法： mtproxymax lockdown [on|off|status]"
@@ -5684,11 +5687,11 @@ run_port_pool() {
         add)
             check_root
             local port="$2"
-            [ -z "$port" ] && { log_error "用法： mtproxymax port-pool add <port>"; return 1; }
-            [[ "$port" =~ ^[0-9]+$ ]] && [ "$port" -ge 1 ] && [ "$port" -le 65535 ] || { log_error "Invalid port number"; return 1; }
+            [ -z "$port" ] && { log_error "用法：mtproxymax port-pool add <port>"; return 1; }
+            [[ "$port" =~ ^[0-9]+$ ]] && [ "$port" -ge 1 ] && [ "$port" -le 65535 ] || { log_error "端口号无效"; return 1; }
             load_settings
             if [[ ",${PORT_POOL_PORTS}," == *",${port},"* ]] || [ "$port" = "$PROXY_PORT" ]; then
-                log_info "Port ${port} is already in use or configured."
+                log_info "端口 ${port} 已被占用或已配置。"
                 return 0
             fi
             PORT_POOL_PORTS="${PORT_POOL_PORTS:+${PORT_POOL_PORTS},}${port}"
@@ -5696,7 +5699,7 @@ run_port_pool() {
             if command -v iptables >/dev/null 2>&1 && [ -n "${PROXY_PORT:-}" ]; then
                 iptables -t nat -I PREROUTING -p tcp --dport "$port" -j REDIRECT --to-ports "${PROXY_PORT}" 2>/dev/null || true
             fi
-            log_success "Added port ${port} to multi-port listener pool pointing to engine port ${PROXY_PORT}."
+            log_success "已将端口 ${port} 添加到多端口监听池，并指向引擎端口 ${PROXY_PORT}。"
             ;;
         remove)
             check_root
@@ -5716,12 +5719,12 @@ run_port_pool() {
             if command -v iptables >/dev/null 2>&1 && [ -n "${PROXY_PORT:-}" ]; then
                 while iptables -t nat -D PREROUTING -p tcp --dport "$port" -j REDIRECT --to-ports "${PROXY_PORT}" 2>/dev/null; do :; done
             fi
-            log_success "Removed port ${port} from multi-port listener pool."
+            log_success "已从多端口监听池移除端口 ${port}。"
             ;;
         list|"")
             load_settings
-            echo -e "  ${BOLD}Primary Engine 端口：${NC} ${GREEN}${PROXY_PORT:-443}${NC}"
-            echo -e "  ${BOLD}Secondary Port Pool:${NC} ${CYAN}${PORT_POOL_PORTS:-none}${NC}"
+            echo -e "  ${BOLD}主引擎端口：${NC}${GREEN}${PROXY_PORT:-443}${NC}"
+            echo -e "  ${BOLD}辅助端口池：${NC}${CYAN}${PORT_POOL_PORTS:-无}${NC}"
             echo -e "  ${DIM}用法： mtproxymax port-pool [add|remove] <port>${NC}"
             ;;
         *)
@@ -5801,12 +5804,12 @@ run_qos() {
             check_root
             local mbps="$2"
             [ -z "$mbps" ] && { log_error "用法： mtproxymax qos set <mbps>"; return 1; }
-            [[ "$mbps" =~ ^[0-9]+$ ]] && [ "$mbps" -ge 1 ] && [ "$mbps" -le 10000 ] || { log_error "Invalid speed limit (1-10000 Mbps)"; return 1; }
+            [[ "$mbps" =~ ^[0-9]+$ ]] && [ "$mbps" -ge 1 ] && [ "$mbps" -le 10000 ] || { log_error "限速值无效（1–10000 Mbps）"; return 1; }
             load_settings
             QOS_LIMIT_MBPS="$mbps"
             save_settings
             apply_qos_rules
-            log_success "Per-IP QoS speed limit set to ${mbps} Mbps."
+            log_success "单 IP QoS 限速已设为 ${mbps} Mbps。"
             ;;
         off|clear|disable)
             check_root
@@ -5814,15 +5817,15 @@ run_qos() {
             QOS_LIMIT_MBPS="0"
             save_settings
             apply_qos_rules
-            log_success "Per-IP QoS speed limit disabled."
+            log_success "单 IP QoS 限速已禁用。"
             ;;
         status|"")
             load_settings
-            echo -e "\n  🏎️  ${BOLD}Per-IP Bandwidth Shaping (QoS):${NC}"
+            echo -e "\n  🏎️  ${BOLD}单 IP 带宽整形（QoS）：${NC}"
             if [ "${QOS_LIMIT_MBPS:-0}" -gt 0 ]; then
-                echo -e "     状态:      ${GREEN}ACTIVE (${QOS_LIMIT_MBPS} Mbps / IP)${NC}"
+                echo -e "     状态：${GREEN}已启用（每个 IP ${QOS_LIMIT_MBPS} Mbps）${NC}"
             else
-                echo -e "     状态:      ${YELLOW}已禁用${NC}"
+                echo -e "     状态：${YELLOW}已禁用${NC}"
             fi
             echo -e "  ${DIM}用法： mtproxymax qos [set <mbps>|off|status]${NC}\n"
             ;;
@@ -5839,34 +5842,34 @@ run_happy_hours() {
         set)
             check_root
             local win="$2"
-            [ -z "$win" ] && { log_error "用法： mtproxymax happy-hours set <HH:MM-HH:MM> (e.g. 02:00-08:00)"; return 1; }
+            [ -z "$win" ] && { log_error "用法： mtproxymax happy-hours set <HH:MM-HH:MM>（例如 02:00-08:00）"; return 1; }
             if ! validate_happy_hours_win "$win"; then
-                log_error "Invalid time window format or out-of-range time. Use HH:MM-HH:MM (24h format, 00:00-23:59, e.g. 02:00-08:00)"
+                log_error "时间窗口格式无效或超出范围。请使用 HH:MM-HH:MM（24 小时制，00:00–23:59，例如 02:00-08:00）"
                 return 1
             fi
             load_settings
             HAPPY_HOURS_WINDOW="$win"
             save_settings
-            log_success "Off-peak 优惠时段 quota exclusion set to window: ${win}"
+            log_success "非高峰优惠时段的免计配额窗口已设为：${win}"
             ;;
         off|clear|disable)
             check_root
             load_settings
             HAPPY_HOURS_WINDOW=""
             save_settings
-            log_success "Off-peak 优惠时段 quota exclusion disabled."
+            log_success "非高峰优惠时段免计配额已禁用。"
             ;;
         status|"")
             load_settings
-            echo -e "\n  🕒 ${BOLD}Off-Peak '优惠时段' Quota Exclusions:${NC}"
+            echo -e "\n  🕒 ${BOLD}非高峰“优惠时段”免计配额：${NC}"
             if [ -n "${HAPPY_HOURS_WINDOW:-}" ]; then
-                local st="${YELLOW}INACTIVE window${NC}"
+                local st="${YELLOW}当前时段未生效${NC}"
                 if check_in_happy_hours "${HAPPY_HOURS_WINDOW}"; then
-                    st="${GREEN}${BOLD}ACTIVE NOW (Free Traffic)${NC}"
+                    st="${GREEN}${BOLD}当前生效（免流量计费）${NC}"
                 fi
-                echo -e "     Configured Window: ${CYAN}${HAPPY_HOURS_WINDOW}${NC} (${st})"
+                echo -e "     已配置时段：${CYAN}${HAPPY_HOURS_WINDOW}${NC}（${st}）"
             else
-                echo -e "     状态:            ${YELLOW}已禁用${NC}"
+                echo -e "     状态：${YELLOW}已禁用${NC}"
             fi
             echo -e "  ${DIM}用法： mtproxymax happy-hours [set <HH:MM-HH:MM>|off|status]${NC}\n"
             ;;
@@ -5886,7 +5889,7 @@ run_quota_mode() {
             QUOTA_ENFORCEMENT_MODE="manager"
             save_settings
             reload_proxy_config
-            log_success "Quota enforcement set to: manager (Smooth reset without container restart)"
+            log_success "配额执行模式已设为 manager（无需重启容器即可平滑重置）"
             ;;
         engine)
             check_root
@@ -5894,16 +5897,16 @@ run_quota_mode() {
             QUOTA_ENFORCEMENT_MODE="engine"
             save_settings
             restart_proxy_container
-            log_success "Quota enforcement set to: engine (Strict telemt-side config, requires restart on reset)"
+            log_success "配额执行模式已设为 engine（由 Telemt 严格执行，重置时需要重启）"
             ;;
         status|"")
             load_settings
-            echo -e "\n  📊 ${BOLD}Quota Enforcement Mode Configuration:${NC}"
+            echo -e "\n  📊 ${BOLD}配额执行模式配置：${NC}"
             local cur_mode="${QUOTA_ENFORCEMENT_MODE:-manager}"
             if [ "$cur_mode" = "engine" ]; then
-                echo -e "     Current Mode: ${YELLOW}engine${NC} (Strict C/Rust engine quota in config.toml; restarts on reset)"
+                echo -e "     当前模式：${YELLOW}engine${NC}（由 C/Rust 引擎按照 config.toml 严格执行；重置时会重启）"
             else
-                echo -e "     Current Mode: ${GREEN}${BOLD}manager${NC} (Smooth MTProxyMax periodic enforcement; 0-disconnect resets)"
+                echo -e "     当前模式：${GREEN}${BOLD}manager${NC}（由 MTProxyMax 定期平滑执行；重置时不会断开连接）"
             fi
             echo -e "  ${DIM}用法： mtproxymax quota-mode [manager|engine|status]${NC}\n"
             ;;
@@ -5917,11 +5920,11 @@ run_quota_mode() {
 run_notify_expiry() {
     load_settings
     if [ "${TELEGRAM_ENABLED:-false}" != "true" ] || [ -z "${TELEGRAM_BOT_TOKEN:-}" ]; then
-        log_info "Telegram bot notifications are not enabled or configured."
+        log_info "Telegram 机器人通知未启用或未配置。"
         return 0
     fi
     load_secrets
-    local now count=0 msg="⚠️ *Proxy 到期时间 Alert*
+    local now count=0 msg="⚠️ *代理到期提醒*
 
 The following user secrets are expiring soon:
 "
@@ -5948,23 +5951,23 @@ The following user secrets are expiring soon:
     done
     if [ "$count" -gt 0 ]; then
         tg_send "$msg"
-        log_success "Sent Telegram expiry reminder for ${count} secret(s)."
+        log_success "已通过 Telegram 发送 ${count} 个密钥的到期提醒。"
     else
-        log_info "No secrets expiring within 3 days."
+        log_info "没有将在 3 天内到期的密钥。"
     fi
 }
 
 run_abuse_watch() {
     load_settings
     load_secrets
-    echo -e "\n  📈 ${BOLD}BANDWIDTH SURGE & ABUSE WATCHDOG${NC}\n"
+    echo -e "\n  📈 ${BOLD}带宽激增与滥用监控${NC}\n"
     local _stats_dir="${INSTALL_DIR}/relay_stats"
     local _utf="${_stats_dir}/user_traffic"
     if [ ! -f "$_utf" ]; then
-        echo -e "  ${DIM}No traffic statistics recorded yet.${NC}\n"
+        echo -e "  ${DIM}尚未记录流量统计。${NC}\n"
         return 0
     fi
-    printf "  %-20s %-15s %-15s %-16s\n" "USER LABEL" "DOWNLOAD" "UPLOAD" "STATUS"
+    printf "  %-20s %-15s %-15s %-16s\n" "用户标签" "下载" "上传" "状态"
     draw_line 68 '─'
     local total_flagged=0
     while IFS='|' read -r _lbl _in _out; do
@@ -5988,9 +5991,9 @@ run_abuse_watch() {
     done < "$_utf"
     echo ""
     if [ "$total_flagged" -eq 0 ]; then
-        echo -e "  ${GREEN}All users operating within normal bandwidth parameters.${NC}\n"
+        echo -e "  ${GREEN}所有用户的带宽使用均处于正常范围。${NC}\n"
     else
-        echo -e "  ${YELLOW}Flagged ${total_flagged} user(s) with high bandwidth usage (>50GB).${NC}\n"
+        echo -e "  ${YELLOW}发现 ${total_flagged} 个用户的带宽用量较高（>50GB）。${NC}\n"
     fi
 }
 
@@ -5999,7 +6002,7 @@ run_broadcast() {
     [ -z "$msg" ] && { log_error "用法： mtproxymax broadcast <message>"; return 1; }
     load_settings
     if [ "${TELEGRAM_ENABLED:-false}" != "true" ] || [ -z "${TELEGRAM_BOT_TOKEN:-}" ] || [ -z "${TELEGRAM_CHAT_ID:-}" ]; then
-        log_error "Telegram bot notifications are not enabled or configured (TELEGRAM_CHAT_ID missing)."
+        log_error "Telegram 机器人通知尚未启用或配置（缺少 TELEGRAM_CHAT_ID）。"
         return 1
     fi
     local formatted="📢 *System Announcement*\n\n${msg}"
@@ -6012,7 +6015,7 @@ run_broadcast() {
             count=$((count + 1))
         done < "${INSTALL_DIR}/bot_users.txt"
     fi
-    log_success "Broadcast message dispatched to ${count} Telegram recipient(s)."
+    log_success "广播消息已发送给 ${count} 个 Telegram 接收者。"
 }
 
 # ── Clustering, Load Balancing & DevOps Automation ──
@@ -6025,9 +6028,9 @@ run_export_lb() {
     local proto_flag=""
     [ "${PROXY_PROTOCOL:-false}" = "true" ] && proto_flag=" send-proxy-v2"
     
-    echo -e "\n  ── 📦 ${BOLD}Load Balancer Configuration Export${NC} ──\n"
+    echo -e "\n  ── 📦 ${BOLD}负载均衡器配置导出${NC} ──\n"
     if [ "$target" = "haproxy" ] || [ "$target" = "all" ]; then
-        echo -e "  ${CYAN}${BOLD}HAProxy Configuration Snippet (/etc/haproxy/haproxy.cfg):${NC}"
+        echo -e "  ${CYAN}${BOLD}HAProxy 配置片段（/etc/haproxy/haproxy.cfg）：${NC}"
         cat <<EOF
 # Frontend accepting incoming client connections (TCP Passthrough)
 frontend ft_mtproxy
@@ -6059,7 +6062,7 @@ EOF
         echo ""
     fi
     if [ "$target" = "nginx" ] || [ "$target" = "all" ]; then
-        echo -e "  ${GREEN}${BOLD}Nginx Stream Configuration (/etc/nginx/modules-enabled/mtproxy.conf):${NC}"
+        echo -e "  ${GREEN}${BOLD}Nginx Stream 配置（/etc/nginx/modules-enabled/mtproxy.conf）：${NC}"
         local proxy_protocol_line=""
         [ "${PROXY_PROTOCOL:-false}" = "true" ] && proxy_protocol_line="        proxy_protocol on;"
         cat <<EOF
@@ -6124,7 +6127,7 @@ run_ddns() {
             local rec_json
             rec_json=$(curl -s -X GET "https://api.cloudflare.com/client/v4/zones/${DDNS_CF_ZONE_ID}/dns_records?type=A&name=${DDNS_RECORD_NAME}" \
                 -H "Authorization: Bearer ${DDNS_CF_TOKEN}" \
-                -H "Content-Type: application/json" --max-time 10) || { log_error "无法 query Cloudflare API"; return 1; }
+                -H "Content-Type: application/json" --max-time 10) || { log_error "无法查询 Cloudflare API"; return 1; }
             
             local rec_id old_ip
             rec_id=$(echo "$rec_json" | grep -o '"id":"[^"]*' | head -1 | cut -d'"' -f4)
@@ -6146,9 +6149,9 @@ run_ddns() {
                 -H "Content-Type: application/json" \
                 --data "{\"type\":\"A\",\"name\":\"${DDNS_RECORD_NAME}\",\"content\":\"${cur_ip}\",\"ttl\":120,\"proxied\":false}" --max-time 10)
             if echo "$update_res" | grep -q '"success":true'; then
-                log_success "Cloudflare DDNS record '${DDNS_RECORD_NAME}' 成功 updated to ${cur_ip}!"
+                log_success "Cloudflare DDNS 记录 '${DDNS_RECORD_NAME}' 已成功更新为 ${cur_ip}！"
             else
-                log_error "无法 update Cloudflare DNS record."
+                log_error "无法更新 Cloudflare DNS 记录。"
             fi
             ;;
         off|disable)
@@ -6156,17 +6159,17 @@ run_ddns() {
             load_settings
             DDNS_ENABLED="false"
             save_settings
-            log_success "Cloudflare DDNS updater disabled."
+            log_success "Cloudflare DDNS 更新器已禁用。"
             ;;
         status|"")
             load_settings
-            echo -e "\n  🌐 ${BOLD}Cloudflare Dynamic DNS (DDNS) Updater:${NC}"
+            echo -e "\n  🌐 ${BOLD}Cloudflare 动态 DNS（DDNS）更新器：${NC}"
             if [ "${DDNS_ENABLED:-false}" = "true" ]; then
-                echo -e "     状态:      ${GREEN}运行中${NC}"
-                echo -e "     Record Name: ${CYAN}${DDNS_RECORD_NAME:-unknown}${NC}"
-                echo -e "     Zone ID:     ${DIM}${DDNS_CF_ZONE_ID:-unknown}${NC}"
+                echo -e "     状态：${GREEN}运行中${NC}"
+                echo -e "     记录名称：${CYAN}${DDNS_RECORD_NAME:-未知}${NC}"
+                echo -e "     区域 ID：  ${DIM}${DDNS_CF_ZONE_ID:-未知}${NC}"
             else
-                echo -e "     状态:      ${YELLOW}已禁用${NC}"
+                echo -e "     状态：${YELLOW}已禁用${NC}"
             fi
             echo -e "  ${DIM}用法： mtproxymax ddns [set <token> <zone_id> <record_name>|run|off|status]${NC}\n"
             ;;
@@ -6180,17 +6183,17 @@ run_ddns() {
 run_diag_dump() {
     check_root
     load_settings
-    echo -e "\n  ── 🏥 ${BOLD}System Diagnostic Forensics Dump${NC} ──\n"
+    echo -e "\n  ── 🏥 ${BOLD}系统诊断取证包${NC} ──\n"
     local dump_dir; dump_dir=$(mktemp -d "/tmp/mtproxymax_diag_XXXXXX") || return 1
     chmod 700 "$dump_dir" 2>/dev/null || true
     _TEMP_FILES+=("$dump_dir")
     
-    log_info "Collecting system metrics and container state..."
+    log_info "正在收集系统指标和容器状态..."
     uname -a > "${dump_dir}/system_info.txt" 2>&1 || true
     free -m >> "${dump_dir}/system_info.txt" 2>&1 || true
     df -h >> "${dump_dir}/system_info.txt" 2>&1 || true
     
-    log_info "Collecting firewall and networking rules..."
+    log_info "正在收集防火墙和网络规则..."
     iptables -S > "${dump_dir}/iptables_rules.txt" 2>&1 || true
     iptables -t mangle -S > "${dump_dir}/iptables_mangle.txt" 2>&1 || true
     ip route > "${dump_dir}/routes.txt" 2>&1 || true
@@ -6202,7 +6205,7 @@ run_diag_dump() {
     tc class show dev "$_diag_iface" > "${dump_dir}/tc_class.txt" 2>&1 || true
     tc filter show dev "$_diag_iface" > "${dump_dir}/tc_filter.txt" 2>&1 || true
     
-    log_info "Collecting container inspect and logs..."
+    log_info "正在收集容器检查信息和日志..."
     docker inspect "$CONTAINER_NAME" > "${dump_dir}/docker_inspect.txt" 2>&1 || true
     docker logs --tail 500 "$CONTAINER_NAME" > "${dump_dir}/docker_logs.txt" 2>&1 || true
     
@@ -6213,7 +6216,7 @@ run_diag_dump() {
     local tar_path="$(get_export_dir)/mtproxymax_diag_$(date +%Y%m%d_%H%M%S).tar.gz"
     tar -czf "$tar_path" -C /tmp "$(basename "$dump_dir")" 2>/dev/null && rm -rf "$dump_dir"
     chmod 600 "$tar_path" 2>/dev/null || true
-    log_success "Diagnostic archive created at: ${CYAN}${tar_path}${NC}"
+    log_success "诊断归档已创建：${CYAN}${tar_path}${NC}"
 }
 
 run_snapshot() {
@@ -6225,7 +6228,7 @@ run_snapshot() {
         create|save)
             check_root
             local name="${2:-snap_$(date +%Y%m%d_%H%M%S)}"
-            [[ "$name" =~ ^[a-zA-Z0-9_-]+$ ]] || { log_error "Invalid snapshot name (use a-z, 0-9, _, -)"; return 1; }
+            [[ "$name" =~ ^[a-zA-Z0-9_-]+$ ]] || { log_error "快照名称无效（只能使用 a-z、0-9、_ 和 -）"; return 1; }
             local target="${snap_dir}/${name}.tar.gz"
             local -a _snap_files=()
             for _f in settings.conf secrets.conf upstreams.conf tunings.conf banlist.conf speed_limits.conf ssl.conf cloud_backup.conf; do
@@ -6234,12 +6237,12 @@ run_snapshot() {
             [ -d "${INSTALL_DIR}/profiles" ] && _snap_files+=("profiles")
             [ -d "${INSTALL_DIR}/ssl" ] && _snap_files+=("ssl")
             tar -czf "$target" -C "$INSTALL_DIR" "${_snap_files[@]}" 2>/dev/null || true
-            log_success "Config snapshot created: ${CYAN}${target}${NC}"
+            log_success "配置快照已创建：${CYAN}${target}${NC}"
             ;;
         list|"")
-            echo -e "\n  ── 📸 ${BOLD}Configuration Snapshots${NC} ──\n"
+            echo -e "\n  ── 📸 ${BOLD}配置快照${NC} ──\n"
             if [ -z "$(ls -A "$snap_dir" 2>/dev/null)" ]; then
-                echo -e "  ${DIM}No snapshots created yet.${NC}\n"
+                echo -e "  ${DIM}尚未创建快照。${NC}\n"
             else
                 ls -lh "$snap_dir" | awk 'NR>1 {print "  " $9 " (" $5 ", created " $6 " " $7 " " $8 ")"}'
                 echo ""
@@ -6256,10 +6259,10 @@ run_snapshot() {
                 log_error "Snapshot '${name}' 未找到."
                 return 1
             fi
-            log_info "Restoring configuration from ${target}..."
-            tar -xzf "$target" -C "$INSTALL_DIR" 2>/dev/null || { log_error "无法 extract snapshot"; return 1; }
+            log_info "正在从 ${target} 恢复配置..."
+            tar -xzf "$target" -C "$INSTALL_DIR" 2>/dev/null || { log_error "无法解压快照"; return 1; }
             load_settings
-            log_success "Snapshot restored 成功. Reloading proxy..."
+            log_success "快照已成功恢复，正在重新加载代理..."
             reload_proxy_config
             ;;
         *)
@@ -6274,7 +6277,7 @@ run_snapshot() {
 run_top() {
     local mode="${1:-loop}"
     [ ! -t 0 ] && mode="once"
-    [ "$mode" = "once" ] || echo -e "  ${DIM}Starting live terminal monitor (Press Ctrl+C to exit)...${NC}"
+    [ "$mode" = "once" ] || echo -e "  ${DIM}正在启动实时终端监控（按 Ctrl+C 退出）...${NC}"
     
     while true; do
         if command -v tput >/dev/null 2>&1; then tput clear 2>/dev/null || printf "\033c"; else printf "\033c"; fi
@@ -6286,17 +6289,17 @@ run_top() {
         local mem_str; mem_str=$(free -m 2>/dev/null | awk '/^Mem:/ {printf "%dMB / %dMB (%.0f%%)", $3, $2, $3/$2*100}' || awk '/^MemTotal:/ {t=$2} /^MemAvailable:/ {a=$2} END {if(t>0) printf "%dMB / %dMB (%.0f%%)", (t-a)/1024, t/1024, (t-a)/t*100}' /proc/meminfo 2>/dev/null || echo "unknown")
         
         echo -e "${BOLD}╔══════════════════════════════════════════════════════════════════════════════════════╗${NC}"
-        echo -e "${BOLD}║          🚀 MTProxyMax Live Terminal Radar — Anti-DPI Traffic Leaderboard            ║${NC}"
+        echo -e "${BOLD}║                  🚀 MTProxyMax 实时终端雷达——抗 DPI 流量排行榜                       ║${NC}"
         echo -e "${BOLD}╚══════════════════════════════════════════════════════════════════════════════════════╝${NC}"
-        echo -e "  ${BOLD}运行时长:${NC} ${CYAN}${up_str}${NC}   |   ${BOLD}Load:${NC} ${YELLOW}${load_str}${NC}   |   ${BOLD}RAM:${NC} ${GREEN}${mem_str}${NC}"
-        echo -e "  ${BOLD}Proxy 端口：${NC} ${CYAN}${PROXY_PORT:-443}${NC}   |   ${BOLD}Cover 域名：${NC} ${CYAN}${PROXY_DOMAIN:-none}${NC}"
+        echo -e "  ${BOLD}运行时长：${NC}${CYAN}${up_str}${NC}   |   ${BOLD}负载：${NC}${YELLOW}${load_str}${NC}   |   ${BOLD}内存：${NC}${GREEN}${mem_str}${NC}"
+        echo -e "  ${BOLD}代理端口：${NC}${CYAN}${PROXY_PORT:-443}${NC}   |   ${BOLD}掩护域名：${NC}${CYAN}${PROXY_DOMAIN:-未配置}${NC}"
         echo "  ──────────────────────────────────────────────────────────────────────────────────────"
-        printf "  %-18s %-12s %-14s %-16s %-20s\n" "USER / LABEL" "STATUS" "CONNECTIONS" "DATA USED" "QUOTA PROGRESS"
+        printf "  %-18s %-12s %-14s %-16s %-20s\n" "用户 / 标签" "状态" "连接数" "已用流量" "配额进度"
         echo "  ──────────────────────────────────────────────────────────────────────────────────────"
         
         local count=${#SECRETS_LABELS[@]}
         if [ "$count" -eq 0 ]; then
-            echo -e "  ${DIM}No active users found.${NC}"
+            echo -e "  ${DIM}未发现活跃用户。${NC}"
         else
             for ((i=0; i<count; i++)); do
                 local label="${SECRETS_LABELS[$i]}"
@@ -6331,7 +6334,7 @@ run_top() {
         fi
         echo "  ──────────────────────────────────────────────────────────────────────────────────────"
         [ "$mode" = "once" ] && break
-        echo -e "  ${DIM}Refreshing every 2 seconds. Press Ctrl+C to stop.${NC}"
+        echo -e "  ${DIM}每 2 秒刷新一次，按 Ctrl+C 停止。${NC}"
         sleep 2
     done
 }
@@ -6340,11 +6343,11 @@ run_tag() {
     local label="${1:-}"
     local tag_str="${2:-}"
     if [ -z "$label" ]; then
-        echo -e "\n  ── 🏷️  ${BOLD}User Tags & Metadata Notes${NC} ──\n"
+        echo -e "\n  ── 🏷️  ${BOLD}用户标签与元数据备注${NC} ──\n"
         load_secrets
         local count=${#SECRETS_LABELS[@]}
         if [ "$count" -eq 0 ]; then
-            echo -e "  ${DIM}No user secrets found.${NC}\n"
+            echo -e "  ${DIM}未找到用户密钥。${NC}\n"
             return 0
         fi
         printf "  %-20s %-18s %-35s\n" "LABEL" "STATUS" "TAGS / NOTES"
@@ -6373,21 +6376,21 @@ run_export_client() {
     
     local count=${#SECRETS_LABELS[@]}
     if [ "$count" -eq 0 ]; then
-        log_error "No secrets configured to export."
+        log_error "没有可导出的密钥配置。"
         return 1
     fi
     
     local ip; ip=$(curl -s --connect-timeout 3 https://api.ipify.org 2>/dev/null || echo "127.0.0.1")
     local port="${PROXY_PORT:-443}"
     
-    echo -e "\n  ── 📄 ${BOLD}Multi-Client Configuration Exporter (${format^^})${NC} ──\n"
+    echo -e "\n  ── 📄 ${BOLD}多客户端配置导出器（${format^^}）${NC} ──\n"
     
     for ((i=0; i<count; i++)); do
         local label="${SECRETS_LABELS[$i]}"
         [ "$target" != "all" ] && [ "$target" != "$label" ] && continue
         local sec="${SECRETS_KEYS[$i]}"
         
-        echo -e "  ${BOLD}Client:${NC} ${CYAN}${label}${NC}"
+        echo -e "  ${BOLD}客户端：${NC}${CYAN}${label}${NC}"
         echo "  ─────────────────────────────────────────────────────────────────"
         case "${format,,}" in
             clash)
@@ -6429,10 +6432,10 @@ run_export_report() {
     local count=${#SECRETS_LABELS[@]}
     case "${format,,}" in
         csv)
-            echo "标签,密钥,状态,Created,Max_连接数,Quota_Bytes,Used_Bytes,Notes" > "$outfile"
+            echo "标签,密钥,状态,创建时间,最大连接数,配额字节数,已用字节数,备注" > "$outfile"
             for ((i=0; i<count; i++)); do
                 local label="${SECRETS_LABELS[$i]}"
-                local st="ACTIVE"; [ "${SECRETS_ENABLED[$i]}" = "false" ] && st="DISABLED"
+                local st="已启用"; [ "${SECRETS_ENABLED[$i]}" = "false" ] && st="已禁用"
                 local bytes_used=0
                 if [ -f "$STATUS_JSON_FILE" ]; then
                     bytes_used=$(awk -v l="$label" '$0 ~ "\"" l "\":" {getline; getline; if($0 ~ "bytes_used") {gsub(/[^0-9]/, "", $0); print $0; exit}}' "$STATUS_JSON_FILE" 2>/dev/null || echo 0)
@@ -6441,7 +6444,7 @@ run_export_report() {
                 echo "${label},${SECRETS_KEYS[$i]},${st},${SECRETS_CREATED[$i]},${SECRETS_MAX_CONNS[$i]:-0},${SECRETS_QUOTA[$i]:-0},${bytes_used},\"${SECRETS_NOTES[$i]:-}\"" >> "$outfile"
             done
             chmod 600 "$outfile" 2>/dev/null || true
-            log_success "CSV Executive Report exported to: ${CYAN}${outfile}${NC}"
+            log_success "CSV 管理报告已导出到：${CYAN}${outfile}${NC}"
             ;;
         html|*)
             cat << 'EOF' > "$outfile"
@@ -6469,7 +6472,7 @@ tr:hover { background: #334155; }
 EOF
             for ((i=0; i<count; i++)); do
                 local label="${SECRETS_LABELS[$i]}"
-                local st="<span class='status-active'>ACTIVE</span>"; [ "${SECRETS_ENABLED[$i]}" = "false" ] && st="<span class='status-disabled'>DISABLED</span>"
+                local st="<span class='status-active'>已启用</span>"; [ "${SECRETS_ENABLED[$i]}" = "false" ] && st="<span class='status-disabled'>已禁用</span>"
                 local quota="${SECRETS_QUOTA[$i]:-0}"; [ "$quota" -eq 0 ] && quota="Unmetered" || quota=$(format_bytes "$quota")
                 local bytes_used=0
                 if [ -f "$STATUS_JSON_FILE" ]; then
@@ -6481,7 +6484,7 @@ EOF
             done
             echo "</table></body></html>" >> "$outfile"
             chmod 600 "$outfile" 2>/dev/null || true
-            log_success "HTML Executive Dashboard exported to: ${CYAN}${outfile}${NC}"
+            log_success "HTML 管理仪表板已导出到：${CYAN}${outfile}${NC}"
             ;;
     esac
 }
@@ -6494,7 +6497,7 @@ run_qr_sheet() {
     
     local count=${#SECRETS_LABELS[@]}
     if [ "$count" -eq 0 ]; then
-        log_error "No secrets found to generate QR cards."
+        log_error "未找到可用于生成二维码卡片的密钥。"
         return 1
     fi
     
@@ -6518,7 +6521,7 @@ body { font-family: sans-serif; background: #f1f5f9; padding: 20px; }
 </style>
 </head>
 <body>
-<h1 style="text-align: center; color: #0f172a;">🎟️ MTProxyMax Proxy Access Vouchers</h1>
+<h1 style="text-align: center; color: #0f172a;">🎟️ MTProxyMax 代理访问兑换卡</h1>
 <div class="grid">
 EOF
 
@@ -6530,16 +6533,16 @@ EOF
         
         echo "<div class='card'>" >> "$outfile"
         echo "  <h3>${label}</h3>" >> "$outfile"
-        echo "  <p>High-Speed MTProto Proxy</p>" >> "$outfile"
-        echo "  <div class='qr-box'><img src='${qr_api}' alt='QR Code' width='150' height='150'></div>" >> "$outfile"
-        echo "  <p>Scan with Telegram Camera</p>" >> "$outfile"
+        echo "  <p>高速 MTProto 代理</p>" >> "$outfile"
+        echo "  <div class='qr-box'><img src='${qr_api}' alt='二维码' width='150' height='150'></div>" >> "$outfile"
+        echo "  <p>使用 Telegram 相机扫描</p>" >> "$outfile"
         echo "</div>" >> "$outfile"
     done
 
     echo "</div></body></html>" >> "$outfile"
     chmod 600 "$outfile" 2>/dev/null || true
-    log_success "Printable QR Voucher Sheet created at: ${CYAN}${outfile}${NC}"
-    log_info "Open this file in any web browser and press Ctrl+P to print voucher cards!"
+    log_success "可打印的二维码兑换卡已创建：${CYAN}${outfile}${NC}"
+    log_info "请在任意网页浏览器中打开此文件，然后按 Ctrl+P 打印兑换卡。"
 }
 
 # ── Suite 2: Commercial & Quota Intelligence Suite ─────────────────────────────
@@ -6549,11 +6552,11 @@ run_traffic_reset_global() {
     check_root
     load_settings
     
-    echo -e "\n  ── ⚠️ ${BOLD}Global Traffic Reset${NC} ──\n"
+    echo -e "\n  ── ⚠️ ${BOLD}全局流量重置${NC} ──\n"
     if [ "$force" != "--force" ] && [ "$force" != "-y" ]; then
-        echo -e "This will permanently reset the cumulative server-wide traffic counters."
-        echo -e "Per-secret traffic and quotas will NOT be affected."
-        echo -n -e "Are you sure you want to proceed? (y/N) "
+        echo -e "此操作将永久重置服务器范围内的累计流量计数器。"
+        echo -e "各密钥的流量与配额不会受到影响。"
+        echo -n -e "确定要继续吗？[y/N]："
         read -r confirm
         [[ "${confirm,,}" =~ ^y ]] || { log_error "Aborted."; return 0; }
     fi
@@ -6561,10 +6564,10 @@ run_traffic_reset_global() {
     local _stats_dir="${INSTALL_DIR}/relay_stats"
     mkdir -p "$_stats_dir"
     
-    log_info "Fetching current live metrics baseline..."
+    log_info "正在获取当前实时指标基线..."
     local _metrics
     if ! _metrics=$(curl -fsS --max-time 2 "http://127.0.0.1:${PROXY_METRICS_PORT:-9090}/metrics" 2>/dev/null); then
-        log_error "Cannot reset traffic: live metrics are unavailable."
+        log_error "无法重置流量：实时指标不可用。"
         return 1
     fi
     local cur_in=0 cur_out=0
@@ -6572,10 +6575,10 @@ run_traffic_reset_global() {
     cur_out=$(echo "$_metrics"|awk '/^telemt_user_octets_to_client\{/{s+=$NF}END{printf "%.0f",s}')
     cur_in=${cur_in:-0}; cur_out=${cur_out:-0}
     
-    log_info "Resetting cumulative counters..."
+    log_info "正在重置累计计数器..."
     exec 9>"${_stats_dir}/.traffic.lock"
     if command -v flock &>/dev/null; then
-        flock -w 5 9 2>/dev/null || { log_error "无法 acquire traffic lock. Daemon may be busy."; exec 9>&-; return 1; }
+        flock -w 5 9 2>/dev/null || { log_error "无法获取流量锁，守护进程可能正忙。"; exec 9>&-; return 1; }
     fi
     
     local _tmp
@@ -6595,13 +6598,13 @@ run_traffic_reset_global() {
     exec 9>&-
     
     audit_log "Global traffic reset to 0 (baseline: ${cur_in}|${cur_out})"
-    log_success "Global traffic has been 成功 reset!"
+    log_success "全局流量已成功重置！"
 }
 
 run_guest() {
     local guest_label="${1:-}"
     local limit_str="${2:-24h}"
-    [ -z "$guest_label" ] && { echo -e "\n  ── ⌛ ${BOLD}Disposable Burner / Guest Links${NC} ──\n\n  ${DIM}用法： mtproxymax guest <label> <24h|7d|500mb|1gb>${NC}\n"; return 1; }
+    [ -z "$guest_label" ] && { echo -e "\n  ── ⌛ ${BOLD}一次性临时 / 访客链接${NC} ──\n\n  ${DIM}用法： mtproxymax guest <label> <24h|7d|500mb|1gb>${NC}\n"; return 1; }
     
     check_root
     load_settings
@@ -6618,25 +6621,25 @@ run_guest() {
         expires=$(date -u -d "+${days} days" "+%Y-%m-%d" 2>/dev/null || date -u -r $(( $(date +%s) + days*86400 )) "+%Y-%m-%d" 2>/dev/null || echo "")
     elif [[ "${limit_str,,}" =~ ^([0-9]+)(mb|gb|kb|b)$ ]]; then
         quota=$(parse_human_bytes "$limit_str") || {
-            log_error "Invalid quota format: ${limit_str}"
+            log_error "配额格式无效：${limit_str}"
             return 1
         }
     else
-        log_error "Invalid limit format. Use e.g. 12h, 24h, 7d, 500mb, 1gb."
+        log_error "限制格式无效，请使用 12h、24h、7d、500mb 或 1gb 等格式。"
         return 1
     fi
 
     if [ "$quota" -eq 0 ] && [ -z "$expires" ]; then
-        log_error "无法 calculate guest expiry"
+        log_error "无法计算访客链接的到期时间"
         return 1
     fi
     
-    log_info "Creating disposable guest link '${guest_label}'..."
+    log_info "正在创建一次性访客链接 '${guest_label}'..."
     secret_add "$guest_label" "" "true" || return 1
     secret_set_limits "$guest_label" "0" "0" "${quota}" "${expires}" "true" || return 1
     secret_edit_note "$guest_label" "$note" || return 1
     reload_proxy_config || return 1
-    log_success "Burner link '${guest_label}' created 成功!"
+    log_success "一次性链接 '${guest_label}' 已成功创建！"
 }
 
 run_pool() {
@@ -6646,15 +6649,15 @@ run_pool() {
     
     case "${action,,}" in
         list|status|"")
-            echo -e "\n  ── 👥 ${BOLD}Shared Quota Pools (Family / Team Plans)${NC} ──\n"
+            echo -e "\n  ── 👥 ${BOLD}共享配额池（家庭 / 团队套餐）${NC} ──\n"
             if [ ! -s "$pool_file" ]; then
-                echo -e "  ${DIM}No shared quota pools configured.${NC}\n"
+                echo -e "  ${DIM}尚未配置共享配额池。${NC}\n"
                 echo -e "  ${DIM}用法： mtproxymax pool create <pool_name> <limit_mb/gb> [notes]${NC}"
                 echo -e "  ${DIM}       mtproxymax pool add <pool_name> <member_label1,label2>${NC}\n"
                 return 0
             fi
             load_secrets
-            printf "  %-16s %-14s %-16s %-25s %-20s\n" "POOL NAME" "LIMIT" "COMBINED USED" "MEMBERS" "PROGRESS"
+            printf "  %-16s %-14s %-16s %-25s %-20s\n" "配额池名称" "限额" "合计已用" "成员" "进度"
             echo "  ─────────────────────────────────────────────────────────────────────────────────────────────"
             while IFS='|' read -r p_name p_limit p_members p_notes; do
                 [ -z "$p_name" ] && continue
@@ -6693,7 +6696,7 @@ run_pool() {
             awk -v p="$p_name" -F'|' '$1 != p' "$pool_file" > "${pool_file}.tmp" 2>/dev/null || true
             echo "${p_name}|${p_limit}||${p_notes}" >> "${pool_file}.tmp"
             mv "${pool_file}.tmp" "$pool_file" && chmod 600 "$pool_file"
-            log_success "Shared quota pool '${p_name}' created (Limit: $(format_bytes "$p_limit"))."
+            log_success "共享配额池 '${p_name}' 已创建（限额：$(format_bytes "$p_limit")）。"
             ;;
         add|attach)
             check_root
@@ -6713,7 +6716,7 @@ run_pool() {
             awk -v p="$p_name" -F'|' '$1 != p' "$pool_file" > "${pool_file}.tmp" 2>/dev/null || true
             echo "${_pn}|${_pl}|${upd_mems}|${_pno}" >> "${pool_file}.tmp"
             mv "${pool_file}.tmp" "$pool_file" && chmod 600 "$pool_file"
-            log_success "Attached members '${new_mems}' to pool '${p_name}'."
+            log_success "已将成员 '${new_mems}' 添加到配额池 '${p_name}'。"
             ;;
         delete|remove)
             check_root
@@ -6737,15 +6740,15 @@ run_calendar() {
     
     case "${action,,}" in
         status|"")
-            echo -e "\n  ── 📅 ${BOLD}Dynamic Calendar Quota Scheduling (Weekend / Holidays)${NC} ──\n"
+            echo -e "\n  ── 📅 ${BOLD}动态日历配额计划（周末 / 节假日）${NC} ──\n"
             local wp="false" hb="false"
             [ -f "$cal_file" ] && { source "$cal_file" 2>/dev/null || true; }
             
-            local wp_st="${YELLOW}已禁用${NC}"; [ "$wp" = "true" ] && wp_st="${GREEN}ENABLED (Free Weekend Data: Fri 00:00 - Sun 23:59)${NC}"
-            local hb_st="${YELLOW}已禁用${NC}"; [ "$hb" = "true" ] && hb_st="${GREEN}ENABLED (Holiday Airdrop: +5GB bonus on major holidays)${NC}"
+            local wp_st="${YELLOW}已禁用${NC}"; [ "$wp" = "true" ] && wp_st="${GREEN}已启用（周末免流：周五 00:00 至周日 23:59）${NC}"
+            local hb_st="${YELLOW}已禁用${NC}"; [ "$hb" = "true" ] && hb_st="${GREEN}已启用（节假日奖励：重大节假日增加 5GB）${NC}"
             
-            echo -e "  ${BOLD}[1] Weekend Free Pass:${NC}  ${wp_st}"
-            echo -e "  ${BOLD}[2] Holiday Bonus Pool:${NC} ${hb_st}"
+            echo -e "  ${BOLD}[1] 周末免流：${NC}${wp_st}"
+            echo -e "  ${BOLD}[2] 节假日奖励配额池：${NC}${hb_st}"
             echo -e "\n  ${DIM}用法： mtproxymax calendar [weekend-pass <on|off> | holiday-bonus <on|off> | status]${NC}\n"
             ;;
         weekend-pass|wp)
@@ -6755,7 +6758,7 @@ run_calendar() {
             grep -v "^wp=" "$cal_file" > "${cal_file}.tmp" 2>/dev/null || true
             echo "wp=\"$st\"" >> "${cal_file}.tmp"
             mv "${cal_file}.tmp" "$cal_file" && chmod 600 "$cal_file"
-            log_success "Weekend Free Pass set to: ${CYAN}${st}${NC}"
+            log_success "周末免流已设为：${CYAN}${st}${NC}"
             ;;
         holiday-bonus|hb)
             check_root
@@ -6764,13 +6767,13 @@ run_calendar() {
             grep -v "^hb=" "$cal_file" > "${cal_file}.tmp" 2>/dev/null || true
             echo "hb=\"$st\"" >> "${cal_file}.tmp"
             mv "${cal_file}.tmp" "$cal_file" && chmod 600 "$cal_file"
-            log_success "Holiday Bonus Pool set to: ${CYAN}${st}${NC}"
+            log_success "节假日奖励配额池已设为：${CYAN}${st}${NC}"
             ;;
         off|disable)
             check_root
             echo "wp=\"false\"" > "$cal_file"
             echo "hb=\"false\"" >> "$cal_file"
-            log_success "All calendar promotional rules disabled."
+            log_success "所有日历优惠规则均已禁用。"
             ;;
         *)
             log_error "用法： mtproxymax calendar [weekend-pass|holiday-bonus|status|off]"
@@ -6788,7 +6791,7 @@ run_geo_fence() {
     
     case "${action,,}" in
         status|"")
-            echo -e "\n  ── 🌍 ${BOLD}Geo-Fence IP Country Blocking & Allow-Only Whitelist${NC} ──\n"
+            echo -e "\n  ── 🌍 ${BOLD}地理围栏 IP 国家/地区封锁与仅允许白名单${NC} ──\n"
             local mode="off" countries=""
             if [ -f "$geo_file" ]; then
                 mode=$(grep -E '^mode=' "$geo_file" 2>/dev/null | cut -d'=' -f2- | tr -d '"\r' | tail -1 || echo "off")
@@ -6799,12 +6802,12 @@ run_geo_fence() {
             if [ "$mode" = "allow" ]; then
                 st="${GREEN}ALLOW-ONLY WHITELIST (${countries})${NC}"
             elif [ "$mode" = "block" ]; then
-                st="${RED}BLOCKLIST ACTIVE (${countries})${NC}"
+                st="${RED}封锁列表已启用（${countries}）${NC}"
             fi
             
-            echo -e "  ${BOLD}状态:${NC}          ${st}"
-            echo -e "  ${BOLD}有效 Rules:${NC}    $([ "$mode" != "off" ] && echo "Country CIDRs enforced via kernel iptables / ipset" || echo "None")"
-            echo -e "\n  ${DIM}用法： mtproxymax geofence [allow|block|status|off] <country_codes, e.g. IR,RU,CN>${NC}\n"
+            echo -e "  ${BOLD}状态：${NC}${st}"
+            echo -e "  ${BOLD}生效规则：${NC}$([ "$mode" != "off" ] && echo "通过内核 iptables / ipset 执行国家/地区 CIDR 规则" || echo "无")"
+            echo -e "\n  ${DIM}用法： mtproxymax geofence [allow|block|status|off] <country_codes>（例如 IR,RU,CN）${NC}\n"
             ;;
         allow|whitelist)
             check_root
@@ -6814,7 +6817,7 @@ run_geo_fence() {
             echo "mode=\"allow\"" > "$geo_file"
             echo "countries=\"${cc,,}\"" >> "$geo_file"
             chmod 600 "$geo_file"
-            log_success "Geo-Fence whitelist activated for countries: ${CYAN}${cc^^}${NC} (kernel filtering applied)."
+            log_success "地理围栏白名单已为以下国家/地区启用：${CYAN}${cc^^}${NC}（内核过滤已应用）。"
             ;;
         block|blacklist)
             check_root
@@ -6824,14 +6827,14 @@ run_geo_fence() {
             echo "mode=\"block\"" > "$geo_file"
             echo "countries=\"${cc,,}\"" >> "$geo_file"
             chmod 600 "$geo_file"
-            log_success "Geo-Fence blocklist activated for countries: ${CYAN}${cc^^}${NC} (kernel filtering applied)."
+            log_success "地理围栏封锁列表已为以下国家/地区启用：${CYAN}${cc^^}${NC}（内核过滤已应用）。"
             ;;
         off|disable)
             check_root
             echo "mode=\"off\"" > "$geo_file"
             echo "countries=\"\"" >> "$geo_file"
             chmod 600 "$geo_file"
-            log_success "Geo-Fence country filtering disabled."
+            log_success "地理围栏国家/地区过滤已禁用。"
             ;;
         *)
             log_error "用法： mtproxymax geofence [allow|block|status|off] <country_codes>"
@@ -6847,7 +6850,7 @@ run_decoy_web() {
     
     case "${action,,}" in
         status|"")
-            echo -e "\n  ── 🛡️ ${BOLD}Decoy Camouflage Web 服务器 (Anti-有效 Probing)${NC} ──\n"
+            echo -e "\n  ── 🛡️ ${BOLD}诱饵伪装 Web 服务器（防主动探测）${NC} ──\n"
             local d_status="disabled" d_port="8080" d_tmpl="cloud"
             if [ -f "$decoy_file" ]; then
                 d_status=$(grep -E '^d_status=' "$decoy_file" 2>/dev/null | cut -d'=' -f2- | tr -d '"\r' | tail -1 || echo "disabled")
@@ -6856,10 +6859,10 @@ run_decoy_web() {
             fi
             
             local st="${YELLOW}已禁用${NC}"
-            [ "$d_status" = "enabled" ] && st="${GREEN}ACTIVE (Serving '${d_tmpl}' camouflage theme on port ${d_port})${NC}"
+            [ "$d_status" = "enabled" ] && st="${GREEN}已启用（在端口 ${d_port} 提供 '${d_tmpl}' 伪装主题）${NC}"
             
-            echo -e "  ${BOLD}状态:${NC}        ${st}"
-            echo -e "  ${BOLD}Theme:${NC}         ${d_tmpl^} Computing & Infrastructure"
+            echo -e "  ${BOLD}状态：${NC}${st}"
+            echo -e "  ${BOLD}主题：${NC}${d_tmpl^} 计算与基础设施"
             echo -e "  ${BOLD}HTTP 端口：${NC}     ${d_port}"
             echo -e "\n  ${DIM}用法： mtproxymax decoy [setup|status|off] [cloud|blog|consulting]${NC}\n"
             ;;
@@ -6870,14 +6873,14 @@ run_decoy_web() {
             echo "d_port=\"8080\"" >> "$decoy_file"
             echo "d_tmpl=\"${tmpl,,}\"" >> "$decoy_file"
             chmod 600 "$decoy_file"
-            log_success "Decoy camouflage web server enabled with '${tmpl^}' theme!"
-            log_info "有效 DPI scanners querying your IP on HTTP will now see a legitimate IT corporate site."
+            log_success "诱饵伪装 Web 服务器已启用 '${tmpl^}' 主题！"
+            log_info "通过 HTTP 主动探测此 IP 的 DPI 扫描器现在会看到一个正常的 IT 企业网站。"
             ;;
         off|disable)
             check_root
             echo "d_status=\"disabled\"" > "$decoy_file"
             chmod 600 "$decoy_file"
-            log_success "Decoy camouflage web server disabled."
+            log_success "诱饵伪装 Web 服务器已禁用。"
             ;;
         *)
             log_error "用法： mtproxymax decoy [setup|status|off] [cloud|blog|consulting]"
@@ -6890,10 +6893,10 @@ run_auto_sni() {
     local action="${1:-test}"
     case "${action,,}" in
         test|benchmark|"")
-            echo -e "\n  ── 🔬 ${BOLD}Smart SNI Cover Domain Benchmarker & Health Rotation${NC} ──\n"
-            log_info "Benchmarking TLS handshake latency across top global cover domains..."
+            echo -e "\n  ── 🔬 ${BOLD}智能 SNI 掩护域名基准测试与健康轮换${NC} ──\n"
+            log_info "正在测试全球常用掩护域名的 TLS 握手延迟..."
             echo ""
-            printf "  %-24s %-16s %-16s %-15s\n" "COVER DOMAIN" "TLS HANDSHAKE" "TOTAL LATENCY" "STATUS"
+            printf "  %-24s %-16s %-16s %-15s\n" "掩护域名" "TLS 握手" "总延迟" "状态"
             echo "  ──────────────────────────────────────────────────────────────────────────────────"
             
             local domains=("cloudflare.com" "dl.google.com" "www.microsoft.com" "www.apple.com" "aws.amazon.com" "www.fastly.com" "www.digitalocean.com")
@@ -6916,14 +6919,14 @@ run_auto_sni() {
             done
             echo "  ──────────────────────────────────────────────────────────────────────────────────"
             if [ -n "$best_dom" ]; then
-                echo -e "\n  🏆 ${BOLD}Recommended Cover 域名：${NC} ${GREEN}${best_dom}${NC} (${best_time}ms TLS handshake)"
-                echo -e "  ${DIM}To apply automatically, run: mtproxymax auto-sni apply${NC}\n"
+                echo -e "\n  🏆 ${BOLD}推荐的掩护域名：${NC}${GREEN}${best_dom}${NC}（TLS 握手 ${best_time} 毫秒）"
+                echo -e "  ${DIM}如需自动应用，请运行：mtproxymax auto-sni apply${NC}\n"
             fi
             ;;
         apply|rotate)
             check_root
             load_settings
-            log_info "Finding optimal lowest-latency TLS cover domain..."
+            log_info "正在寻找延迟最低的最佳 TLS 掩护域名..."
             local domains=("cloudflare.com" "dl.google.com" "www.microsoft.com" "www.apple.com" "aws.amazon.com" "www.fastly.com")
             local best_dom="cloudflare.com" best_time=999999
             for dom in "${domains[@]}"; do
@@ -6937,14 +6940,14 @@ run_auto_sni() {
             done
             PROXY_DOMAIN="$best_dom"
             save_settings
-            log_success "Applied optimal cover domain: ${CYAN}${best_dom}${NC} (${best_time}ms)."
+            log_success "已应用最佳掩护域名：${CYAN}${best_dom}${NC}（${best_time} 毫秒）。"
             if is_proxy_running; then reload_proxy_config; fi
             ;;
         status)
             load_settings
-            echo -e "\n  ── 🔬 ${BOLD}Smart SNI Cover Domain 状态${NC} ──\n"
-            echo -e "  ${BOLD}Current Cover 域名：${NC} ${CYAN}${PROXY_DOMAIN:-none}${NC}"
-            echo -e "  ${DIM}Run 'mtproxymax auto-sni test' to benchmark alternative domains.${NC}\n"
+            echo -e "\n  ── 🔬 ${BOLD}智能 SNI 掩护域名状态${NC} ──\n"
+            echo -e "  ${BOLD}当前掩护域名：${NC}${CYAN}${PROXY_DOMAIN:-未配置}${NC}"
+            echo -e "  ${DIM}运行 'mtproxymax auto-sni test' 可对备选域名进行基准测试。${NC}\n"
             ;;
         *)
             log_error "用法： mtproxymax auto-sni [test|apply|status]"
@@ -6957,10 +6960,10 @@ run_dc_optimize() {
     local action="${1:-benchmark}"
     case "${action,,}" in
         benchmark|test|"")
-            echo -e "\n  ── ⚡ ${BOLD}Telegram Datacenter (DC) Route & Latency Tuner${NC} ──\n"
-            log_info "Probing latency to Telegram official core backbone DCs..."
+            echo -e "\n  ── ⚡ ${BOLD}Telegram 数据中心（DC）路由与延迟调优器${NC} ──\n"
+            log_info "正在探测到 Telegram 官方核心骨干数据中心的延迟..."
             echo ""
-            printf "  %-12s %-22s %-18s %-16s %-15s\n" "DC ID" "LOCATION" "IP PREFIX" "TCP LATENCY" "STATUS"
+            printf "  %-12s %-22s %-18s %-16s %-15s\n" "DC ID" "位置" "IP 前缀" "TCP 延迟" "状态"
             echo "  ──────────────────────────────────────────────────────────────────────────────────────"
             
             local dcs=("DC1|Miami, USA|149.154.175.50" "DC2|Amsterdam, NL|149.154.167.50" "DC3|Miami, USA|149.154.175.100" "DC4|Amsterdam, NL|149.154.167.91" "DC5|Singapore, SG|91.108.56.100")
@@ -6983,22 +6986,22 @@ run_dc_optimize() {
             done
             echo "  ──────────────────────────────────────────────────────────────────────────────────────"
             if [ -n "$best_dc" ]; then
-                echo -e "\n  🏆 ${BOLD}Fastest Telegram Backbone Route:${NC} ${GREEN}${best_dc}${NC} (${best_time}ms)"
-                echo -e "  ${DIM}Your server routing to Telegram infrastructure is healthy and optimized.${NC}\n"
+                echo -e "\n  🏆 ${BOLD}最快的 Telegram 骨干路由：${NC}${GREEN}${best_dc}${NC}（${best_time} 毫秒）"
+                echo -e "  ${DIM}服务器到 Telegram 基础设施的路由运行正常且已优化。${NC}\n"
             fi
             ;;
         apply|optimize)
             check_root
-            log_info "Tuning kernel TCP routing table & BGP metric weightings for Telegram DC subnets..."
+            log_info "正在为 Telegram 数据中心子网调优内核 TCP 路由表和 BGP 度量权重..."
             sysctl -w net.ipv4.tcp_fastopen=3 >/dev/null 2>&1 || true
             sysctl -w net.ipv4.tcp_slow_start_after_idle=0 >/dev/null 2>&1 || true
-            log_success "Telegram DC routing optimizations applied to kernel TCP stack!"
+            log_success "Telegram 数据中心路由优化已应用到内核 TCP 栈！"
             ;;
         status)
-            echo -e "\n  ── ⚡ ${BOLD}Telegram Datacenter Route Optimization 状态${NC} ──\n"
-            echo -e "  ${BOLD}TCP Fast Open:${NC}       $([ "$(sysctl -n net.ipv4.tcp_fastopen 2>/dev/null || echo 0)" -ge 1 ] && echo "${GREEN}已启用${NC}" || echo "${YELLOW}已禁用${NC}")"
-            echo -e "  ${BOLD}Slow Start Idle:${NC}     $([ "$(sysctl -n net.ipv4.tcp_slow_start_after_idle 2>/dev/null || echo 1)" -eq 0 ] && echo "${GREEN}OPTIMIZED (0)${NC}" || echo "${YELLOW}DEFAULT${NC}")"
-            echo -e "\n  ${DIM}Run 'mtproxymax dc-optimize benchmark' to test live DC ping times.${NC}\n"
+            echo -e "\n  ── ⚡ ${BOLD}Telegram 数据中心路由优化状态${NC} ──\n"
+            echo -e "  ${BOLD}TCP Fast Open：${NC}$([ "$(sysctl -n net.ipv4.tcp_fastopen 2>/dev/null || echo 0)" -ge 1 ] && echo "${GREEN}已启用${NC}" || echo "${YELLOW}已禁用${NC}")"
+            echo -e "  ${BOLD}空闲后慢启动：${NC}$([ "$(sysctl -n net.ipv4.tcp_slow_start_after_idle 2>/dev/null || echo 1)" -eq 0 ] && echo "${GREEN}已优化（0）${NC}" || echo "${YELLOW}默认${NC}")"
+            echo -e "\n  ${DIM}运行 'mtproxymax dc-optimize benchmark' 可测试数据中心的实时延迟。${NC}\n"
             ;;
         *)
             log_error "用法： mtproxymax dc-optimize [benchmark|apply|status]"
@@ -7011,9 +7014,9 @@ run_ip_score() {
     local action="${1:-check}"
     case "${action,,}" in
         check|status|"")
-            echo -e "\n  ── 🛡️ ${BOLD}IP Reputation & Block Probability Index${NC} ──\n"
+            echo -e "\n  ── 🛡️ ${BOLD}IP 信誉与被封锁概率指数${NC} ──\n"
             local pub_ip; pub_ip=$(get_public_ip 2>/dev/null || echo "127.0.0.1")
-            log_info "Analyzing IP reputation and censorship risk for: ${CYAN}${pub_ip}${NC}..."
+            log_info "正在分析 ${CYAN}${pub_ip}${NC} 的 IP 信誉与审查风险..."
             echo ""
             
             local score=100
@@ -7021,33 +7024,33 @@ run_ip_score() {
             rev_ip=$(echo "$pub_ip" | awk -F. '{print $4"."$3"."$2"."$1}')
             
             # Check Spamhaus ZEN
-            local sh_res="Clean (Not Listed)"
+            local sh_res="正常（未列入名单）"
             if [ "$pub_ip" != "127.0.0.1" ] && command -v host >/dev/null 2>&1; then
                 if host "${rev_ip}.zen.spamhaus.org" >/dev/null 2>&1; then
-                    sh_res="${RED}LISTED on Spamhaus DNSBL${NC}"
+                    sh_res="${RED}已列入 Spamhaus DNSBL${NC}"
                     score=$((score - 40))
                 fi
             fi
             
             # Check proxy port reachability / firewall posture
-            local port_res="Open & Healthy"
+            local port_res="开放且正常"
             if [ "${LOCKDOWN_MODE:-false}" = "true" ]; then
-                port_res="${YELLOW}Lockdown Shield 有效${NC}"
+                port_res="${YELLOW}紧急锁定防护生效中${NC}"
             fi
             
             local score_color="${GREEN}"; [ "$score" -lt 80 ] && score_color="${YELLOW}"; [ "$score" -lt 50 ] && score_color="${RED}"
             
-            echo -e "  ${BOLD}Public IP Address:${NC}    ${CYAN}${pub_ip}${NC}"
-            echo -e "  ${BOLD}DNSBL Spamhaus Check:${NC} ${sh_res}"
-            echo -e "  ${BOLD}Port 安全状态:${NC}         ${port_res}"
-            echo -e "  ${BOLD}Cover SNI 域名：${NC}     ${CYAN}${PROXY_DOMAIN:-none}${NC}"
+            echo -e "  ${BOLD}公网 IP 地址：${NC}${CYAN}${pub_ip}${NC}"
+            echo -e "  ${BOLD}DNSBL Spamhaus 检查：${NC}${sh_res}"
+            echo -e "  ${BOLD}端口安全状态：${NC}${port_res}"
+            echo -e "  ${BOLD}SNI 掩护域名：${NC}${CYAN}${PROXY_DOMAIN:-未配置}${NC}"
             echo "  ──────────────────────────────────────────────────────────────────────────────────"
-            echo -e "  🌟 ${BOLD}Overall IP Trust & Reputation Score:${NC} ${score_color}${BOLD}${score} / 100${NC}"
+            echo -e "  🌟 ${BOLD}IP 综合信任与信誉评分：${NC}${score_color}${BOLD}${score} / 100${NC}"
             echo "  ──────────────────────────────────────────────────────────────────────────────────"
             if [ "$score" -ge 90 ]; then
-                echo -e "  ${GREEN}✔ Your server IP has a pristine reputation with ultra-low blocking risk!${NC}\n"
+                echo -e "  ${GREEN}✔ 服务器 IP 信誉极佳，被封锁风险非常低！${NC}\n"
             else
-                echo -e "  ${YELLOW}⚠ Consider rotating your IP or enabling Emergency Lockdown shield.${NC}\n"
+                echo -e "  ${YELLOW}⚠ 建议更换 IP 或启用紧急锁定防护。${NC}\n"
             fi
             ;;
         *)
@@ -7089,22 +7092,22 @@ run_webhooks() {
     
     case "${action,,}" in
         status|"")
-            echo -e "\n  ── 🔔 ${BOLD}Enterprise Webhook Event Dispatcher (Discord, Slack, DingTalk)${NC} ──\n"
+            echo -e "\n  ── 🔔 ${BOLD}企业 Webhook 事件分发器（Discord、Slack、钉钉）${NC} ──\n"
             local cnt=0
             [ -s "$wh_file" ] && cnt=$(grep -c -v "^#" "$wh_file" 2>/dev/null || echo 0)
             
-            local st="${YELLOW}DISABLED (No endpoints configured)${NC}"
-            [ "$cnt" -gt 0 ] && st="${GREEN}ACTIVE (${cnt} webhook URL(s) registered)${NC}"
+            local st="${YELLOW}已禁用（未配置端点）${NC}"
+            [ "$cnt" -gt 0 ] && st="${GREEN}已启用（已注册 ${cnt} 个 Webhook URL）${NC}"
             
-            echo -e "  ${BOLD}状态:${NC}          ${st}"
-            echo -e "  ${BOLD}Registered URLs:${NC}"
+            echo -e "  ${BOLD}状态：${NC}${st}"
+            echo -e "  ${BOLD}已注册的 URL：${NC}"
             if [ "$cnt" -gt 0 ]; then
                 while read -r url; do
                     [[ "$url" =~ ^# ]] || [ -z "$url" ] && continue
                     echo -e "    • ${CYAN}${url:0:50}...${NC}"
                 done < "$wh_file"
             else
-                echo -e "    ${DIM}None${NC}"
+                echo -e "    ${DIM}无${NC}"
             fi
             echo -e "\n  ${DIM}用法： mtproxymax webhook [add|remove|list|test] [url]${NC}\n"
             ;;
@@ -7113,11 +7116,11 @@ run_webhooks() {
             local url="${2:-}"
             [ -z "$url" ] && { log_error "用法： mtproxymax webhook add <https://discord.com/api/webhooks/...>"; return 1; }
             if grep -q -F "$url" "$wh_file" 2>/dev/null; then
-                log_info "Webhook URL already registered."
+                log_info "该 Webhook URL 已注册。"
             else
                 echo "$url" >> "$wh_file"
                 chmod 600 "$wh_file"
-                log_success "Added webhook endpoint 成功!"
+                log_success "Webhook 端点已成功添加！"
             fi
             ;;
         remove|del)
@@ -7126,15 +7129,15 @@ run_webhooks() {
             [ -z "$url" ] && { log_error "用法： mtproxymax webhook remove <url>"; return 1; }
             grep -v -F "$url" "$wh_file" > "${wh_file}.tmp" 2>/dev/null || true
             mv "${wh_file}.tmp" "$wh_file" && chmod 600 "$wh_file"
-            log_success "Removed webhook endpoint."
+            log_success "Webhook 端点已移除。"
             ;;
         list)
             run_webhooks status
             ;;
         test)
-            log_info "Dispatching test notification to all registered webhooks..."
-            webhook_send "🚨 MTProxyMax Test Notification: Enterprise Webhook Dispatcher is operational!"
-            log_success "Test event dispatched!"
+            log_info "正在向所有已注册的 Webhook 发送测试通知..."
+            webhook_send "🚨 MTProxyMax 测试通知：企业 Webhook 分发器运行正常！"
+            log_success "测试事件已发送！"
             ;;
         *)
             log_error "用法： mtproxymax webhook [add|remove|list|test] [url]"
@@ -7150,7 +7153,7 @@ run_auto_failover() {
     
     case "${action,,}" in
         status|"")
-            echo -e "\n  ── 🔄 ${BOLD}Autonomous Upstream Failover & DNS Health Watchdog${NC} ──\n"
+            echo -e "\n  ── 🔄 ${BOLD}上游自动故障转移与 DNS 健康监控${NC} ──\n"
             local fo_status="disabled" fo_mode="backend"
             if [ -f "$fo_file" ]; then
                 fo_status=$(grep -E '^fo_status=' "$fo_file" 2>/dev/null | cut -d'=' -f2- | tr -d '"\r' | tail -1 || echo "disabled")
@@ -7158,11 +7161,11 @@ run_auto_failover() {
             fi
             
             local st="${YELLOW}已禁用${NC}"
-            [ "$fo_status" = "enabled" ] && st="${GREEN}ACTIVE (Mode: ${fo_mode^^})${NC}"
+            [ "$fo_status" = "enabled" ] && st="${GREEN}已启用（模式：${fo_mode^^}）${NC}"
             
-            echo -e "  ${BOLD}状态:${NC}        ${st}"
-            echo -e "  ${BOLD}Check Policy:${NC}  3 consecutive health ping failures triggers failover"
-            echo -e "  ${BOLD}Action:${NC}        Automatically switch active upstream / rotate backend IP"
+            echo -e "  ${BOLD}状态：${NC}${st}"
+            echo -e "  ${BOLD}检查策略：${NC}连续 3 次健康探测失败后触发故障转移"
+            echo -e "  ${BOLD}执行操作：${NC}自动切换活动上游 / 轮换后端 IP"
             echo -e "\n  ${DIM}用法： mtproxymax failover [on|off|status]${NC}\n"
             ;;
         on|enable)
@@ -7170,13 +7173,13 @@ run_auto_failover() {
             echo "fo_status=\"enabled\"" > "$fo_file"
             echo "fo_mode=\"backend\"" >> "$fo_file"
             chmod 600 "$fo_file"
-            log_success "Autonomous Upstream Failover watchdog enabled!"
+            log_success "上游自动故障转移监控已启用！"
             ;;
         off|disable)
             check_root
             echo "fo_status=\"disabled\"" > "$fo_file"
             chmod 600 "$fo_file"
-            log_success "Autonomous Upstream Failover disabled."
+            log_success "上游自动故障转移已禁用。"
             ;;
         *)
             log_error "用法： mtproxymax failover [on|off|status]"
@@ -7192,18 +7195,18 @@ run_eco_mode() {
     
     case "${action,,}" in
         status|"")
-            echo -e "\n  ── 🍃 ${BOLD}Eco-Mode RAM & CPU Throttling (Micro-服务器 Conservation)${NC} ──\n"
+            echo -e "\n  ── 🍃 ${BOLD}节能模式 RAM 与 CPU 限制（微型服务器资源节省）${NC} ──\n"
             local eco_status="disabled"
             if [ -f "$eco_file" ]; then
                 eco_status=$(grep -E '^eco_status=' "$eco_file" 2>/dev/null | cut -d'=' -f2- | tr -d '"\r' | tail -1 || echo "disabled")
             fi
             
-            local st="${YELLOW}DISABLED (Standard performance)${NC}"
-            [ "$eco_status" = "enabled" ] && st="${GREEN}ACTIVE (Ultra-low memory footprint & buffer throttling)${NC}"
+            local st="${YELLOW}已禁用（标准性能）${NC}"
+            [ "$eco_status" = "enabled" ] && st="${GREEN}已启用（超低内存占用与缓冲限制）${NC}"
             
-            echo -e "  ${BOLD}状态:${NC}          ${st}"
-            echo -e "  ${BOLD}Target Footprint:${NC} < 128MB RAM usage (ideal for 256MB/512MB VPS)"
-            echo -e "  ${BOLD}Buffer Policy:${NC}   Conservative TCP memory allocation & worker pruning"
+            echo -e "  ${BOLD}状态：${NC}${st}"
+            echo -e "  ${BOLD}目标占用：${NC}RAM 使用量低于 128MB（适合 256MB/512MB VPS）"
+            echo -e "  ${BOLD}缓冲策略：${NC}保守分配 TCP 内存并精简工作进程"
             echo -e "\n  ${DIM}用法： mtproxymax eco-mode [on|off|status]${NC}\n"
             ;;
         on|enable)
@@ -7212,7 +7215,7 @@ run_eco_mode() {
             chmod 600 "$eco_file"
             sysctl -w net.core.rmem_max=131072 >/dev/null 2>&1 || true
             sysctl -w net.core.wmem_max=131072 >/dev/null 2>&1 || true
-            log_success "Eco-Mode micro-server conservation enabled! Memory buffers throttled."
+            log_success "微型服务器节能模式已启用，内存缓冲区已限制。"
             ;;
         off|disable)
             check_root
@@ -7220,7 +7223,7 @@ run_eco_mode() {
             chmod 600 "$eco_file"
             sysctl -w net.core.rmem_max=212992 >/dev/null 2>&1 || true
             sysctl -w net.core.wmem_max=212992 >/dev/null 2>&1 || true
-            log_success "Eco-Mode disabled. Standard performance buffers restored."
+            log_success "节能模式已禁用，已恢复标准性能缓冲区。"
             ;;
         *)
             log_error "用法： mtproxymax eco-mode [on|off|status]"
@@ -7233,13 +7236,13 @@ run_chaos_test() {
     local action="${1:-status}"
     case "${action,,}" in
         status|"")
-            echo -e "\n  ── 🌪️ ${BOLD}Sandboxed Chaos Engineering & Stress Resilience Benchmarker${NC} ──\n"
-            local st="${GREEN}正常 (No chaos faults injected)${NC}"
+            echo -e "\n  ── 🌪️ ${BOLD}沙箱化混沌工程与压力韧性基准测试${NC} ──\n"
+            local st="${GREEN}正常（未注入混沌故障）${NC}"
             if command -v tc >/dev/null 2>&1 && tc qdisc show dev lo 2>/dev/null | grep -q "netem"; then
-                st="${RED}CHAOS INJECTED (有效 netem fault simulation)${NC}"
+                st="${RED}已注入混沌故障（netem 故障模拟生效中）${NC}"
             fi
-            echo -e "  ${BOLD}状态:${NC}        ${st}"
-            echo -e "  ${BOLD}Capabilities:${NC}  Simulate 5%% packet loss or +100ms jitter on local loopback"
+            echo -e "  ${BOLD}状态：${NC}${st}"
+            echo -e "  ${BOLD}测试能力：${NC}在本地回环接口模拟 5%% 丢包或增加 100 毫秒抖动"
             echo -e "\n  ${DIM}用法： mtproxymax chaos-test [drop|latency|restore|status]${NC}\n"
             ;;
         drop|loss)
@@ -7247,9 +7250,9 @@ run_chaos_test() {
             if command -v tc >/dev/null 2>&1; then
                 tc qdisc del dev lo root 2>/dev/null || true
                 tc qdisc add dev lo root netem loss 5% >/dev/null 2>&1 || true
-                log_success "Injected 5% simulated packet loss on loopback interface."
+                log_success "已在回环接口注入 5% 的模拟丢包。"
             else
-                log_info "Simulating 5% packet drop resilience test (kernel tc netem unavailable in container)."
+                log_info "正在模拟 5% 丢包韧性测试（容器内无法使用内核 tc netem）。"
             fi
             ;;
         latency|jitter)
@@ -7257,9 +7260,9 @@ run_chaos_test() {
             if command -v tc >/dev/null 2>&1; then
                 tc qdisc del dev lo root root 2>/dev/null || true
                 tc qdisc add dev lo root netem delay 100ms 20ms >/dev/null 2>&1 || true
-                log_success "Injected +100ms simulated latency & jitter on loopback interface."
+                log_success "已在回环接口注入 100 毫秒模拟延迟与抖动。"
             else
-                log_info "Simulating +100ms latency resilience test (kernel tc netem unavailable in container)."
+                log_info "正在模拟增加 100 毫秒延迟的韧性测试（容器内无法使用内核 tc netem）。"
             fi
             ;;
         restore|clean|off)
@@ -7267,7 +7270,7 @@ run_chaos_test() {
             if command -v tc >/dev/null 2>&1; then
                 tc qdisc del dev lo root 2>/dev/null || true
             fi
-            log_success "Restored network interface to pristine condition. All chaos faults removed!"
+            log_success "网络接口已恢复正常，所有混沌故障均已移除！"
             ;;
         *)
             log_error "用法： mtproxymax chaos-test [drop|latency|restore|status]"
@@ -7277,37 +7280,37 @@ run_chaos_test() {
 }
 
 run_evacuate() {
-    echo -e "\n  ── 🚑 ${BOLD}1-Click Emergency 服务器 Migration & Data Sanitization${NC} ──\n"
+    echo -e "\n  ── 🚑 ${BOLD}一键紧急服务器迁移与数据清理${NC} ──\n"
     local target_ip="${1:-}" target_user="${2:-root}"
     local conf_files=()
     for f in secrets.conf pools.conf calendar.conf webhooks.conf geofence.conf decoy.conf failover.conf eco_mode.conf settings.conf upstreams.conf; do
         [ -f "${INSTALL_DIR}/$f" ] && conf_files+=("$f")
     done
     if [ -z "$target_ip" ]; then
-        echo -e "  ${BOLD}Emergency Evacuation Bundle Generator${NC}"
-        log_info "Creating encrypted portable backup archive of all secrets, pools, and configs..."
+        echo -e "  ${BOLD}紧急迁移包生成器${NC}"
+        log_info "正在为所有密钥、配额池和配置创建加密便携备份归档..."
         mkdir -p "${INSTALL_DIR}/evacuation" 2>/dev/null || true
         local evac_file="${INSTALL_DIR}/evacuation/mtproxymax_evac_$(date +%Y%m%d_%H%M%S).tar.gz"
         if [ ${#conf_files[@]} -gt 0 ]; then
             tar -czf "$evac_file" -C "$INSTALL_DIR" "${conf_files[@]}" 2>/dev/null || true
         fi
         echo ""
-        log_success "Evacuation archive generated: ${CYAN}${evac_file}${NC}"
-        echo -e "  ${DIM}To import on new VPS, copy this archive and run: tar -xzf <archive> -C /opt/mtproxymax${NC}\n"
-        echo -e "  ${BOLD}Usage for direct SCP transfer:${NC} mtproxymax evacuate <target_vps_ip> [user]${NC}\n"
+        log_success "紧急迁移归档已生成：${CYAN}${evac_file}${NC}"
+        echo -e "  ${DIM}要在新 VPS 上导入，请复制此归档并运行：tar -xzf <archive> -C /opt/mtproxymax${NC}\n"
+        echo -e "  ${BOLD}直接通过 SCP 传输的用法：${NC}mtproxymax evacuate <target_vps_ip> [user]${NC}\n"
     else
         check_root
-        log_info "Initiating direct emergency SSH transfer to ${target_user}@${target_ip}..."
+        log_info "正在向 ${target_user}@${target_ip} 发起紧急 SSH 直传..."
         if command -v scp >/dev/null 2>&1; then
             mkdir -p "${INSTALL_DIR}/evacuation" 2>/dev/null || true
             local evac_file="${INSTALL_DIR}/evacuation/mtproxymax_evac_$(date +%Y%m%d_%H%M%S).tar.gz"
             if [ ${#conf_files[@]} -gt 0 ]; then
                 tar -czf "$evac_file" -C "$INSTALL_DIR" "${conf_files[@]}" 2>/dev/null || true
             fi
-            scp -o StrictHostKeyChecking=no "$evac_file" "${target_user}@${target_ip}:/tmp/" || { log_error "SCP transfer failed."; return 1; }
-            log_success "Evacuation archive 成功 transferred to ${target_ip}:/tmp/!"
+            scp -o StrictHostKeyChecking=no "$evac_file" "${target_user}@${target_ip}:/tmp/" || { log_error "SCP 传输失败。"; return 1; }
+            log_success "紧急迁移归档已成功传输到 ${target_ip}:/tmp/！"
         else
-            log_error "SCP command 未找到. Please transfer ${INSTALL_DIR}/evacuation/ archive manually."
+            log_error "未找到 SCP 命令，请手动传输 ${INSTALL_DIR}/evacuation/ 中的归档。"
             return 1
         fi
     fi
@@ -7328,16 +7331,16 @@ run_backup_send_tg() {
         target_file=$(ls -t "${BACKUP_DIR:-${INSTALL_DIR}/backups}"/mtproxymax-*.tar.gz* 2>/dev/null | head -1)
     fi
     if [ -z "$target_file" ] || [ ! -f "$target_file" ]; then
-        log_error "Backup file 未找到: ${target_file}"
+        log_error "未找到备份文件：${target_file}"
         return 1
     fi
     log_info "正在向 Telegram 管理员会话发送备份归档（${target_file}）..."
     local res
-    res=$(curl -s --max-time 60 -F "chat_id=${TELEGRAM_CHAT_ID}" -F "document=@${target_file}" -F "caption=📦 MTProxyMax 服务器 Backup (${SCRIPT_NAME} v${VERSION})" "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendDocument")
+    res=$(curl -s --max-time 60 -F "chat_id=${TELEGRAM_CHAT_ID}" -F "document=@${target_file}" -F "caption=📦 MTProxyMax 服务器备份（${SCRIPT_NAME} v${VERSION}）" "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendDocument")
     if echo "$res" | grep -q '"ok":true'; then
-        log_success "Backup archive 成功 dispatched to Telegram chat!"
+        log_success "备份归档已成功发送到 Telegram 聊天！"
     else
-        log_error "无法 send backup archive via Telegram API."
+        log_error "无法通过 Telegram API 发送备份归档。"
     fi
 }
 
@@ -7404,7 +7407,7 @@ run_daily_report() {
             if [ "${DAILY_REPORT_ENABLED:-false}" = "true" ]; then
                 echo -e "     状态：${GREEN}已启用${NC}（发送时间：${DAILY_REPORT_TIME:-08:00}）"
             else
-                echo -e "     状态:    ${YELLOW}已禁用${NC}"
+                echo -e "     状态：${YELLOW}已禁用${NC}"
             fi
             echo -e "  用法： mtproxymax daily-report [on <HH:MM>|off|run|status]\n"
             ;;
@@ -7456,9 +7459,9 @@ F2B
                 fi
                 SSH_SHIELD_ENABLED="true"
                 save_settings
-                log_success "SSH Intrusion Shield enabled (max 3 failed retries -> 24h ban)."
+                log_success "SSH 入侵防护已启用（最多失败 3 次后封禁 24 小时）。"
             else
-                log_error "无法 install fail2ban automatically."
+                log_error "无法自动安装 fail2ban。"
                 return 1
             fi
             ;;
@@ -7470,17 +7473,17 @@ F2B
             fi
             SSH_SHIELD_ENABLED="false"
             save_settings
-            log_success "SSH Intrusion Shield disabled."
+            log_success "SSH 入侵防护已禁用。"
             ;;
         status|"")
-            echo -e "\n  🛡️  ${BOLD}SSH Intrusion Shield (fail2ban jail):${NC}"
+            echo -e "\n  🛡️  ${BOLD}SSH 入侵防护（fail2ban 监狱）：${NC}"
             if [ "${SSH_SHIELD_ENABLED:-false}" = "true" ] && command -v fail2ban-client >/dev/null 2>&1; then
                 local banned_cnt=0
                 banned_cnt=$(fail2ban-client status sshd 2>/dev/null | grep 'Currently banned:' | awk '{print $NF}' || echo "0")
-                echo -e "     状态:          ${GREEN}运行中${NC}"
-                echo -e "     Currently Banned: ${RED}${BOLD}${banned_cnt:-0} malicious IPs${NC}"
+                echo -e "     状态：${GREEN}运行中${NC}"
+                echo -e "     当前已封禁：${RED}${BOLD}${banned_cnt:-0} 个恶意 IP${NC}"
             else
-                echo -e "     状态:          ${YELLOW}已禁用${NC}"
+                echo -e "     状态：${YELLOW}已禁用${NC}"
             fi
             echo -e "  用法： mtproxymax ssh-shield [on|off|status]\n"
             ;;
@@ -7492,9 +7495,9 @@ F2B
 }
 
 run_net_grade() {
-    echo -e "\n  🌐 ${BOLD}Network Quality Grade & Latency Benchmark Suite${NC}\n"
+    echo -e "\n  🌐 ${BOLD}网络质量评级与延迟基准测试套件${NC}\n"
     local grade="A+" points=100
-    log_info "Testing DNS & international routing latency..."
+    log_info "正在测试 DNS 与国际路由延迟..."
     local cf_ms=999 raw_ping=""
     if command -v ping >/dev/null 2>&1; then
         raw_ping=$(ping -c 1 -W 2 1.1.1.1 2>/dev/null | grep -o 'time=[0-9.]*' | cut -d= -f2 | cut -d. -f1 | head -1 || echo "")
@@ -7504,7 +7507,7 @@ run_net_grade() {
     fi
     if [ "$cf_ms" -eq 999 ]; then points=$((points - 30)); cf_ms="Timeout"; else cf_ms="${cf_ms} ms"; fi
 
-    log_info "Testing Telegram Datacenter reachability..."
+    log_info "正在测试 Telegram 数据中心可达性..."
     local dc1_ok="❌" dc2_ok="❌" dc4_ok="❌"
     if curl -s --connect-timeout 2 "https://149.154.175.50" >/dev/null 2>&1 || [ "$?" -eq 52 ] || [ "$?" -eq 60 ]; then dc1_ok="✅"; else points=$((points - 15)); fi
     if curl -s --connect-timeout 2 "https://149.154.167.50" >/dev/null 2>&1 || [ "$?" -eq 52 ] || [ "$?" -eq 60 ]; then dc2_ok="✅"; else points=$((points - 15)); fi
@@ -7516,12 +7519,12 @@ run_net_grade() {
     else grade="${RED}${BOLD}C/D (High Latency/Packet Loss)${NC}"; fi
 
     echo -e "  ┌────────────────────────────────────────────────────────┐"
-    echo -e "  │  Cloudflare Backbone Ping:  $(printf "%-26s" "${cf_ms}") │"
-    echo -e "  │  Telegram DC1 (Europe):     $(printf "%-26s" "${dc1_ok}") │"
-    echo -e "  │  Telegram DC2 (Europe):     $(printf "%-26s" "${dc2_ok}") │"
-    echo -e "  │  Telegram DC4 (Europe):     $(printf "%-26s" "${dc4_ok}") │"
+    echo -e "  │  Cloudflare 骨干网延迟：    $(printf "%-26s" "${cf_ms}") │"
+    echo -e "  │  Telegram DC1（欧洲）：     $(printf "%-26s" "${dc1_ok}") │"
+    echo -e "  │  Telegram DC2（欧洲）：     $(printf "%-26s" "${dc2_ok}") │"
+    echo -e "  │  Telegram DC4（欧洲）：     $(printf "%-26s" "${dc4_ok}") │"
     echo -e "  ├────────────────────────────────────────────────────────┤"
-    echo -e "  │  Network Quality Grade:     $(printf "%-35s" "${grade}") │"
+    echo -e "  │  网络质量评级：             $(printf "%-35s" "${grade}") │"
     echo -e "  └────────────────────────────────────────────────────────┘\n"
 }
 
@@ -7537,7 +7540,7 @@ run_onboard_wizard() {
     if [ -z "$label" ]; then log_error "用户标签不能为空"; return 1; fi
 
     local dev_choice conns=15
-    read -rp "  Device Tier [1=1 phone (9 conns), 2=2 phones (15 conns), 3=Family (30 conns)] (default: 2): " dev_choice
+    read -rp "  设备等级 [1=1 部手机（9 个连接），2=2 部手机（15 个连接），3=家庭（30 个连接）]（默认：2）：" dev_choice
     case "${dev_choice:-2}" in
         1) conns=9 ;;
         3) conns=30 ;;
@@ -7545,11 +7548,11 @@ run_onboard_wizard() {
     esac
 
     local quota
-    read -rp "  Monthly Bandwidth Quota [e.g. 50G, 100G, 0=unlimited] (default: 50G): " quota
+    read -rp "  每月带宽配额 [例如 50G、100G，0=不限]（默认：50G）：" quota
     quota="${quota:-50G}"
 
     local days
-    read -rp "  Subscription Duration in days [e.g. 30, 90, 0=never expire] (default: 30): " days
+    read -rp "  订阅有效天数 [例如 30、90，0=永不过期]（默认：30）：" days
     days="${days:-30}"
 
     local expires=""
@@ -7557,11 +7560,11 @@ run_onboard_wizard() {
         expires=$(date -d "+${days} days" "+%Y-%m-%d" 2>/dev/null || date -v+${days}d "+%Y-%m-%d" 2>/dev/null || echo "")
     fi
 
-    log_info "Creating user '${label}' with limits: conns=${conns}, quota=${quota}, expires=${expires:-none}..."
+    log_info "正在创建用户 '${label}'，限制：连接数=${conns}，配额=${quota}，到期时间=${expires:-无}..."
     secret_add "$label" "" "true"
     secret_set_limits "$label" "$conns" "" "${quota}" "${expires}" "false"
 
-    log_success "User onboarding complete! Here is their connection profile:"
+    log_success "用户开通完成！以下是其连接配置："
     secret_info "$label" || true
 }
 
@@ -7573,7 +7576,7 @@ run_tcp_boost() {
     case "$action" in
         on|enable)
             check_root
-            log_info "Applying Linux Kernel TCP BBR & Fast Open optimizations..."
+            log_info "正在应用 Linux 内核 TCP BBR 与 Fast Open 优化..."
             modprobe tcp_bbr 2>/dev/null || true
             sysctl -w net.core.default_qdisc=fq >/dev/null 2>&1 || true
             sysctl -w net.ipv4.tcp_congestion_control=bbr >/dev/null 2>&1 || true
@@ -7589,7 +7592,7 @@ SYSCTL
             sysctl -p /etc/sysctl.d/99-mtproxymax-bbr.conf >/dev/null 2>&1 || true
             TCP_BOOST_ENABLED="true"
             save_settings
-            log_success "TCP BBR & Fast Open Booster activated 成功!"
+            log_success "TCP BBR 与 Fast Open 加速已成功启用！"
             ;;
         off|disable)
             check_root
@@ -7599,20 +7602,20 @@ SYSCTL
             sysctl -w net.ipv4.tcp_fastopen=1 >/dev/null 2>&1 || true
             TCP_BOOST_ENABLED="false"
             save_settings
-            log_success "TCP BBR Booster disabled (live kernel parameters restored to standard defaults)."
+            log_success "TCP BBR 加速已禁用（实时内核参数已恢复为标准默认值）。"
             ;;
         status|"")
-            echo -e "\n  🚀 ${BOLD}Linux Kernel TCP BBR & Fast Open Booster:${NC}"
+            echo -e "\n  🚀 ${BOLD}Linux 内核 TCP BBR 与 Fast Open 加速器：${NC}"
             local cc qdisc tfo
             cc=$(sysctl -n net.ipv4.tcp_congestion_control 2>/dev/null || echo "unknown")
             qdisc=$(sysctl -n net.core.default_qdisc 2>/dev/null || echo "unknown")
             tfo=$(sysctl -n net.ipv4.tcp_fastopen 2>/dev/null || echo "0")
             if [ "$cc" = "bbr" ]; then
-                echo -e "     Congestion Control: ${GREEN}${BOLD}${cc}${NC} (qdisc: ${qdisc})"
+                echo -e "     拥塞控制：${GREEN}${BOLD}${cc}${NC}（qdisc：${qdisc}）"
             else
-                echo -e "     Congestion Control: ${YELLOW}${cc}${NC}"
+                echo -e "     拥塞控制：${YELLOW}${cc}${NC}"
             fi
-            echo -e "     TCP Fast Open:      ${CYAN}${tfo}${NC}"
+            echo -e "     TCP Fast Open：${CYAN}${tfo}${NC}"
             echo -e "  用法： mtproxymax tcp-boost [on|off|status]\n"
             ;;
         *)
@@ -7626,9 +7629,9 @@ run_leak_scan() {
     load_secrets
     local thresh="${1:-3}"
     if ! [[ "$thresh" =~ ^[0-9]+$ ]]; then thresh=3; fi
-    echo -e "\n  🕵️  ${BOLD}Subscription Leak & Account Sharing Scanner (Threshold: >${thresh} subnets)${NC}\n"
+    echo -e "\n  🕵️  ${BOLD}订阅泄漏与账号共享扫描器（阈值：>${thresh} 个子网）${NC}\n"
     if [ ! -f "$CONNECTION_LOG" ]; then
-        log_warn "Connection log (${CONNECTION_LOG}) 未找到 or empty. No live traffic logged yet."
+        log_warn "连接日志（${CONNECTION_LOG}）不存在或为空，尚未记录实时流量。"
         return 0
     fi
     local leaks_found=0
@@ -7640,11 +7643,11 @@ run_leak_scan() {
         subnet_cnt=$(tail -n 10000 "$CONNECTION_LOG" 2>/dev/null | grep -F "|${label}|" | awk -F'|' '{ip=$3; if(ip ~ /\./){split(ip,a,"."); print a[1]"."a[2]"."a[3]} else if(ip ~ /:/){split(ip,a,":"); print a[1]":"a[2]":"a[3]":"a[4]}}' | sort -u | grep -c '^[0-9a-fA-F]' || echo "0")
         if [ "${subnet_cnt:-0}" -ge "$thresh" ]; then
             leaks_found=$((leaks_found + 1))
-            echo -e "  🚨 ${RED}${BOLD}LEAK DETECTED:${NC} 密钥 ${YELLOW}${BOLD}${label}${NC} connected from ${RED}${BOLD}${subnet_cnt}${NC} distinct /24 or /64 IP subnets!"
+            echo -e "  🚨 ${RED}${BOLD}检测到泄漏：${NC}密钥 ${YELLOW}${BOLD}${label}${NC} 从 ${RED}${BOLD}${subnet_cnt}${NC} 个不同的 /24 或 /64 IP 子网连接！"
         fi
     done
     if [ "$leaks_found" -eq 0 ]; then
-        echo -e "  ✅ ${GREEN}Clean Scan:${NC} No active secrets exceeded ${thresh} simultaneous subnets."
+        echo -e "  ✅ ${GREEN}扫描正常：${NC}没有活动密钥同时使用超过 ${thresh} 个子网。"
     fi
     echo -e "  用法： mtproxymax leak-scan [threshold_subnets]\n"
 }
@@ -7656,14 +7659,14 @@ run_cert_check() {
     target="${target#http://}"
     target="${target%%/*}"
     local host_only="${target%%:*}"
-    echo -e "\n  🌐 ${BOLD}TLS Cover Domain Health & Certificate Verifier (${host_only})${NC}\n"
-    log_info "Probing HTTP reachability & response status..."
+    echo -e "\n  🌐 ${BOLD}TLS 掩护域名健康与证书验证器（${host_only}）${NC}\n"
+    log_info "正在探测 HTTP 可达性与响应状态..."
     local http_code
     http_code=$(curl -s -o /dev/null -w "%{http_code}" --connect-timeout 5 --max-time 10 "https://${host_only}" 2>/dev/null || echo "000")
     local status_icon="✅"
     if [ "$http_code" = "000" ] || [ "${http_code:0:1}" = "5" ]; then status_icon="❌"; fi
 
-    log_info "Inspecting SSL/TLS certificate chain..."
+    log_info "正在检查 SSL/TLS 证书链..."
     local expiry_str="未知" issuer="未知"
     if command -v openssl >/dev/null 2>&1; then
         local cert_info
@@ -7675,33 +7678,33 @@ run_cert_check() {
     fi
 
     echo -e "  ┌────────────────────────────────────────────────────────┐"
-    echo -e "  │  Cover Domain Target:    $(printf "%-29s" "${host_only}") │"
-    echo -e "  │  HTTP 状态 Code:       $(printf "%-29s" "${status_icon} ${http_code}") │"
-    echo -e "  │  Certificate Issuer:     $(printf "%-29s" "${issuer:0:28}") │"
-    echo -e "  │  Expiration Date:        $(printf "%-29s" "${expiry_str:0:28}") │"
+    echo -e "  │  掩护域名目标：          $(printf "%-29s" "${host_only}") │"
+    echo -e "  │  HTTP 状态码：         $(printf "%-29s" "${status_icon} ${http_code}") │"
+    echo -e "  │  证书颁发者：            $(printf "%-29s" "${issuer:0:28}") │"
+    echo -e "  │  到期日期：              $(printf "%-29s" "${expiry_str:0:28}") │"
     echo -e "  └────────────────────────────────────────────────────────┘\n"
 }
 
 run_clone_link() {
     check_root
     load_settings
-    echo -e "\n  📋 ${BOLD}One-Line VPS 服务器 Cloner & Replication Bundle${NC}\n"
-    log_info "Bundling settings, upstreams, tuning profiles, and ad-tags..."
+    echo -e "\n  📋 ${BOLD}一行命令完成 VPS 服务器克隆与复制${NC}\n"
+    log_info "正在打包设置、上游、调优配置和广告标签..."
     local files=()
     for f in settings.conf upstreams.conf tunings.conf templates.conf; do
         [ -f "${INSTALL_DIR}/$f" ] && files+=("$f")
     done
     if [ ${#files[@]} -eq 0 ]; then
-        log_error "No configuration files found in ${INSTALL_DIR}."
+        log_error "在 ${INSTALL_DIR} 中未找到配置文件。"
         return 1
     fi
     local bundle_b64
     bundle_b64=$(tar czf - -C "$INSTALL_DIR" "${files[@]}" 2>/dev/null | base64 | tr -d '\r\n')
     if [ -z "$bundle_b64" ]; then
-        log_error "无法 encode configuration bundle."
+        log_error "无法编码配置包。"
         return 1
     fi
-    echo -e "  Copy and run this exact line on any fresh target Linux VPS to instantly mirror settings:"
+    echo -e "  在任意全新的目标 Linux VPS 上复制并运行以下完整命令，即可立即复制设置："
     echo -e "  ${CYAN}${BOLD}mtproxymax bootstrap ${bundle_b64}${NC}\n"
 }
 
@@ -7713,37 +7716,37 @@ run_bootstrap() {
         log_error "用法： mtproxymax bootstrap <base64_payload>"
         return 1
     fi
-    echo -e "\n  📦 ${BOLD}Bootstrapping 服务器 Configuration from Bundle...${NC}"
+    echo -e "\n  📦 ${BOLD}正在从配置包引导服务器配置...${NC}"
     mkdir -p "$INSTALL_DIR"
     if (echo "$bundle_b64" | base64 -d 2>/dev/null || echo "$bundle_b64" | base64 --decode 2>/dev/null || echo "$bundle_b64" | base64 -D 2>/dev/null) | tar xzf - -C "$INSTALL_DIR" 2>/dev/null; then
-        log_success "Configuration files extracted 成功!"
+        log_success "配置文件已成功解压！"
         if is_proxy_running; then
-            log_info "Reloading proxy engine configuration..."
+            log_info "正在重新加载代理引擎配置..."
             reload_proxy_config
         fi
     else
-        log_error "Invalid or corrupted Base64 bootstrap payload."
+        log_error "Base64 引导载荷无效或已损坏。"
         return 1
     fi
 }
 
 run_heal() {
     check_root
-    echo -e "\n  🏥 ${BOLD}Emergency RAM & Socket Auto-Healer Execution${NC}\n"
+    echo -e "\n  🏥 ${BOLD}紧急 RAM 与套接字自动修复${NC}\n"
     local ram_before sockets_before
     ram_before=$(free -m 2>/dev/null | awk '/^Mem:/{print $4}' | head -1 | tr -cd '0-9' || echo "0")
     [ -z "$ram_before" ] && ram_before=0
     sockets_before=$(netstat -an 2>/dev/null | grep -c 'TIME_WAIT' || ss -an 2>/dev/null | grep -c 'TIME-WAIT' || echo "0")
     [ -z "$sockets_before" ] && sockets_before=0
 
-    log_info "Reclaiming OS pagecache & unassigned buffer memory..."
+    log_info "正在回收操作系统页面缓存与未分配的缓冲内存..."
     sync; echo 3 > /proc/sys/vm/drop_caches 2>/dev/null || true
 
-    log_info "Recycling orphaned TIME_WAIT TCP sockets..."
+    log_info "正在回收孤立的 TIME_WAIT TCP 套接字..."
     sysctl -w net.ipv4.tcp_tw_reuse=1 >/dev/null 2>&1 || true
     sysctl -w net.ipv4.tcp_fin_timeout=15 >/dev/null 2>&1 || true
 
-    log_info "Expanding Netfilter conntrack table headroom..."
+    log_info "正在扩展 Netfilter conntrack 表余量..."
     if [ -f /proc/sys/net/netfilter/nf_conntrack_max ]; then
         sysctl -w net.netfilter.nf_conntrack_max=262144 >/dev/null 2>&1 || true
     fi
@@ -7771,22 +7774,22 @@ run_auto_heal() {
             check_root
             AUTO_HEAL_ENABLED="true"
             save_settings
-            log_success "Background RAM & Socket Auto-Healer enabled (runs via periodic maintenance sweep)."
+            log_success "后台 RAM 与套接字自动修复已启用（通过定期维护扫描运行）。"
             ;;
         off|disable)
             check_root
             AUTO_HEAL_ENABLED="false"
             save_settings
-            log_success "Background Auto-Healer disabled."
+            log_success "后台自动修复已禁用。"
             ;;
         status|"")
-            echo -e "\n  🏥 ${BOLD}Emergency RAM & Socket Auto-Healer:${NC}"
+            echo -e "\n  🏥 ${BOLD}紧急 RAM 与套接字自动修复：${NC}"
             if [ "${AUTO_HEAL_ENABLED:-false}" = "true" ]; then
-                echo -e "     状态:    ${GREEN}已启用${NC}"
+                echo -e "     状态：${GREEN}已启用${NC}"
             else
-                echo -e "     状态:    ${YELLOW}已禁用${NC}"
+                echo -e "     状态：${YELLOW}已禁用${NC}"
             fi
-            echo -e "  用法： mtproxymax auto-heal [on|off|status] or mtproxymax heal\n"
+            echo -e "  用法： mtproxymax auto-heal [on|off|status] 或 mtproxymax heal\n"
             ;;
         *)
             log_error "用法： mtproxymax auto-heal [on|off|status]"
@@ -7801,7 +7804,7 @@ run_tcp_clean() {
     case "$action" in
         on|enable)
             check_root
-            log_info "Configuring Linux Kernel low-latency TCP keep-alive timers..."
+            log_info "正在配置 Linux 内核低延迟 TCP 保活计时器..."
             sysctl -w net.ipv4.tcp_keepalive_time=300 >/dev/null 2>&1 || true
             sysctl -w net.ipv4.tcp_keepalive_intvl=15 >/dev/null 2>&1 || true
             sysctl -w net.ipv4.tcp_keepalive_probes=4 >/dev/null 2>&1 || true
@@ -7817,7 +7820,7 @@ SYSCTL
             sysctl -p /etc/sysctl.d/99-mtproxymax-tcpclean.conf >/dev/null 2>&1 || true
             TCP_CLEAN_ENABLED="true"
             save_settings
-            log_success "Dead Mobile Socket Reaper activated 成功!"
+            log_success "失效移动端套接字清理器已成功启用！"
             ;;
         off|disable)
             check_root
@@ -7828,21 +7831,21 @@ SYSCTL
             sysctl -w net.ipv4.tcp_fin_timeout=60 >/dev/null 2>&1 || true
             TCP_CLEAN_ENABLED="false"
             save_settings
-            log_success "TCP Keep-Alive settings disabled (live kernel parameters restored to standard defaults)."
+            log_success "TCP 保活设置已禁用（实时内核参数已恢复为标准默认值）。"
             ;;
         status|"")
-            echo -e "\n  🧹 ${BOLD}Dead Mobile Socket Keep-Alive Reaper:${NC}"
+            echo -e "\n  🧹 ${BOLD}失效移动端套接字保活清理器：${NC}"
             local ka_time ka_intvl ka_probes ka_suffix="s"
             ka_time=$(sysctl -n net.ipv4.tcp_keepalive_time 2>/dev/null || echo "unknown")
             ka_intvl=$(sysctl -n net.ipv4.tcp_keepalive_intvl 2>/dev/null || echo "unknown")
             ka_probes=$(sysctl -n net.ipv4.tcp_keepalive_probes 2>/dev/null || echo "unknown")
             if [ "$ka_time" = "unknown" ]; then ka_suffix=""; fi
             if [ "${TCP_CLEAN_ENABLED:-false}" = "true" ] || [ "$ka_time" = "300" ]; then
-                echo -e "     状态:           ${GREEN}${BOLD}ENABLED${NC}"
+                echo -e "     状态：${GREEN}${BOLD}已启用${NC}"
             else
-                echo -e "     状态:           ${YELLOW}已禁用${NC} (OS default: ${ka_time}${ka_suffix})"
+                echo -e "     状态：${YELLOW}已禁用${NC}（操作系统默认值：${ka_time}${ka_suffix}）"
             fi
-            echo -e "     Keep-Alive Time:  ${CYAN}${ka_time}${ka_suffix}${NC} (interval: ${ka_intvl}${ka_suffix}, probes: ${ka_probes})"
+            echo -e "     保活时间：${CYAN}${ka_time}${ka_suffix}${NC}（间隔：${ka_intvl}${ka_suffix}，探测次数：${ka_probes}）"
             echo -e "  用法： mtproxymax tcp-clean [on|off|status]\n"
             ;;
         *)
@@ -7858,7 +7861,7 @@ run_socket_boost() {
     case "$action" in
         on|enable)
             check_root
-            log_info "Applying ultra-low latency kernel socket polling & queue expansion..."
+            log_info "正在应用超低延迟内核套接字轮询与队列扩展..."
             sysctl -w net.core.somaxconn=65535 >/dev/null 2>&1 || true
             sysctl -w net.core.netdev_max_backlog=65535 >/dev/null 2>&1 || true
             sysctl -w net.ipv4.tcp_max_syn_backlog=65535 >/dev/null 2>&1 || true
@@ -7878,7 +7881,7 @@ SYSCTL
             sysctl -p /etc/sysctl.d/99-mtproxymax-sockboost.conf >/dev/null 2>&1 || true
             SOCKET_BOOST_ENABLED="true"
             save_settings
-            log_success "Ultra-Low Latency Socket Booster activated 成功!"
+            log_success "超低延迟套接字加速器已成功启用！"
             ;;
         off|disable)
             check_root
@@ -7891,20 +7894,20 @@ SYSCTL
             sysctl -w net.core.busy_poll=0 >/dev/null 2>&1 || true
             SOCKET_BOOST_ENABLED="false"
             save_settings
-            log_success "Socket queue booster disabled (live kernel parameters restored to standard defaults)."
+            log_success "套接字队列加速器已禁用（实时内核参数已恢复为标准默认值）。"
             ;;
         status|"")
-            echo -e "\n  🚀 ${BOLD}Ultra-Low Latency Kernel Socket Booster:${NC}"
+            echo -e "\n  🚀 ${BOLD}超低延迟内核套接字加速器：${NC}"
             local somax lowat
             somax=$(sysctl -n net.core.somaxconn 2>/dev/null || echo "unknown")
             lowat=$(sysctl -n net.ipv4.tcp_notsent_lowat 2>/dev/null || echo "unknown")
             if [ "${SOCKET_BOOST_ENABLED:-false}" = "true" ] || [ "$somax" = "65535" ]; then
-                echo -e "     状态:          ${GREEN}${BOLD}ENABLED${NC}"
+                echo -e "     状态：${GREEN}${BOLD}已启用${NC}"
             else
-                echo -e "     状态:          ${YELLOW}已禁用${NC}"
+                echo -e "     状态：${YELLOW}已禁用${NC}"
             fi
-            echo -e "     Socket Backlog:  ${CYAN}${somax}${NC}"
-            echo -e "     Buffer Lowat:    ${CYAN}${lowat}${NC}"
+            echo -e "     套接字积压队列：${CYAN}${somax}${NC}"
+            echo -e "     缓冲区低水位：${CYAN}${lowat}${NC}"
             echo -e "  用法： mtproxymax socket-boost [on|off|status]\n"
             ;;
         *)
@@ -7925,7 +7928,7 @@ run_tls_pad() {
             local rand_len=$(( min_len + (RANDOM % (max_len - min_len + 1)) ))
             FAKE_CERT_LEN="$rand_len"
             save_settings
-            log_success "Dynamic FakeTLS Record Padding enabled (Current Cert Length: ${rand_len} bytes)."
+            log_success "动态 FakeTLS 记录填充已启用（当前证书长度：${rand_len} 字节）。"
             if is_proxy_running; then
                 reload_proxy_config
             fi
@@ -7936,7 +7939,7 @@ run_tls_pad() {
             local rand_len=$(( min_len + (RANDOM % (max_len - min_len + 1)) ))
             FAKE_CERT_LEN="$rand_len"
             save_settings
-            log_success "Rotated FakeTLS record payload length to ${rand_len} bytes."
+            log_success "FakeTLS 记录载荷长度已轮换为 ${rand_len} 字节。"
             if is_proxy_running; then
                 reload_proxy_config
             fi
@@ -7946,19 +7949,19 @@ run_tls_pad() {
             TLS_PAD_ENABLED="false"
             FAKE_CERT_LEN=2048
             save_settings
-            log_success "Dynamic FakeTLS Padding disabled (restored standard 2048-byte length)."
+            log_success "动态 FakeTLS 填充已禁用（已恢复标准的 2048 字节长度）。"
             if is_proxy_running; then
                 reload_proxy_config
             fi
             ;;
         status|"")
-            echo -e "\n  🎲 ${BOLD}Dynamic FakeTLS Record Padding & Jitter Rotation:${NC}"
+            echo -e "\n  🎲 ${BOLD}动态 FakeTLS 记录填充与抖动轮换：${NC}"
             if [ "${TLS_PAD_ENABLED:-false}" = "true" ]; then
-                echo -e "     状态:              ${GREEN}${BOLD}ENABLED (Auto-rotating)${NC}"
+                echo -e "     状态：${GREEN}${BOLD}已启用（自动轮换）${NC}"
             else
-                echo -e "     状态:              ${YELLOW}已禁用${NC}"
+                echo -e "     状态：${YELLOW}已禁用${NC}"
             fi
-            echo -e "     Current Cert Length: ${CYAN}${FAKE_CERT_LEN:-2048} bytes${NC}"
+            echo -e "     当前证书长度：${CYAN}${FAKE_CERT_LEN:-2048} 字节${NC}"
             echo -e "  用法： mtproxymax tls-pad [auto|off|status|randomize]\n"
             ;;
         *)
@@ -7977,7 +7980,7 @@ run_honeypot() {
             MASKING_ENABLED="true"
             HONEYPOT_ENABLED="true"
             save_settings
-            log_success "有效 Probe Honeypot & Decoy Redirection enabled."
+            log_success "主动探测蜜罐与诱饵重定向已启用。"
             if is_proxy_running; then
                 reload_proxy_config
             fi
@@ -7986,18 +7989,18 @@ run_honeypot() {
             check_root
             HONEYPOT_ENABLED="false"
             save_settings
-            log_success "有效 Probe Honeypot disabled."
+            log_success "主动探测蜜罐已禁用。"
             if is_proxy_running; then
                 reload_proxy_config
             fi
             ;;
         status|"")
-            echo -e "\n  🍯 ${BOLD}有效 Probe Honeypot & Decoy Redirection:${NC}"
+            echo -e "\n  🍯 ${BOLD}主动探测蜜罐与诱饵重定向：${NC}"
             if [ "${HONEYPOT_ENABLED:-false}" = "true" ]; then
-                echo -e "     状态:         ${GREEN}${BOLD}ENABLED${NC}"
-                echo -e "     Decoy Target:   ${CYAN}${MASKING_HOST:-${PROXY_DOMAIN:-cloudflare.com}}:${MASKING_PORT:-443}${NC}"
+                echo -e "     状态：${GREEN}${BOLD}已启用${NC}"
+                echo -e "     诱饵目标：${CYAN}${MASKING_HOST:-${PROXY_DOMAIN:-cloudflare.com}}:${MASKING_PORT:-443}${NC}"
             else
-                echo -e "     状态:         ${YELLOW}已禁用${NC}"
+                echo -e "     状态：${YELLOW}已禁用${NC}"
             fi
             echo -e "  用法： mtproxymax honeypot [on|off|status]\n"
             ;;
@@ -8015,7 +8018,7 @@ run_tcp_fastpath() {
     case "$action" in
         on|enable)
             check_root
-            log_info "Activating TCP Fast-Path, High-Concurrency Backlogs, Fast Open, and Mobile Keepalive tuning..."
+            log_info "正在启用 TCP 快速路径、高并发积压队列、Fast Open 和移动端保活调优..."
             sysctl -w net.ipv4.tcp_window_scaling=1 >/dev/null 2>&1 || true
             sysctl -w net.ipv4.tcp_sack=1 >/dev/null 2>&1 || true
             sysctl -w net.ipv4.tcp_mtu_probing=1 >/dev/null 2>&1 || true
@@ -8053,7 +8056,7 @@ SYSCTL
             sysctl -p /etc/sysctl.d/99-mtproxymax-fastpath.conf >/dev/null 2>&1 || true
             TCP_FASTPATH_ENABLED="true"
             save_settings
-            log_success "TCP Fast-Path, Fast Open, & Mobile Keepalive Optimizations activated!"
+            log_success "TCP 快速路径、Fast Open 和移动端保活优化已启用！"
             ;;
         off|disable)
             check_root
@@ -8063,10 +8066,10 @@ SYSCTL
             sysctl -w net.ipv4.tcp_fastopen=1 >/dev/null 2>&1 || true
             TCP_FASTPATH_ENABLED="false"
             save_settings
-            log_success "TCP Fast-Path optimizations disabled (live kernel parameters restored to standard defaults)."
+            log_success "TCP 快速路径优化已禁用（实时内核参数已恢复标准默认值）。"
             ;;
         status|"")
-            echo -e "\n  🏎️ ${BOLD}TCP Fast-Path Window Scaling & High-Concurrency Probing:${NC}"
+            echo -e "\n  🏎️ ${BOLD}TCP 快速路径窗口缩放与高并发探测：${NC}"
             local ws sack mtu_probe somax tfo tw
             ws=$(sysctl -n net.ipv4.tcp_window_scaling 2>/dev/null || echo "unknown")
             sack=$(sysctl -n net.ipv4.tcp_sack 2>/dev/null || echo "unknown")
@@ -8075,16 +8078,16 @@ SYSCTL
             tfo=$(sysctl -n net.ipv4.tcp_fastopen 2>/dev/null || echo "unknown")
             tw=$(sysctl -n net.ipv4.tcp_tw_reuse 2>/dev/null || echo "unknown")
             if [ "${TCP_FASTPATH_ENABLED:-false}" = "true" ]; then
-                echo -e "     状态:        ${GREEN}${BOLD}ENABLED${NC}"
+                echo -e "     状态：${GREEN}${BOLD}已启用${NC}"
             else
-                echo -e "     状态:        ${YELLOW}已禁用${NC}"
+                echo -e "     状态：${YELLOW}已禁用${NC}"
             fi
-            echo -e "     Window Scale:  ${CYAN}$([ "$ws" = "1" ] && echo "ON" || echo "OFF")${NC}"
-            echo -e "     TCP SACK:      ${CYAN}$([ "$sack" = "1" ] && echo "ON" || echo "OFF")${NC}"
-            echo -e "     MTU Probing:   ${CYAN}$([ "$mtu_probe" = "1" ] && echo "ON" || echo "OFF")${NC}"
-            echo -e "     SOMAXCONN:     ${CYAN}${somax}${NC}"
-            echo -e "     TCP Fast Open: ${CYAN}$([ "$tfo" = "3" ] && echo "ON (Send+Recv)" || echo "$tfo")${NC}"
-            echo -e "     TIME_WAIT Reuse: ${CYAN}$([ "$tw" = "1" ] && echo "ON" || echo "OFF")${NC}"
+            echo -e "     窗口缩放：${CYAN}$([ "$ws" = "1" ] && echo "开启" || echo "关闭")${NC}"
+            echo -e "     TCP SACK：${CYAN}$([ "$sack" = "1" ] && echo "开启" || echo "关闭")${NC}"
+            echo -e "     MTU 探测：${CYAN}$([ "$mtu_probe" = "1" ] && echo "开启" || echo "关闭")${NC}"
+            echo -e "     最大监听队列：${CYAN}${somax}${NC}"
+            echo -e "     TCP Fast Open：${CYAN}$([ "$tfo" = "3" ] && echo "开启（发送+接收）" || echo "$tfo")${NC}"
+            echo -e "     TIME_WAIT 复用：${CYAN}$([ "$tw" = "1" ] && echo "开启" || echo "关闭")${NC}"
             echo -e "  用法： mtproxymax tcp-fastpath [on|off|status]\n"
             ;;
         *)
@@ -8158,7 +8161,7 @@ run_ram_tune() {
             local total_mb
             total_mb=$(detect_system_ram_mb)
             if [ -z "$total_mb" ] || [ "$total_mb" -le 0 ] 2>/dev/null; then
-                log_error "无法 detect system RAM. Aborting."
+                log_error "无法检测系统内存，操作已中止。"
                 return 1
             fi
             local tier rmem_max wmem_max rmem_def wmem_def min_free_kb
@@ -8178,7 +8181,7 @@ run_ram_tune() {
                 rmem_def=1048576; wmem_def=1048576
                 min_free_kb=131072
             fi
-            log_info "Detected ${total_mb} MB RAM — applying ${tier} TCP memory profile..."
+            log_info "检测到 ${total_mb} MB 内存，正在应用 ${tier} TCP 内存配置..."
             sysctl -w net.core.rmem_max=$rmem_max >/dev/null 2>&1 || true
             sysctl -w net.core.wmem_max=$wmem_max >/dev/null 2>&1 || true
             sysctl -w net.core.rmem_default=$rmem_def >/dev/null 2>&1 || true
@@ -8201,7 +8204,7 @@ SYSCTL
             sysctl -p /etc/sysctl.d/99-mtproxymax-ramtune.conf >/dev/null 2>&1 || true
             RAM_TUNE_ENABLED="true"
             save_settings
-            log_success "RAM Auto-Tune activated for ${tier} (${total_mb} MB detected)."
+            log_success "已为 ${tier} 启用内存自动调优（检测到 ${total_mb} MB）。"
             ;;
         off|disable)
             check_root
@@ -8213,24 +8216,24 @@ SYSCTL
             sysctl -w vm.min_free_kbytes=67584 >/dev/null 2>&1 || true
             RAM_TUNE_ENABLED="false"
             save_settings
-            log_success "RAM tuning disabled (live kernel parameters restored to standard defaults)."
+            log_success "内存调优已禁用（实时内核参数已恢复标准默认值）。"
             ;;
         status|"")
-            echo -e "\n  🧠 ${BOLD}Dynamic RAM Auto-Tuning:${NC}"
+            echo -e "\n  🧠 ${BOLD}动态内存自动调优：${NC}"
             local total_mb rmem wmem minfree
             total_mb=$(detect_system_ram_mb || echo "unknown")
             rmem=$(sysctl -n net.core.rmem_max 2>/dev/null || echo "unknown")
             wmem=$(sysctl -n net.core.wmem_max 2>/dev/null || echo "unknown")
             minfree=$(sysctl -n vm.min_free_kbytes 2>/dev/null || echo "unknown")
             if [ "${RAM_TUNE_ENABLED:-false}" = "true" ]; then
-                echo -e "     状态:         ${GREEN}${BOLD}ENABLED${NC}"
+                echo -e "     状态：${GREEN}${BOLD}已启用${NC}"
             else
-                echo -e "     状态:         ${YELLOW}已禁用${NC}"
+                echo -e "     状态：${YELLOW}已禁用${NC}"
             fi
-            echo -e "     Total RAM:      ${CYAN}${total_mb} MB${NC}"
-            echo -e "     Read Buffer:    ${CYAN}${rmem} bytes${NC}"
-            echo -e "     Write Buffer:   ${CYAN}${wmem} bytes${NC}"
-            echo -e "     Min Free KB:    ${CYAN}${minfree}${NC}"
+            echo -e "     内存总量：${CYAN}${total_mb} MB${NC}"
+            echo -e "     读取缓冲区：${CYAN}${rmem} 字节${NC}"
+            echo -e "     写入缓冲区：${CYAN}${wmem} 字节${NC}"
+            echo -e "     最小空闲 KB：${CYAN}${minfree}${NC}"
             echo -e "  用法： mtproxymax ram-tune [auto|off|status]\n"
             ;;
         *)
@@ -8249,7 +8252,7 @@ run_port_hop() {
             check_root
             local range="$2"
             if [ -z "$range" ]; then
-                log_error "用法： mtproxymax port-hop add <start>:<end>  (e.g. 2000:2050)"
+                log_error "用法： mtproxymax port-hop add <start>:<end>（例如 2000:2050）"
                 return 1
             fi
             local start_port end_port
@@ -8257,39 +8260,39 @@ run_port_hop() {
             end_port="${range##*:}"
             # Validate port range
             if ! [[ "$start_port" =~ ^[0-9]+$ ]] || ! [[ "$end_port" =~ ^[0-9]+$ ]]; then
-                log_error "Invalid port range format. Use: <start>:<end> (e.g. 2000:2050)"
+                log_error "端口范围格式无效。请使用：<start>:<end>（例如 2000:2050）"
                 return 1
             fi
             if [ "$start_port" -lt 1 ] || [ "$end_port" -gt 65535 ] || [ "$start_port" -gt "$end_port" ]; then
-                log_error "Port range must be 1-65535 and start ≤ end."
+                log_error "端口范围必须在 1–65535 之间，且起始端口不得大于结束端口。"
                 return 1
             fi
             local target_port="${PROXY_PORT:-443}"
             # Check if range overlaps with proxy port
             if [ "$start_port" -le "$target_port" ] && [ "$end_port" -ge "$target_port" ]; then
-                log_error "Port range ${start_port}:${end_port} overlaps with proxy listen port ${target_port}."
+                log_error "端口范围 ${start_port}:${end_port} 与代理监听端口 ${target_port} 重叠。"
                 return 1
             fi
             # Check for duplicate range entry
             if [[ ",${PORT_HOP_RANGES}," == *",${range},"* ]]; then
-                log_warn "Port range ${range} is already active."
+                log_warn "端口范围 ${range} 已经启用。"
                 return 0
             fi
             # Apply iptables NAT redirect
             if command -v iptables &>/dev/null; then
                 iptables -t nat -A PREROUTING -p tcp --dport "${start_port}:${end_port}" -m comment --comment "mtproxymax_porthop" -j REDIRECT --to-ports "$target_port" 2>/dev/null || {
-                    log_error "无法 apply iptables redirect rule."
+                    log_error "无法应用 iptables 重定向规则。"
                     return 1
                 }
             elif command -v nft &>/dev/null; then
                 nft add table inet mtproxymax_hop 2>/dev/null || true
                 nft add chain inet mtproxymax_hop prerouting '{ type nat hook prerouting priority -100; }' 2>/dev/null || true
                 nft add rule inet mtproxymax_hop prerouting tcp dport "${start_port}-${end_port}" redirect to :"$target_port" 2>/dev/null || {
-                    log_error "无法 apply nftables redirect rule."
+                    log_error "无法应用 nftables 重定向规则。"
                     return 1
                 }
             else
-                log_error "Neither iptables nor nft found. Cannot apply port-hop."
+                log_error "未找到 iptables 或 nft，无法应用端口跳转。"
                 return 1
             fi
             # Persist range
@@ -8299,7 +8302,7 @@ run_port_hop() {
                 PORT_HOP_RANGES="$range"
             fi
             save_settings
-            log_success "Port-hop range ${start_port}:${end_port} → port ${target_port} activated!"
+            log_success "端口跳转范围 ${start_port}:${end_port} → ${target_port} 已启用！"
             ;;
         remove|rm)
             check_root
@@ -8334,20 +8337,20 @@ run_port_hop() {
             if command -v nft &>/dev/null; then
                 apply_port_hop_rules
             fi
-            log_success "Port-hop range ${range} removed."
+            log_success "端口跳转范围 ${range} 已移除。"
             ;;
         list|status|"")
-            echo -e "\n  🌐 ${BOLD}Dynamic Port Range Shadowing:${NC}"
+            echo -e "\n  🌐 ${BOLD}动态端口范围映射：${NC}"
             if [ -n "${PORT_HOP_RANGES:-}" ]; then
-                echo -e "     状态:  ${GREEN}${BOLD}ACTIVE${NC}"
+                echo -e "     状态：${GREEN}${BOLD}已启用${NC}"
                 IFS=',' read -ra _parts <<< "$PORT_HOP_RANGES"
                 local p
                 for p in "${_parts[@]}"; do
                     local s="${p%%:*}" e="${p##*:}"
-                    echo -e "     Range:   ${CYAN}${s}–${e}${NC} → port ${PROXY_PORT:-443}"
+                    echo -e "     范围：${CYAN}${s}–${e}${NC} → 端口 ${PROXY_PORT:-443}"
                 done
             else
-                echo -e "     状态:  ${YELLOW}NO ACTIVE RANGES${NC}"
+                echo -e "     状态：${YELLOW}无活动范围${NC}"
             fi
             echo -e "  用法： mtproxymax port-hop [add <start:end>|remove <start:end>|list]\n"
             ;;
@@ -8369,7 +8372,7 @@ run_cpu_tune() {
             local num_cpus
             num_cpus=$(nproc 2>/dev/null || grep -c ^processor /proc/cpuinfo 2>/dev/null || echo 1)
             if [ "$num_cpus" -le 1 ]; then
-                log_info "Single-core CPU detected. RPS/RFS tuning provides minimal benefit on single-core."
+                log_info "检测到单核 CPU；RPS/RFS 调优在单核环境中收益有限。"
             fi
             # Calculate RPS bitmask (all cores enabled)
             local rps_mask
@@ -8381,7 +8384,7 @@ run_cpu_tune() {
             if [ -f /proc/sys/net/core/rps_sock_flow_entries ]; then
                 echo "$rfs_entries" > /proc/sys/net/core/rps_sock_flow_entries 2>/dev/null || true
             else
-                log_info "RFS sock flow entries not available (may be a container)."
+                log_info "RFS 套接字流条目不可用（当前环境可能是容器）。"
             fi
             # Apply RPS/RFS to all network interfaces
             local applied=0 skipped=0
@@ -8429,9 +8432,9 @@ CPUTUNE
             CPU_TUNE_ENABLED="true"
             save_settings
             if [ "$skipped" -gt 0 ] && [ "$applied" -eq 0 ]; then
-                log_info "Containerized environment detected (RPS write restricted). Persistence saved for KVM/dedicated boot."
+                log_info "检测到容器环境（RPS 写入受限）；持久化配置已保存，供 KVM 或独立服务器启动时使用。"
             fi
-            log_success "Multi-Core IRQ spreading applied (${num_cpus} cores, mask=0x${rps_mask}, ${applied} queues tuned)."
+            log_success "多核 IRQ 分流已应用（${num_cpus} 核，掩码 0x${rps_mask}，已调优 ${applied} 个队列）。"
             ;;
         off|disable)
             check_root
@@ -8450,18 +8453,18 @@ CPUTUNE
             rm -f /etc/mtproxymax/cpu-tune.sh 2>/dev/null
             CPU_TUNE_ENABLED="false"
             save_settings
-            log_success "Multi-Core IRQ spreading disabled."
+            log_success "多核 IRQ 分流已禁用。"
             ;;
         status|"")
-            echo -e "\n  ⚡ ${BOLD}Multi-Core IRQ Packet Spreading (RPS/RFS):${NC}"
+            echo -e "\n  ⚡ ${BOLD}多核 IRQ 数据包分流（RPS/RFS）：${NC}"
             local num_cpus
             num_cpus=$(nproc 2>/dev/null || grep -c ^processor /proc/cpuinfo 2>/dev/null || echo "unknown")
             if [ "${CPU_TUNE_ENABLED:-false}" = "true" ]; then
-                echo -e "     状态:     ${GREEN}${BOLD}ENABLED${NC}"
+                echo -e "     状态：${GREEN}${BOLD}已启用${NC}"
             else
-                echo -e "     状态:     ${YELLOW}已禁用${NC}"
+                echo -e "     状态：${YELLOW}已禁用${NC}"
             fi
-            echo -e "     CPU Cores:  ${CYAN}${num_cpus}${NC}"
+            echo -e "     CPU 核心数：${CYAN}${num_cpus}${NC}"
             # Check virtualization type
             local virt_type="unknown"
             if command -v systemd-detect-virt &>/dev/null; then
@@ -8473,9 +8476,9 @@ CPUTUNE
                     virt_type="openvz"
                 fi
             fi
-            echo -e "     Platform:   ${CYAN}${virt_type}${NC}"
+            echo -e "     平台：${CYAN}${virt_type}${NC}"
             if [ "$virt_type" = "lxc" ] || [ "$virt_type" = "openvz" ]; then
-                echo -e "     ${YELLOW}⚠ Container detected — RPS writes may be restricted${NC}"
+                echo -e "     ${YELLOW}⚠ 检测到容器环境，RPS 写入可能受限${NC}"
             fi
             echo -e "  用法： mtproxymax cpu-tune [on|off|status]\n"
             ;;
@@ -8493,21 +8496,21 @@ run_bbr() {
     case "$action" in
         on|enable)
             check_root
-            log_info "Activating TCP BBRv3 Congestion Control, ECN, and Network Buffer Tuning..."
+            log_info "正在启用 TCP BBRv3 拥塞控制、ECN 与网络缓冲区调优..."
             modprobe tcp_bbr 2>/dev/null || true
             local avail_cc
             avail_cc=$(sysctl -n net.ipv4.tcp_available_congestion_control 2>/dev/null || echo "")
             if ! echo "$avail_cc" | grep -qw "bbr"; then
-                log_warn "Kernel does not report 'bbr' in available congestion controls. Attempting sysctl anyway..."
+                log_warn "内核报告的可用拥塞控制算法中没有 'bbr'，仍将尝试通过 sysctl 启用..."
             fi
-            local sysctl_content="# MTProxyMax BBRv3 & ECN High-Throughput Optimization\n"
+            local sysctl_content="# MTProxyMax BBRv3 与 ECN 高吞吐量优化\n"
             if sysctl -w net.core.default_qdisc=fq >/dev/null 2>&1; then
                 sysctl_content+="net.core.default_qdisc = fq\n"
             fi
             if sysctl -w net.ipv4.tcp_congestion_control=bbr >/dev/null 2>&1; then
                 sysctl_content+="net.ipv4.tcp_congestion_control = bbr\n"
             else
-                log_warn "Kernel rejected 'bbr' congestion control (common in OpenVZ/LXC containers). Keeping default CC."
+                log_warn "内核拒绝启用 'bbr' 拥塞控制（常见于 OpenVZ/LXC 容器），将保留默认算法。"
             fi
             if sysctl -w net.ipv4.tcp_ecn=1 >/dev/null 2>&1; then
                 sysctl_content+="net.ipv4.tcp_ecn = 1\n"
@@ -8523,7 +8526,7 @@ run_bbr() {
             sysctl -p /etc/sysctl.d/99-mtproxymax-bbr.conf >/dev/null 2>&1 || true
             BBR_ECN_ENABLED="true"
             save_settings
-            log_success "BBRv3 Congestion Control, ECN, and 16MB TCP Buffers activated!"
+            log_success "BBRv3 拥塞控制、ECN 与 16MB TCP 缓冲区已启用！"
             ;;
         off|disable)
             check_root
@@ -8533,22 +8536,22 @@ run_bbr() {
             sysctl -w net.ipv4.tcp_congestion_control=cubic >/dev/null 2>&1 || true
             BBR_ECN_ENABLED="false"
             save_settings
-            log_success "BBR/ECN tuning disabled (restored cubic and standard sysctl defaults)."
+            log_success "BBR/ECN 调优已禁用（已恢复 cubic 和标准 sysctl 默认值）。"
             ;;
         status|"")
-            echo -e "\n  🚀 ${BOLD}Suite 1: BBRv3 Congestion Control & ECN Auto-Tuning:${NC}"
+            echo -e "\n  🚀 ${BOLD}套件 1：BBRv3 拥塞控制与 ECN 自动调优：${NC}"
             local cur_cc cur_qdisc cur_ecn
             cur_cc=$(sysctl -n net.ipv4.tcp_congestion_control 2>/dev/null || echo "unknown")
             cur_qdisc=$(sysctl -n net.core.default_qdisc 2>/dev/null || echo "unknown")
             cur_ecn=$(sysctl -n net.ipv4.tcp_ecn 2>/dev/null || echo "unknown")
             if [ "${BBR_ECN_ENABLED:-false}" = "true" ] || [ "$cur_cc" = "bbr" ]; then
-                echo -e "     状态:        ${GREEN}${BOLD}ENABLED${NC}"
+                echo -e "     状态：${GREEN}${BOLD}已启用${NC}"
             else
-                echo -e "     状态:        ${YELLOW}已禁用${NC}"
+                echo -e "     状态：${YELLOW}已禁用${NC}"
             fi
-            echo -e "     Congestion:    ${CYAN}${cur_cc}${NC}"
-            echo -e "     Queue Disc:    ${CYAN}${cur_qdisc}${NC}"
-            echo -e "     TCP ECN:       ${CYAN}$([ "$cur_ecn" = "1" ] && echo "ON (Explicit Congestion Notification)" || echo "OFF (${cur_ecn})")${NC}"
+            echo -e "     拥塞控制：${CYAN}${cur_cc}${NC}"
+            echo -e "     队列规则：${CYAN}${cur_qdisc}${NC}"
+            echo -e "     TCP ECN：${CYAN}$([ "$cur_ecn" = "1" ] && echo "开启（显式拥塞通知）" || echo "关闭（${cur_ecn}）")${NC}"
             echo -e "  用法： mtproxymax bbr [on|off|status]\n"
             ;;
         *)
@@ -8565,8 +8568,8 @@ run_anti_dpi_shield() {
     case "$action" in
         on|enable)
             check_root
-            [ -z "${PROXY_PORT:-}" ] && { log_error "PROXY_PORT not configured"; return 1; }
-            log_info "Activating Anti-DPI Packet Padding & TLS Fingerprint Scrubbing Shield..."
+            [ -z "${PROXY_PORT:-}" ] && { log_error "尚未配置 PROXY_PORT"; return 1; }
+            log_info "正在启用抗 DPI 数据包填充与 TLS 指纹清理防护..."
             local _ok=false
             if command -v iptables >/dev/null 2>&1; then
                 local _chain
@@ -8587,14 +8590,14 @@ run_anti_dpi_shield() {
             ANTI_DPI_SHIELD_ENABLED="true"
             save_settings
             if [ "$_ok" = "true" ]; then
-                log_success "Anti-DPI Packet Padding Shield activated! (Kernel MSS clamped to 1360 & FakeTLS size randomized)"
+                log_success "抗 DPI 数据包填充防护已启用！（内核 MSS 已钳制为 1360，FakeTLS 大小已随机化）"
             else
-                log_success "Anti-DPI Packet Padding Shield activated! (Note: Local kernel Netfilter rules skipped due to container/firewall restriction; application-layer padding active)"
+                log_success "抗 DPI 数据包填充防护已启用！（注意：受容器/防火墙限制，本地内核 Netfilter 规则已跳过；应用层填充已生效）"
             fi
             ;;
         off|disable)
             check_root
-            [ -z "${PROXY_PORT:-}" ] && { log_error "PROXY_PORT not configured"; return 1; }
+            [ -z "${PROXY_PORT:-}" ] && { log_error "尚未配置 PROXY_PORT"; return 1; }
             if command -v iptables >/dev/null 2>&1; then
                 local _chain
                 for _chain in FORWARD OUTPUT POSTROUTING; do
@@ -8607,17 +8610,17 @@ run_anti_dpi_shield() {
             fi
             ANTI_DPI_SHIELD_ENABLED="false"
             save_settings
-            log_success "Anti-DPI Packet Padding Shield disabled."
+            log_success "抗 DPI 数据包填充防护已禁用。"
             ;;
         status|"")
-            echo -e "\n  🛡️ ${BOLD}Suite 2: Anti-DPI Packet Padding & TLS Fingerprint Shield:${NC}"
+            echo -e "\n  🛡️ ${BOLD}套件 2：抗 DPI 数据包填充与 TLS 指纹防护：${NC}"
             if [ "${ANTI_DPI_SHIELD_ENABLED:-false}" = "true" ]; then
-                echo -e "     状态:        ${GREEN}${BOLD}ENABLED${NC} (有效 TCP Window & MSS Fingerprint Scrubbing)"
+                echo -e "     状态：${GREEN}${BOLD}已启用${NC}（TCP 窗口与 MSS 指纹清理生效中）"
             else
-                echo -e "     状态:        ${YELLOW}已禁用${NC}"
+                echo -e "     状态：${YELLOW}已禁用${NC}"
             fi
             echo -e "     Target 端口：   ${CYAN}${PROXY_PORT:-443}${NC}"
-            echo -e "     Protection:    ${CYAN}Scrubs MTProto FakeTLS packet size signatures from GFW/TSPU/TIC DPI boxes${NC}"
+            echo -e "     防护：${CYAN}清理 GFW/TSPU/TIC DPI 设备可识别的 MTProto FakeTLS 数据包大小特征${NC}"
             echo -e "  用法： mtproxymax shield [on|off|status]\n"
             ;;
         *)
@@ -8635,21 +8638,21 @@ run_cover_shield() {
     case "$action" in
         on|enable)
             check_root
-            [ -z "${PROXY_PORT:-}" ] && { log_error "PROXY_PORT not configured"; return 1; }
+            [ -z "${PROXY_PORT:-}" ] && { log_error "尚未配置 PROXY_PORT"; return 1; }
             if [ -n "$target" ]; then
                 [[ "$target" =~ ^https?:// ]] || target="https://${target}"
                 COVER_FALLBACK_TARGET="$target"
             fi
-            log_info "Activating Reverse-Proxy Cover Shield (有效 Probe Defense)..."
-            log_info "Fallback Target configured to: ${COVER_FALLBACK_TARGET:-https://cloudflare.com}"
+            log_info "正在启用反向代理掩护防护（主动探测防御）..."
+            log_info "回退目标已配置为：${COVER_FALLBACK_TARGET:-https://cloudflare.com}"
             UNKNOWN_SNI_ACTION="mask"
             COVER_SHIELD_ENABLED="true"
             save_settings
             if is_proxy_running; then
-                log_info "Restarting telemt engine to apply Cover Shield fallback routing..."
+                log_info "正在重启 Telemt 引擎以应用掩护防护回退路由..."
                 restart_proxy >/dev/null 2>&1 || true
             fi
-            log_success "Reverse-Proxy Cover Shield activated! (Non-MTProto probes forwarded to ${COVER_FALLBACK_TARGET})"
+            log_success "反向代理掩护防护已启用！（非 MTProto 探测将转发到 ${COVER_FALLBACK_TARGET}）"
             ;;
         off|disable)
             check_root
@@ -8658,7 +8661,7 @@ run_cover_shield() {
             if is_proxy_running; then
                 restart_proxy >/dev/null 2>&1 || true
             fi
-            log_success "Reverse-Proxy Cover Shield disabled."
+            log_success "反向代理掩护防护已禁用。"
             ;;
         target|set-target)
             [ -z "$target" ] && { log_error "用法： mtproxymax cover-shield target <https://domain.com>"; return 1; }
@@ -8668,21 +8671,21 @@ run_cover_shield() {
             COVER_FALLBACK_TARGET="$target"
             save_settings
             if [ "${COVER_SHIELD_ENABLED:-false}" = "true" ] && is_proxy_running; then
-                log_info "Restarting telemt engine to apply updated Cover Shield target..."
+                log_info "正在重启 Telemt 引擎以应用更新后的掩护防护目标..."
                 restart_proxy >/dev/null 2>&1 || true
             fi
-            log_success "Cover Shield fallback target updated to: ${COVER_FALLBACK_TARGET}"
+            log_success "掩护防护回退目标已更新为：${COVER_FALLBACK_TARGET}"
             ;;
         status|"")
-            echo -e "\n  🕵️ ${BOLD}Suite 3: Reverse-Proxy Cover Shield & 有效 Probe Defense:${NC}"
+            echo -e "\n  🕵️ ${BOLD}套件 3：反向代理掩护防护与主动探测防御：${NC}"
             if [ "${COVER_SHIELD_ENABLED:-false}" = "true" ]; then
-                echo -e "     状态:        ${GREEN}${BOLD}ENABLED${NC} (有效 Censorship Probe Trapdoor)"
+                echo -e "     状态：${GREEN}${BOLD}已启用${NC}（审查探测陷阱生效中）"
             else
-                echo -e "     状态:        ${YELLOW}已禁用${NC}"
+                echo -e "     状态：${YELLOW}已禁用${NC}"
             fi
             echo -e "     Listen 端口：   ${CYAN}${PROXY_PORT:-443}${NC}"
-            echo -e "     Fallback Site: ${CYAN}${COVER_FALLBACK_TARGET:-https://cloudflare.com}${NC}"
-            echo -e "     Behavior:      ${CYAN}Forwards HTTP GET & invalid TLS handshakes to fallback site instead of resetting socket${NC}"
+            echo -e "     回退站点：${CYAN}${COVER_FALLBACK_TARGET:-https://cloudflare.com}${NC}"
+            echo -e "     行为：${CYAN}将 HTTP GET 与无效 TLS 握手转发到回退站点，而不是重置套接字${NC}"
             echo -e "  用法： mtproxymax cover-shield [on|off|status|target <url>]\n"
             ;;
         *)
@@ -8694,9 +8697,9 @@ run_cover_shield() {
 
 # ── Show changelog since installed version ──
 show_changelog() {
-    log_info "Fetching changelog from GitHub..."
+    log_info "正在从 GitHub 获取更新日志..."
     local out
-    out=$(curl -fsSL --max-time 10 "https://api.github.com/repos/${GITHUB_REPO}/releases" 2>/dev/null) || { log_error "无法 fetch releases"; return 1; }
+    out=$(curl -fsSL --max-time 10 "https://api.github.com/repos/${GITHUB_REPO}/releases" 2>/dev/null) || { log_error "无法获取版本信息"; return 1; }
 
     # Parse and display (Python for clean JSON, grep fallback)
     if command -v python3 &>/dev/null; then
@@ -8737,12 +8740,12 @@ upstream_add() {
     local name="$1" type="$2" addr="${3:-}" user="${4:-}" pass="${5:-}" weight="${6:-10}" iface="${7:-}"
 
     if [ -z "$name" ] || [ -z "$type" ]; then
-        log_error "Name and type are required"
+        log_error "必须提供名称和类型"
         return 1
     fi
 
     if ! [[ "$name" =~ ^[a-zA-Z0-9_-]+$ ]] || [ ${#name} -gt 32 ]; then
-        log_error "Name must be alphanumeric (a-z, 0-9, _, -) and max 32 characters"
+        log_error "名称只能包含字母、数字、下划线和连字符，最多 32 个字符"
         return 1
     fi
 
@@ -8758,50 +8761,50 @@ upstream_add() {
     # Validate type
     case "$type" in
         direct|socks5|socks4) ;;
-        *) log_error "Type must be: direct, socks5, or socks4"; return 1 ;;
+        *) log_error "类型必须是 direct、socks5 或 socks4"; return 1 ;;
     esac
 
     # Address required for socks types
     if [ "$type" != "direct" ] && [ -z "$addr" ]; then
-        log_error "Address (host:port) is required for ${type} upstreams"
+        log_error "${type} 上游必须提供地址（host:port）"
         return 1
     fi
 
     # Validate address format for non-direct types
     if [ "$type" != "direct" ] && [ -n "$addr" ]; then
         if [[ ! "$addr" =~ ^[a-zA-Z0-9._-]+:[0-9]+$ ]]; then
-            log_error "Address must be in host:port format (letters, digits, dots, hyphens only)"
+            log_error "地址必须采用 host:port 格式（主机名仅允许字母、数字、点和连字符）"
             return 1
         fi
         # Validate port range
         local addr_port="${addr##*:}"
         if [ "$addr_port" -lt 1 ] || [ "$addr_port" -gt 65535 ] 2>/dev/null; then
-            log_error "Port must be 1-65535"
+            log_error "端口必须在 1–65535 之间"
             return 1
         fi
     fi
 
     # Reject pipe, double-quote, backslash in credentials (corrupt file or TOML)
     if [[ "$user" =~ [|\"\\] ]] || [[ "$pass" =~ [|\"\\] ]]; then
-        log_error "Username/password cannot contain pipe (|), double-quote (\"), or backslash (\\)"
+        log_error "用户名或密码不能包含竖线（|）、双引号（\"）或反斜杠（\\）"
         return 1
     fi
 
     # Reject pipe, double-quote, backslash in interface (corrupt file or TOML)
     if [[ "$iface" =~ [|\"\\] ]]; then
-        log_error "Interface cannot contain pipe (|), double-quote (\"), or backslash (\\)"
+        log_error "网络接口不能包含竖线（|）、双引号（\"）或反斜杠（\\）"
         return 1
     fi
 
     # Validate weight
     if ! [[ "$weight" =~ ^[0-9]+$ ]] || [ "$weight" -lt 1 ] || [ "$weight" -gt 100 ]; then
-        log_error "Weight must be 1-100"
+        log_error "权重必须在 1–100 之间"
         return 1
     fi
 
     # Warn if password provided for SOCKS4 (protocol only supports user_id)
     if [ "$type" = "socks4" ] && [ -n "$pass" ]; then
-        log_warn "SOCKS4 does not support passwords — only username (user_id) will be used"
+        log_warn "SOCKS4 不支持密码，将仅使用用户名（user_id）"
         pass=""
     fi
 
@@ -8828,7 +8831,7 @@ upstream_remove() {
     local name="$1"
 
     if [ ${#UPSTREAM_NAMES[@]} -le 1 ]; then
-        log_error "Cannot remove the last upstream — at least one is required"
+        log_error "无法移除最后一个上游，至少需要保留一个"
         return 1
     fi
 
@@ -8851,7 +8854,7 @@ upstream_remove() {
             [ "${UPSTREAM_ENABLED[$i]}" = "true" ] && enabled_count=$((enabled_count + 1))
         done
         if [ "$enabled_count" -eq 0 ]; then
-            log_error "Cannot remove the last enabled upstream — proxy needs at least one"
+            log_error "无法移除最后一个已启用的上游，代理至少需要一个可用上游"
             return 1
         fi
     fi
@@ -8951,7 +8954,7 @@ upstream_toggle() {
             [ "${UPSTREAM_ENABLED[$i]}" = "true" ] && enabled_count=$((enabled_count + 1))
         done
         if [ "$enabled_count" -le 1 ]; then
-            log_error "Cannot disable the last enabled upstream — proxy needs at least one"
+            log_error "无法禁用最后一个已启用的上游——代理至少需要一个上游"
             return 1
         fi
     fi
@@ -8966,7 +8969,7 @@ upstream_toggle() {
                 UPSTREAM_ENABLED[$idx]="true"
             fi
             ;;
-        *) log_error "Action must be: enable, disable, or toggle"; return 1 ;;
+        *) log_error "操作必须是 enable、disable 或 toggle"; return 1 ;;
     esac
 
     save_upstreams
@@ -8976,7 +8979,7 @@ upstream_toggle() {
     fi
 
     local _state="disabled"; [ "${UPSTREAM_ENABLED[$idx]}" = "true" ] && _state="enabled"
-    log_success "Upstream '${name}' is now ${_state}"
+    log_success "上游 '${name}' 当前状态为 ${_state}"
 }
 
 # Test upstream connectivity
@@ -9001,23 +9004,23 @@ upstream_test() {
     [ -n "$iface" ] && iface_opt=(--interface "$iface")
 
     if [ "$type" = "direct" ]; then
-        log_info "Testing direct connection..."
+        log_info "正在测试直连..."
         local result
         if result=$(curl -sf --max-time 10 "${iface_opt[@]}" https://api.ipify.org 2>/dev/null) && [[ "$result" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            log_success "Direct connection OK — External IP: ${result}"
+            log_success "直连正常，出口 IP：${result}"
         else
-            log_error "Direct connection failed"
+            log_error "直连失败"
             return 1
         fi
         return 0
     fi
 
     if [ -z "$addr" ]; then
-        log_error "No address configured for '${name}'"
+        log_error "未为 '${name}' 配置地址"
         return 1
     fi
 
-    log_info "Testing ${type} proxy at ${addr}..."
+    log_info "正在测试 ${addr} 上的 ${type} 代理..."
 
     local proxy_scheme="$type"
     [ "$proxy_scheme" = "socks5" ] && proxy_scheme="socks5h"
@@ -9034,9 +9037,9 @@ upstream_test() {
 
     local result
     if result=$(curl -sf --max-time 15 "${iface_opt[@]}" -x "$proxy_url" "${proxy_auth[@]}" https://api.ipify.org 2>/dev/null) && [[ "$result" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-        log_success "${type} proxy OK — 退出 IP: ${result}"
+        log_success "${type} 代理正常，出口 IP：${result}"
     else
-        log_error "${type} proxy at ${addr} failed"
+        log_error "${addr} 上的 ${type} 代理测试失败"
         return 1
     fi
 }
@@ -9177,13 +9180,13 @@ stop_proxy_container() {
             speed_limit_clear 2>/dev/null || true
             # Signal intentional stop — prevents bot auto-recovery from restarting
             echo "$(date +%s)" > /tmp/.mtproxymax_stopped 2>/dev/null || true
-            log_success "Proxy stopped"
+            log_success "代理已停止"
         else
-            log_error "无法 stop proxy"
+            log_error "无法停止代理"
             return 1
         fi
     else
-        log_info "Proxy is not running"
+        log_info "代理未运行"
     fi
     # Also stop secondary instances
     _stop_all_instances 2>/dev/null
@@ -9241,7 +9244,7 @@ start_proxy_container() {
     rm -f /tmp/.mtproxymax_stopped 2>/dev/null
 
     if is_proxy_running; then
-        log_info "Proxy is already running"
+        log_info "代理已在运行"
         return 0
     fi
 
@@ -9266,7 +9269,7 @@ restart_proxy_container() {
 # Hot-reload: rewrite config.toml and let the engine pick it up (no restart, no dropped connections)
 # Use this for secret/limit changes. Falls back to restart if container is not running.
 reload_proxy_config() {
-    generate_telemt_config || { log_error "Config generation failed"; return 1; }
+    generate_telemt_config || { log_error "配置生成失败"; return 1; }
 
     # Flush traffic counters to disk before reload (in case SIGHUP triggers a restart)
     flush_traffic_to_disk 2>/dev/null || true
@@ -9294,7 +9297,7 @@ reload_proxy_config() {
     fi
 
     speed_limit_apply 2>/dev/null || true
-    log_info "Config reloaded (hot-reload, no restart)"
+    log_info "配置已热重载，无需重启"
 }
 
 # Parse ISO 8601 timestamp to epoch (portable: GNU date, busybox date, Python fallback)
@@ -9343,28 +9346,28 @@ get_active_connections() {
 
 show_qr() {
     local link="$1"
-    [ -z "$link" ] && { log_error "No link provided"; return 1; }
+    [ -z "$link" ] && { log_error "未提供链接"; return 1; }
 
     if command -v qrencode &>/dev/null; then
         echo ""
-        echo -e "  ${BOLD}Scan this QR code in Telegram:${NC}"
+        echo -e "  ${BOLD}请在 Telegram 中扫描此二维码：${NC}"
         echo ""
         qrencode -t ANSIUTF8 "$link" | sed 's/^/  /'
     elif command -v python3 &>/dev/null && python3 -c "import qrcode" &>/dev/null; then
         echo ""
-        echo -e "  ${BOLD}Scan this QR code in Telegram:${NC}"
+        echo -e "  ${BOLD}请在 Telegram 中扫描此二维码：${NC}"
         echo ""
         python3 -c "import qrcode, sys; qr = qrcode.QRCode(); qr.add_data(sys.argv[1]); qr.print_ascii(invert=True)" "$link" 2>/dev/null | sed 's/^/  /'
     elif docker run --rm -e QR_DATA="$link" alpine:latest sh -c 'apk add --no-cache qrencode >/dev/null 2>&1 && qrencode -t ANSIUTF8 "$QR_DATA"' 2>/dev/null | sed 's/^/  /'; then
         :
     else
         echo ""
-        echo -e "  ${YELLOW}QR code ASCII view not available (install qrencode or python3-qrcode)${NC}"
-        echo -e "  ${DIM}Install: apt install qrencode${NC}"
+        echo -e "  ${YELLOW}无法显示二维码字符图（请安装 qrencode 或 python3-qrcode）${NC}"
+        echo -e "  ${DIM}安装命令：apt install qrencode${NC}"
     fi
 
     echo ""
-    echo -e "  ${BOLD}Share this link:${NC}"
+    echo -e "  ${BOLD}分享此链接：${NC}"
     echo -e "  ${CYAN}${link}${NC}"
     echo ""
 }
@@ -9378,7 +9381,7 @@ secret_qr() {
         for i in "${!SECRETS_LABELS[@]}"; do
             if [ "${SECRETS_ENABLED[$i]}" = "true" ]; then
                 local lbl="${SECRETS_LABELS[$i]}"
-                echo -e "\n  ── QR Code for user: ${CYAN}${BOLD}${lbl}${NC} ──"
+                echo -e "\n  ── 用户二维码：${CYAN}${BOLD}${lbl}${NC} ──"
                 local link
                 if link=$(get_proxy_link_https "$lbl" 2>/dev/null); then
                     show_qr "$link"
@@ -9387,7 +9390,7 @@ secret_qr() {
             fi
         done
         if [ "$found" -eq 0 ]; then
-            log_error "No active user secrets found."
+            log_error "未找到有效的用户密钥。"
             return 1
         fi
     else
@@ -9415,14 +9418,14 @@ GEOBLOCK_COMMENT="mtproxymax-geoblock"
 # Ensure ipset is installed
 _ensure_ipset() {
     command -v ipset &>/dev/null && return 0
-    log_info "Installing ipset..."
+    log_info "正在安装 ipset..."
     local os; os=$(detect_os)
     case "$os" in
         debian) apt-get install -y -qq ipset ;;
         rhel)   yum install -y -q ipset ;;
         alpine) apk add --no-cache ipset ;;
     esac
-    command -v ipset &>/dev/null || { log_error "无法 install ipset"; return 1; }
+    command -v ipset &>/dev/null || { log_error "无法安装 ipset"; return 1; }
 }
 
 # Download and cache CIDR list for a country
@@ -9436,16 +9439,16 @@ _download_country_cidrs() {
         return 0
     fi
 
-    log_info "Downloading IP list for ${code^^}..."
+    log_info "正在下载 ${code^^} 的 IP 列表..."
     local url="https://www.ipdeny.com/ipblocks/data/aggregated/${code}-aggregated.zone"
     if ! curl -fsSL --max-time 30 "$url" -o "$cache_file" 2>/dev/null; then
         rm -f "$cache_file"
-        log_error "无法 download IP list for ${code^^} — check country code"
+        log_error "无法下载 ${code^^} 的 IP 列表，请检查国家/地区代码"
         return 1
     fi
 
     local count; count=$(wc -l < "$cache_file")
-    log_info "Downloaded ${count} IP ranges for ${code^^}"
+    log_info "已下载 ${code^^} 的 ${count} 个 IP 段"
 }
 
 # Apply iptables/ipset rules for one country
@@ -9454,7 +9457,7 @@ _apply_country_rules() {
     local setname="${GEOBLOCK_IPSET_PREFIX}${code}"
     local cache_file="${GEOBLOCK_CACHE_DIR}/${code}.zone"
 
-    [ -f "$cache_file" ] || { log_error "No cached IP list for ${code}"; return 1; }
+    [ -f "$cache_file" ] || { log_error "没有 ${code} 的缓存 IP 列表"; return 1; }
 
     # Create if not exists, then flush to clear stale entries
     ipset create -exist "$setname" hash:net family inet maxelem 131072
@@ -9484,7 +9487,7 @@ _apply_country_rules() {
         fi
     fi
 
-    log_success "Geo-${GEOBLOCK_MODE} active for ${code^^} (port ${PROXY_PORT})"
+    log_success "已对 ${code^^} 启用地理${GEOBLOCK_MODE}（端口 ${PROXY_PORT}）"
 }
 
 # Remove iptables rules and ipset for one country
@@ -9580,13 +9583,13 @@ show_geoblock_menu() {
         clear_screen
         draw_header "地理位置屏蔽"
         echo ""
-        echo -e "  ${BOLD}Mode:${NC}      ${GEOBLOCK_MODE}"
-        echo -e "  ${BOLD}Countries:${NC} ${BLOCKLIST_COUNTRIES:-${DIM}none${NC}}"
+        echo -e "  ${BOLD}模式：${NC}${GEOBLOCK_MODE}"
+        echo -e "  ${BOLD}国家/地区：${NC}${BLOCKLIST_COUNTRIES:-${DIM}无${NC}}"
         echo ""
-        echo -e "  ${DIM}[1]${NC} Add country"
-        echo -e "  ${DIM}[2]${NC} Remove country"
-        echo -e "  ${DIM}[3]${NC} Clear all"
-        echo -e "  ${DIM}[4]${NC} Toggle mode (blacklist/whitelist)"
+        echo -e "  ${DIM}[1]${NC} 添加国家/地区"
+        echo -e "  ${DIM}[2]${NC} 移除国家/地区"
+        echo -e "  ${DIM}[3]${NC} 全部清除"
+        echo -e "  ${DIM}[4]${NC} 切换模式（黑名单/白名单）"
         echo -e "  ${DIM}[0]${NC} 返回"
 
         local choice
@@ -9595,16 +9598,16 @@ show_geoblock_menu() {
         case "$choice" in
             1)
                 echo ""
-                echo -e "  ${BOLD}Common country codes:${NC}"
+                echo -e "  ${BOLD}常用国家/地区代码：${NC}"
                 echo -e "  US DE NL FR GB SG JP CA AU KR CN RU IR"
                 echo ""
-                echo -en "  ${BOLD}Enter country code (2 letters):${NC} "
+                echo -en "  ${BOLD}输入两位国家/地区代码：${NC} "
                 local code
                 read -r code
                 code=$(echo "$code" | tr '[:upper:]' '[:lower:]')
                 if [[ "$code" =~ ^[a-z]{2}$ ]]; then
                     if echo ",$BLOCKLIST_COUNTRIES," | grep -q ",${code},"; then
-                        log_info "Country '${code}' is already in the list"
+                        log_info "国家/地区 '${code}' 已在列表中"
                     else
                         _ensure_ipset && _download_country_cidrs "$code" && {
                             [ -z "$BLOCKLIST_COUNTRIES" ] && BLOCKLIST_COUNTRIES="$code" || BLOCKLIST_COUNTRIES="${BLOCKLIST_COUNTRIES},${code}"
@@ -9614,12 +9617,12 @@ show_geoblock_menu() {
                         }
                     fi
                 else
-                    log_error "Invalid country code (use 2-letter ISO code, e.g. us, de, ir)"
+                    log_error "国家/地区代码无效（请使用两位 ISO 代码，例如 us、de、ir）"
                 fi
                 press_any_key
                 ;;
             2)
-                echo -en "  ${BOLD}Country code to remove:${NC} "
+                echo -en "  ${BOLD}要移除的国家/地区代码：${NC} "
                 local rm_code
                 read -r rm_code
                 rm_code=$(echo "$rm_code" | tr '[:upper:]' '[:lower:]')
@@ -9631,12 +9634,12 @@ show_geoblock_menu() {
                         rm -f "${GEOBLOCK_CACHE_DIR}/${rm_code}.zone"
                         # Remove default-DROP if no countries left in whitelist mode
                         [ -z "$BLOCKLIST_COUNTRIES" ] && _remove_default_drop
-                        log_success "Removed ${rm_code^^} — rules and cache cleared"
+                        log_success "已移除 ${rm_code^^}，相关规则和缓存已清除"
                     else
-                        log_info "Country '${rm_code}' is not in the list"
+                        log_info "国家/地区 '${rm_code}' 不在列表中"
                     fi
                 else
-                    log_error "Invalid country code (use 2-letter ISO code)"
+                    log_error "国家/地区代码无效（请使用两位 ISO 代码）"
                 fi
                 press_any_key
                 ;;
@@ -9651,7 +9654,7 @@ show_geoblock_menu() {
                 _remove_default_drop
                 BLOCKLIST_COUNTRIES=""
                 save_settings
-                log_success "All geo-blocks cleared"
+                log_success "已清除所有地理位置屏蔽规则"
                 press_any_key
                 ;;
             4)
@@ -9663,7 +9666,7 @@ show_geoblock_menu() {
                 save_settings
                 # Reapply rules in new mode
                 [ -n "$BLOCKLIST_COUNTRIES" ] && geoblock_reapply_all
-                log_success "Geo-blocking mode: ${GEOBLOCK_MODE}"
+                log_success "地理位置屏蔽模式：${GEOBLOCK_MODE}"
                 press_any_key
                 ;;
             0|"") return ;;
@@ -9681,50 +9684,50 @@ health_check() {
 
     # Docker status
     if command -v docker &>/dev/null; then
-        echo -e "  Docker:      $(draw_status running 'Installed')"
+        echo -e "  Docker：$(draw_status running '已安装')"
     else
-        echo -e "  Docker:      $(draw_status stopped 'Not installed')"
+        echo -e "  Docker：$(draw_status stopped '未安装')"
         return 1
     fi
 
     # Container status
     if is_proxy_running; then
-        echo -e "  Container:   $(draw_status running '运行中')"
+        echo -e "  容器：$(draw_status running '运行中')"
     else
-        echo -e "  Container:   $(draw_status stopped '已停止')"
+        echo -e "  容器：$(draw_status stopped '已停止')"
     fi
 
     # Port check
     if is_port_available "$PROXY_PORT"; then
         if is_proxy_running; then
-            echo -e "  Port ${PROXY_PORT}:     $(draw_status stopped 'Not listening')"
+            echo -e "  端口 ${PROXY_PORT}：$(draw_status stopped '未监听')"
         else
-            echo -e "  Port ${PROXY_PORT}:     $(draw_status true 'Available')"
+            echo -e "  端口 ${PROXY_PORT}：$(draw_status true '可用')"
         fi
     else
-        echo -e "  Port ${PROXY_PORT}:     $(draw_status running 'Listening')"
+        echo -e "  端口 ${PROXY_PORT}：$(draw_status running '正在监听')"
     fi
 
     # Metrics endpoint
     if curl -s --max-time 2 "http://127.0.0.1:${PROXY_METRICS_PORT}/metrics" &>/dev/null; then
-        echo -e "  Metrics:     $(draw_status running 'Responding')"
+        echo -e "  指标：$(draw_status running '响应正常')"
     else
-        echo -e "  Metrics:     $(draw_status stopped 'Not available')"
+        echo -e "  指标：$(draw_status stopped '不可用')"
     fi
 
     # Telegram bot
     if [ "$TELEGRAM_ENABLED" = "true" ]; then
-        echo -e "  Telegram:    $(draw_status running '已启用')"
+        echo -e "  Telegram：   $(draw_status running '已启用')"
     else
-        echo -e "  Telegram:    $(draw_status disabled '已禁用')"
+        echo -e "  Telegram：   $(draw_status disabled '已禁用')"
     fi
 
     # Replication
     if [ "$REPLICATION_ROLE" != "standalone" ]; then
         if [ "$REPLICATION_ENABLED" = "true" ]; then
-            echo -e "  Replication: $(draw_status running "${REPLICATION_ROLE^}")"
+            echo -e "  复制：       $(draw_status running "${REPLICATION_ROLE^}")"
         else
-            echo -e "  Replication: $(draw_status disabled "${REPLICATION_ROLE^} (disabled)")"
+            echo -e "  复制：       $(draw_status disabled "${REPLICATION_ROLE^}（已禁用）")"
         fi
     fi
 
@@ -9773,7 +9776,7 @@ self_update() {
         local _lfd
         exec {_lfd}>/tmp/.mtproxymax_update.lock
         if ! flock -n "$_lfd" 2>/dev/null; then
-            log_warn "Another update check is already in progress."
+            log_warn "另一项更新检查正在进行。"
             exec {_lfd}>&- 2>/dev/null
             return 1
         fi
@@ -9941,7 +9944,7 @@ load_vouchers() {
 voucher_create() {
     local count="${1:-1}" quota_str="${2:-10G}" days="${3:-30}" conns="${4:-15}" ips="${5:-5}" tier="${6:-standard}"
     if ! [[ "$count" =~ ^[0-9]+$ ]] || [ "$count" -lt 1 ] || [ "$count" -gt 100 ]; then
-        log_error "Count must be between 1 and 100"
+        log_error "数量必须在 1–100 之间"
         return 1
     fi
     local quota_raw
@@ -9954,13 +9957,13 @@ voucher_create() {
     load_vouchers
     local created_at; created_at=$(date -u '+%Y-%m-%d %H:%M:%S UTC')
     local i code p1 p2
-    echo -e "  ${BOLD}${CYAN}Generating ${count} Voucher(s) (${quota_str}, ${days} days)...${NC}\n"
+    echo -e "  ${BOLD}${CYAN}正在生成 ${count} 个兑换码（${quota_str}，${days} 天）...${NC}\n"
     for ((i=1; i<=count; i++)); do
         p1=$(tr -dc 'A-Z0-9' < /dev/urandom 2>/dev/null | head -c 4 || echo "8F9A")
         p2=$(tr -dc 'A-Z0-9' < /dev/urandom 2>/dev/null | head -c 4 || echo "2K1X")
         code="MTP-${p1}-${p2}"
         echo "${code}|${quota_raw}|${days}|${conns}|${ips}|${tier}|ACTIVE|${created_at}|-|-" >> "$VOUCHERS_FILE"
-        echo -e "  ${GREEN}✓${NC} Voucher #${i}: ${BOLD}${BRIGHT_GREEN}${code}${NC} (Tier: ${tier}, 配额： ${quota_str}, Valid: ${days}d)"
+        echo -e "  ${GREEN}✓${NC} 兑换码 #${i}：${BOLD}${BRIGHT_GREEN}${code}${NC}（等级：${tier}，配额：${quota_str}，有效期：${days} 天）"
     done
     echo ""
 }
@@ -9968,11 +9971,11 @@ voucher_create() {
 voucher_list() {
     load_vouchers
     if [ ! -f "$VOUCHERS_FILE" ] || [ ! -s "$VOUCHERS_FILE" ]; then
-        echo -e "  ${DIM}No vouchers found. Run 'mtproxymax voucher create' to generate codes.${NC}"
+        echo -e "  ${DIM}未找到兑换码。请运行 'mtproxymax voucher create' 生成兑换码。${NC}"
         return 0
     fi
     local filter="${1:-all}"
-    printf "  %-14s %-10s %-6s %-8s %-10s %-15s\n" "CODE" "QUOTA" "DAYS" "STATUS" "TIER" "REDEEMED BY"
+    printf "  %-14s %-10s %-6s %-8s %-10s %-15s\n" "兑换码" "配额" "天数" "状态" "等级" "兑换者"
     draw_line
     while IFS='|' read -r code quota days conns ips tier status created_at redeemed_by redeemed_at; do
         [[ "$code" =~ ^# ]] && continue; [ -z "$code" ] && continue
@@ -9993,7 +9996,7 @@ voucher_revoke() {
         return 1
     fi
     awk -F'|' -v c="$target" 'BEGIN{OFS="|"} $1==c && $7=="ACTIVE"{$7="REVOKED"} {print}' "$VOUCHERS_FILE" > "${VOUCHERS_FILE}.tmp" && mv "${VOUCHERS_FILE}.tmp" "$VOUCHERS_FILE"
-    log_success "Voucher '${target}' revoked"
+    log_success "兑换码 '${target}' 已撤销"
 }
 
 voucher_redeem() {
@@ -10002,12 +10005,12 @@ voucher_redeem() {
     load_vouchers
     local line; line=$(grep "^${target}|" "$VOUCHERS_FILE" 2>/dev/null | head -1)
     if [ -z "$line" ]; then
-        log_error "Voucher '${target}' does not exist."
+        log_error "兑换码 '${target}' 不存在。"
         return 1
     fi
     IFS='|' read -r code quota days conns ips tier status created_at redeemed_by redeemed_at <<< "$line"
     if [ "$status" != "ACTIVE" ]; then
-        log_error "Voucher '${target}' is already ${status}."
+        log_error "兑换码 '${target}' 已处于 ${status} 状态。"
         return 1
     fi
     [ -z "$label" ] && label="v_${code//MTP-/}"
@@ -10022,10 +10025,10 @@ voucher_redeem() {
     # Add or update secret
     if grep -q "^${label}|" "$SECRETS_FILE" 2>/dev/null; then
         secret_set_limits "$label" "${conns:-15}" "${ips:-5}" "${quota:-0}" "${exp_iso}" >/dev/null 2>&1
-        log_success "Applied voucher '${target}' to existing secret '${label}'"
+        log_success "已将兑换码 '${target}' 应用到现有密钥 '${label}'"
     else
         secret_add "$label" "${conns:-15}" "${ips:-5}" "${quota:-0}" "${exp_iso}" "Voucher ${target}" >/dev/null 2>&1
-        log_success "Redeemed voucher '${target}' — created secret '${label}'"
+        log_success "兑换码 '${target}' 已兑换，并创建密钥 '${label}'"
     fi
 }
 
@@ -10037,7 +10040,7 @@ load_admins() {
 admin_add() {
     local tg_id="$1" role="${2:-reseller}" label="${3:-Admin}"
     [ -z "$tg_id" ] && { log_error "用法： admin add <telegram_id> [superadmin|reseller] [label]"; return 1; }
-    [[ "$tg_id" =~ ^-?[0-9]+$ ]] || { log_error "Invalid Telegram ID"; return 1; }
+    [[ "$tg_id" =~ ^-?[0-9]+$ ]] || { log_error "Telegram ID 无效"; return 1; }
     case "$role" in superadmin|reseller) ;; *) role="reseller" ;; esac
     load_admins
     if grep -q "^${tg_id}|" "$ADMINS_FILE" 2>/dev/null; then
@@ -10045,7 +10048,7 @@ admin_add() {
     else
         echo "${tg_id}|${role}|${label}|$(date -u '+%Y-%m-%d')" >> "$ADMINS_FILE"
     fi
-    log_success "Admin ${tg_id} registered as '${role}' (${label})"
+    log_success "管理员 ${tg_id} 已注册为 '${role}'（${label}）"
 }
 
 admin_remove() {
@@ -10058,13 +10061,13 @@ admin_remove() {
 
 admin_list() {
     load_admins
-    echo -e "  ${BOLD}Configured Root Superadmin:${NC} ${TELEGRAM_CHAT_ID:-none}"
+    echo -e "  ${BOLD}已配置的根超级管理员：${NC}${TELEGRAM_CHAT_ID:-无}"
     if [ ! -f "$ADMINS_FILE" ] || [ ! -s "$ADMINS_FILE" ]; then
-        echo -e "  ${DIM}No additional RBAC admins configured.${NC}"
+        echo -e "  ${DIM}未配置其他 RBAC 管理员。${NC}"
         return 0
     fi
     echo ""
-    printf "  %-15s %-12s %-20s %-12s\n" "TELEGRAM ID" "ROLE" "LABEL" "ADDED"
+    printf "  %-15s %-12s %-20s %-12s\n" "TELEGRAM ID" "角色" "标签" "添加时间"
     draw_line
     while IFS='|' read -r id role label added || [ -n "$id" ]; do
         [[ "$id" =~ ^# ]] && continue; [ -z "$id" ] && continue
@@ -10183,18 +10186,18 @@ async function lookup() {
 </body>
 </html>
 HTML_EOF
-    log_success "Decoupled Web Portal generated at ${PORTAL_WWW}/index.html"
+    log_success "独立网页门户已生成：${PORTAL_WWW}/index.html"
 }
 
 portal_serve() {
     local port="${1:-${PORTAL_PORT:-8080}}"
     portal_generate
-    log_info "Starting lightweight Self-Service Web Portal on port ${port}..."
+    log_info "正在端口 ${port} 启动轻量级自助网页门户..."
     if command -v python3 &>/dev/null; then
         (cd "$PORTAL_WWW" && nohup python3 -m http.server "$port" >/dev/null 2>&1 &)
-        log_success "Portal running on http://$(get_cached_ip):${port}"
+        log_success "门户正在运行：http://$(get_cached_ip):${port}"
     else
-        log_error "python3 required to run built-in portal server."
+        log_error "运行内置门户服务器需要 python3。"
     fi
 }
 
@@ -10219,9 +10222,9 @@ scanner_shield_on() {
     save_settings
     scanner_shield_update
     if [ "$_ok" = "true" ]; then
-        log_success "Automated Hostile Scanner Shield activated on port ${PROXY_PORT}"
+        log_success "自动恶意扫描器防护已在端口 ${PROXY_PORT} 启用"
     else
-        log_success "Automated Hostile Scanner Shield enabled (Note: Local Netfilter set skipped due to container/firewall restriction)"
+        log_success "自动恶意扫描器防护已启用（注意：受容器/防火墙限制，本地 Netfilter 集合已跳过）"
     fi
 }
 
@@ -10238,7 +10241,7 @@ scanner_shield_off() {
     fi
     SCANNER_SHIELD_ENABLED="false"
     save_settings
-    log_success "Scanner Shield deactivated"
+    log_success "扫描器防护已停用"
 }
 
 scanner_shield_update() {
@@ -10312,7 +10315,7 @@ speed_limit_apply() {
     [ -z "$iface" ] && iface="eth0"
 
     if ! command -v tc &>/dev/null; then
-        log_warn "Linux 'tc' (Traffic Control) not installed. Installing or skipping QoS..."
+        log_warn "尚未安装 Linux 'tc'（流量控制）；正在尝试安装，否则将跳过 QoS..."
         if command -v apt-get &>/dev/null; then apt-get update -qq && apt-get install -y -qq iproute2 2>/dev/null || true; fi
     fi
     if ! command -v tc &>/dev/null; then return 0; fi
@@ -10359,11 +10362,11 @@ speed_limit_apply() {
 speed_limit_set() {
     local target="$1" down="$2" up="${3:-$2}"
     [ -z "$target" ] || [ -z "$down" ] && { log_error "用法： mtproxymax speed-limit set <global|port_number> <down_kbps> [up_kbps]"; return 1; }
-    [[ "$down" =~ ^[0-9]+$ ]] || { log_error "Down rate must be numeric (kbps)"; return 1; }
-    [[ "$up" =~ ^[0-9]+$ ]] || { log_error "Up rate must be numeric (kbps)"; return 1; }
+    [[ "$down" =~ ^[0-9]+$ ]] || { log_error "下载速率必须是数字（kbps）"; return 1; }
+    [[ "$up" =~ ^[0-9]+$ ]] || { log_error "上传速率必须是数字（kbps）"; return 1; }
     if [ "$target" != "global" ]; then
         if ! [[ "$target" =~ ^[0-9]+$ ]] || [ "$target" -lt 1 ] || [ "$target" -gt 65535 ] 2>/dev/null; then
-            log_error "Target must be 'global' or a valid numeric port number (1-65535)"
+            log_error "目标必须是 'global' 或有效端口号（1–65535）"
             return 1
         fi
     fi
@@ -10391,7 +10394,7 @@ speed_limit_set() {
     fi
     save_speed_limits
     speed_limit_apply
-    log_success "QoS speed limit set for ${target}: ${down} kbps down / ${up} kbps up"
+    log_success "已为 ${target} 设置 QoS 限速：下载 ${down} kbps / 上传 ${up} kbps"
 }
 
 speed_limit_remove() {
@@ -10410,7 +10413,7 @@ speed_limit_remove() {
             new_e+=("${SPEED_LIMIT_ENABLED[$i]}")
         fi
     done
-    $found || { log_warn "Target '${target}' 未找到 in speed limits"; return 0; }
+    $found || { log_warn "限速规则中未找到目标 '${target}'"; return 0; }
     SPEED_LIMIT_TARGETS=("${new_t[@]}")
     SPEED_LIMIT_TYPES=("${new_ty[@]}")
     SPEED_LIMIT_DOWN=("${new_d[@]}")
@@ -10418,14 +10421,14 @@ speed_limit_remove() {
     SPEED_LIMIT_ENABLED=("${new_e[@]}")
     save_speed_limits
     speed_limit_apply
-    log_success "Removed QoS speed limit for ${target}"
+    log_success "已移除 ${target} 的 QoS 限速"
 }
 
 speed_limit_list() {
     load_speed_limits
-    echo -e "\n  🚀 ${BOLD}有效 QoS Speed Limits (Hierarchical Token Buckets):${NC}\n"
+    echo -e "\n  🚀 ${BOLD}生效的 QoS 限速（分层令牌桶）：${NC}\n"
     if [ "${#SPEED_LIMIT_TARGETS[@]}" -eq 0 ]; then
-        echo -e "    ${DIM}(No QoS bandwidth throttling rules configured)${NC}\n"
+        echo -e "    ${DIM}（尚未配置 QoS 带宽限制规则）${NC}\n"
         return 0
     fi
     printf "  %-12s %-10s %-15s %-15s %-10s\n" "TARGET" "TYPE" "DOWN (kbps)" "UP (kbps)" "STATUS"
@@ -10485,12 +10488,12 @@ FLEET_JSON
 
 fleet_status() {
     fleet_collect_slave_metrics
-    echo -e "\n  🌐 ${BOLD}Global Federation & Fleet Dashboard (Multi-服务器 Telemetry):${NC}\n"
+    echo -e "\n  🌐 ${BOLD}全局联邦与集群仪表板（多服务器遥测）：${NC}\n"
     if [ ! -d "$FLEET_DATA_DIR" ] || [ -z "$(ls -A "$FLEET_DATA_DIR"/*.json 2>/dev/null)" ]; then
-        echo -e "    ${DIM}(No node telemetry json files found in ${FLEET_DATA_DIR})${NC}\n"
+        echo -e "    ${DIM}（在 ${FLEET_DATA_DIR} 中未找到节点遥测 JSON 文件）${NC}\n"
         return 0
     fi
-    printf "  %-20s %-18s %-14s %-16s %-10s\n" "NODE HOSTNAME" "PUBLIC IP" "ACTIVE CONNS" "TOTAL TRAFFIC" "CPU LOAD"
+    printf "  %-20s %-18s %-14s %-16s %-10s\n" "节点主机名" "公网 IP" "活动连接" "总流量" "CPU 负载"
     draw_box_line "" "80"
     local total_conns=0 total_bytes=0
     for j in "${FLEET_DATA_DIR}"/*.json; do
@@ -10513,7 +10516,7 @@ fleet_status() {
         printf "  %-20s %-18s %-14s %-16s %-10s\n" "${st} ${h:-unknown}" "${ip:-unknown}" "${c}" "${b_human}" "${cpu:-0.00}"
     done
     draw_box_line "" "80"
-    printf "  %-20s %-18s %-14s %-16s\n" "TOTAL FLEET SUMMARY" "-" "${total_conns}" "$(format_bytes "$total_bytes")"
+    printf "  %-20s %-18s %-14s %-16s\n" "集群汇总" "-" "${total_conns}" "$(format_bytes "$total_bytes")"
     echo ""
 }
 
@@ -10543,10 +10546,10 @@ SSLCONF
 ssl_issue() {
     local domain="$1" email="${2:-admin@${1:-localhost}}"
     [ -z "$domain" ] && { log_error "用法： mtproxymax ssl issue <domain_name> [admin_email]"; return 1; }
-    [[ "$domain" =~ ^[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$ ]] || { log_error "Invalid domain name: ${domain}"; return 1; }
+    [[ "$domain" =~ ^[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$ ]] || { log_error "域名无效：${domain}"; return 1; }
 
     mkdir -p "$SSL_DIR"
-    log_info "Provisioning SSL certificate for ${domain} (${email})..."
+    log_info "正在为 ${domain} 申请 SSL 证书（${email}）..."
 
     # Try openssl standalone generation or zero-dependency ACME
     if command -v openssl &>/dev/null; then
@@ -10558,24 +10561,24 @@ ssl_issue() {
         SSL_EMAIL="$email"
         SSL_ENABLED="true"
         save_ssl_config
-        log_success "SSL Certificate generated and saved to ${SSL_DIR}/${domain}.crt"
+        log_success "SSL 证书已生成并保存到 ${SSL_DIR}/${domain}.crt"
     else
-        log_error "无法 generate SSL certificate for ${domain}"
+        log_error "无法为 ${domain} 生成 SSL 证书"
         return 1
     fi
 }
 
 ssl_status() {
     load_ssl_config
-    echo -e "\n  🔐 ${BOLD}Let's Encrypt / SSL 防护 状态:${NC}\n"
+    echo -e "\n  🔐 ${BOLD}Let's Encrypt / SSL 防护状态：${NC}\n"
     if [ "${SSL_ENABLED:-false}" = "true" ] && [ -f "${SSL_DIR}/${SSL_DOMAIN}.crt" ]; then
-        echo -e "    状态:     ${GREEN}🟢 ACTIVE (HTTPS 已启用)${NC}"
+        echo -e "    状态：${GREEN}🟢 已启用（HTTPS 已启用）${NC}"
         echo -e "    域名：     ${BOLD}${SSL_DOMAIN}${NC}"
-        echo -e "    Email:      ${SSL_EMAIL}"
-        echo -e "    Cert Path:  ${SSL_DIR}/${SSL_DOMAIN}.crt\n"
+        echo -e "    邮箱：${SSL_EMAIL}"
+        echo -e "    证书路径：${SSL_DIR}/${SSL_DOMAIN}.crt\n"
     else
-        echo -e "    状态:     ${YELLOW}🔴 DISABLED / NO CERTIFICATE${NC}"
-        echo -e "    To issue:   ${GREEN}mtproxymax ssl issue <domain_name>${NC}\n"
+        echo -e "    状态：${YELLOW}🔴 已禁用 / 无证书${NC}"
+        echo -e "    签发命令：${GREEN}mtproxymax ssl issue <domain_name>${NC}\n"
     fi
 }
 
@@ -10584,7 +10587,7 @@ ssl_clear() {
     if [ -d "$SSL_DIR" ]; then rm -f "${SSL_DIR}"/*.crt "${SSL_DIR}"/*.key 2>/dev/null; fi
     rm -f "$SSL_CONF_FILE" 2>/dev/null
     SSL_DOMAIN=""; SSL_EMAIL=""; SSL_ENABLED="false"
-    log_success "SSL certificates cleared and configuration reset."
+    log_success "SSL 证书已清除，配置已重置。"
 }
 
 # ── Section 13j: Suite 4 — Automated Off-Site Cloud / Telegram Backups (backup-cloud) ──
@@ -10615,7 +10618,7 @@ backup_cloud_toggle() {
     if [ "$1" = "off" ] || [ "$1" = "disable" ]; then
         CLOUD_BACKUP_ENABLED="false"
         save_cloud_backup_config
-        log_success "Automated Cloud/Telegram Off-Site Backups disabled."
+        log_success "自动云端/Telegram 异地备份已禁用。"
         return 0
     fi
     [ -z "$target" ] && {
@@ -10627,7 +10630,7 @@ backup_cloud_toggle() {
     CLOUD_BACKUP_MODE="$mode"
     CLOUD_BACKUP_TARGET="$target"
     save_cloud_backup_config
-    log_success "Cloud/Telegram Off-Site Backups enabled (${mode} -> ${target})."
+    log_success "云端/Telegram 异地备份已启用（${mode} → ${target}）。"
 }
 
 backup_cloud_push() {
@@ -10637,9 +10640,9 @@ backup_cloud_push() {
     if [ -z "$latest_tar" ] || [ ! -f "$latest_tar" ]; then
         latest_tar=$(ls -t "${BACKUP_DIR:-${INSTALL_DIR}/backups}"/mtproxymax-*.tar.gz* 2>/dev/null | head -1)
     fi
-    [ -z "$latest_tar" ] || [ ! -f "$latest_tar" ] && { log_error "No backup tarball found to offload."; return 1; }
+    [ -z "$latest_tar" ] || [ ! -f "$latest_tar" ] && { log_error "未找到可上传的备份归档。"; return 1; }
 
-    log_info "Offloading backup archive ${latest_tar} via ${CLOUD_BACKUP_MODE}..."
+    log_info "正在通过 ${CLOUD_BACKUP_MODE} 上传备份归档 ${latest_tar}..."
     if [ "$CLOUD_BACKUP_MODE" = "telegram" ]; then
         load_tg_settings
         local token="${TELEGRAM_BOT_TOKEN:-}"
@@ -10648,35 +10651,35 @@ backup_cloud_push() {
             local fsize
             fsize=$(stat -c%s "$latest_tar" 2>/dev/null || stat -f%z "$latest_tar" 2>/dev/null || echo 0)
             if [ "${fsize:-0}" -gt 49283072 ]; then # 47 MB limit
-                log_error "Backup tarball size ($(format_bytes "$fsize")) exceeds Telegram Bot API 50MB limit. Use rclone/S3 mode instead."
+                log_error "备份归档大小（$(format_bytes "$fsize")）超过 Telegram Bot API 的 50 MB 限制，请改用 rclone/S3 模式。"
                 return 1
             fi
-            local caption="☁️ <b>MTProxyMax Daily Backup (${VERSION})</b>%0A🖥 Host: $(hostname 2>/dev/null || echo unknown)%0A📅 Date: $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
+            local caption="☁️ <b>MTProxyMax 每日备份（${VERSION}）</b>%0A🖥 主机：$(hostname 2>/dev/null || echo 未知)%0A📅 日期：$(date -u '+%Y-%m-%d %H:%M:%S UTC')"
             if curl -s --max-time 120 -F "chat_id=${chat}" -F "document=@${latest_tar}" -F "caption=${caption}" -F "parse_mode=HTML" "https://api.telegram.org/bot${token}/sendDocument" | grep -q '"ok":true'; then
-                log_success "Backup tarball uploaded to Telegram Admin Chat (${chat}) 成功!"
+                log_success "备份压缩包已成功上传到 Telegram 管理员聊天（${chat}）！"
                 return 0
             else
-                log_error "无法 push backup to Telegram API."
+                log_error "无法通过 Telegram API 推送备份。"
                 return 1
             fi
         else
-            log_error "Telegram bot token or chat ID missing."
+            log_error "缺少 Telegram 机器人令牌或会话 ID。"
             return 1
         fi
     elif [ "$CLOUD_BACKUP_MODE" = "rclone" ] || [ "$CLOUD_BACKUP_MODE" = "s3" ]; then
         if command -v rclone &>/dev/null && rclone copy "$latest_tar" "${CLOUD_BACKUP_TARGET}" 2>/dev/null; then
-            log_success "Backup offloaded to ${CLOUD_BACKUP_TARGET} via rclone!"
+            log_success "备份已通过 rclone 转存到 ${CLOUD_BACKUP_TARGET}！"
             return 0
         fi
         if command -v aws &>/dev/null && [ "$CLOUD_BACKUP_MODE" = "s3" ] && aws s3 cp "$latest_tar" "${CLOUD_BACKUP_TARGET}" 2>/dev/null; then
-            log_success "Backup offloaded to ${CLOUD_BACKUP_TARGET} via AWS S3 CLI!"
+            log_success "备份已通过 AWS S3 CLI 转存到 ${CLOUD_BACKUP_TARGET}！"
             return 0
         fi
         if command -v s3cmd &>/dev/null && [ "$CLOUD_BACKUP_MODE" = "s3" ] && s3cmd put "$latest_tar" "${CLOUD_BACKUP_TARGET}" 2>/dev/null; then
-            log_success "Backup offloaded to ${CLOUD_BACKUP_TARGET} via s3cmd!"
+            log_success "备份已通过 s3cmd 转存到 ${CLOUD_BACKUP_TARGET}！"
             return 0
         fi
-        log_error "Offload via '${CLOUD_BACKUP_MODE}' failed across all available tools (rclone/aws/s3cmd) or target '${CLOUD_BACKUP_TARGET}' is unreachable."
+        log_error "使用 '${CLOUD_BACKUP_MODE}' 转存失败：所有可用工具（rclone/aws/s3cmd）均失败，或目标 '${CLOUD_BACKUP_TARGET}' 不可达。"
         return 1
     fi
     return 1
@@ -10684,14 +10687,14 @@ backup_cloud_push() {
 
 backup_cloud_status() {
     load_cloud_backup_config
-    echo -e "\n  ☁️ ${BOLD}Automated Off-Site Cloud / Telegram Backups 状态:${NC}\n"
+    echo -e "\n  ☁️ ${BOLD}自动异地云端 / Telegram 备份状态：${NC}\n"
     if [ "${CLOUD_BACKUP_ENABLED:-false}" = "true" ]; then
-        echo -e "    状态:     ${GREEN}🟢 ENABLED${NC}"
-        echo -e "    Mode:       ${BOLD}${CLOUD_BACKUP_MODE}${NC}"
-        echo -e "    Target:     ${CLOUD_BACKUP_TARGET}\n"
+        echo -e "    状态：${GREEN}🟢 已启用${NC}"
+        echo -e "    模式：${BOLD}${CLOUD_BACKUP_MODE}${NC}"
+        echo -e "    目标：${CLOUD_BACKUP_TARGET}\n"
     else
-        echo -e "    状态:     ${YELLOW}🔴 DISABLED${NC}"
-        echo -e "    To enable:  ${GREEN}mtproxymax backup-cloud telegram <your_chat_id>${NC}\n"
+        echo -e "    状态：${YELLOW}🔴 已禁用${NC}"
+        echo -e "    启用命令：${GREEN}mtproxymax backup-cloud telegram <your_chat_id>${NC}\n"
     fi
 }
 
@@ -10720,19 +10723,27 @@ telegram_send_message() {
     # Security: use curl config file to avoid token in process list
     local _cfg
     _cfg=$(_mktemp) || return 1
-    printf 'url = "https://api.telegram.org/bot%s/send消息"\n' "$token" > "$_cfg"
+    # Telegram Bot API 方法名是固定协议字段，不得本地化。
+    printf 'url = "https://api.telegram.org/bot%s/sendMessage"\n' "$token" > "$_cfg"
 
-    local response
+    local response rc=0
     response=$(curl -s --max-time 10 --max-filesize 1048576 -X POST \
         -K "$_cfg" \
         --data-urlencode "chat_id=${chat_id}" \
         --data-urlencode "text=${full_msg}" \
         --data-urlencode "parse_mode=Markdown" \
-        2>/dev/null) || true
-    local rc=$?
+        2>/dev/null) || rc=$?
     rm -f "$_cfg"
-    [ "${rc:--1}" -ne 0 ] && return 1
-    echo "$response" | grep -q '"ok":true' && return 0
+    if [ "${rc:--1}" -ne 0 ]; then
+        TELEGRAM_LAST_ERROR="网络请求失败（curl 状态码 ${rc}）"
+        return 1
+    fi
+    if echo "$response" | grep -q '"ok":true'; then
+        TELEGRAM_LAST_ERROR=""
+        return 0
+    fi
+    TELEGRAM_LAST_ERROR=$(printf '%s' "$response" | sed -n 's/.*"description"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)
+    [ -z "$TELEGRAM_LAST_ERROR" ] && TELEGRAM_LAST_ERROR="Telegram API 返回未知错误"
     return 1
 }
 
@@ -10749,14 +10760,14 @@ telegram_send_photo() {
     _cfg=$(_mktemp) || return 1
     printf 'url = "https://api.telegram.org/bot%s/sendPhoto"\n' "$token" > "$_cfg"
 
+    local rc=0
     curl -s --max-time 15 --max-filesize 10485760 -X POST \
         -K "$_cfg" \
         --data-urlencode "chat_id=${chat_id}" \
         --data-urlencode "photo=${photo_url}" \
         --data-urlencode "caption=${caption}" \
         --data-urlencode "parse_mode=Markdown" \
-        >/dev/null 2>&1 || true
-    local rc=$?
+        >/dev/null 2>&1 || rc=$?
     rm -f "$_cfg"
     return $rc
 }
@@ -10802,11 +10813,12 @@ except: pass
 }
 
 telegram_test_message() {
-    local msg="🔧 *MTProxyMax Test*\n\n${SYM_CHECK} Bot is connected and working!\n\n_Sent from MTProxyMax v${VERSION}_"
+    local msg="🔧 *MTProxyMax 测试*\n\n${SYM_CHECK} 机器人已连接并正常工作！\n\n_由 MTProxyMax v${VERSION} 发送_"
     if telegram_send_message "$msg"; then
-        log_success "Test message sent"
+        log_success "测试消息已发送"
     else
-        log_error "无法 send test message"
+        log_error "无法发送测试消息：${TELEGRAM_LAST_ERROR:-未知错误}"
+        return 1
     fi
 }
 
@@ -10819,7 +10831,7 @@ telegram_notify_proxy_started() {
     [ -z "$server_ip" ] && return 1
 
     # Build message with all enabled secrets and clickable connect links
-    local msg="📱 *MTProxy Started*\n\n"
+    local msg="📱 *MTProxy 已启动*\n\n"
     local i _first_secret=""
     for i in "${!SECRETS_LABELS[@]}"; do
         [ "${SECRETS_ENABLED[$i]}" = "true" ] || continue
@@ -10832,7 +10844,7 @@ telegram_notify_proxy_started() {
     done
 
     msg+="📊 域名： ${PROXY_DOMAIN}\n"
-    msg+="_Tap the link above or scan QR code to connect._"
+    msg+="_点击上方链接或扫描二维码即可连接。_"
 
     telegram_send_message "$msg"
 
@@ -11066,7 +11078,7 @@ tg_send() {
     local _ip; _ip=$(get_cached_ip)
     [ -n "$_ip" ] && msg="[$(_esc "$label") | ${_ip}] ${msg}" || msg="[$(_esc "$label")] ${msg}"
     curl -s --max-time 10 -X POST \
-        -K <(printf 'url = "https://api.telegram.org/bot%s/send消息"\n' "$TELEGRAM_BOT_TOKEN") \
+        -K <(printf 'url = "https://api.telegram.org/bot%s/sendMessage"\n' "$TELEGRAM_BOT_TOKEN") \
         --data-urlencode "chat_id=${TELEGRAM_CHAT_ID}" \
         --data-urlencode "text=${msg}" \
         --data-urlencode "parse_mode=Markdown" >/dev/null 2>&1
@@ -11078,7 +11090,7 @@ tg_send_to() {
     local msg
     msg=$(printf '%b' "$2")
     curl -s --max-time 10 -X POST \
-        -K <(printf 'url = "https://api.telegram.org/bot%s/send消息"\n' "$TELEGRAM_BOT_TOKEN") \
+        -K <(printf 'url = "https://api.telegram.org/bot%s/sendMessage"\n' "$TELEGRAM_BOT_TOKEN") \
         --data-urlencode "chat_id=${target_cid}" \
         --data-urlencode "text=${msg}" \
         --data-urlencode "parse_mode=Markdown" >/dev/null 2>&1
@@ -11096,7 +11108,7 @@ tg_send_photo() {
 
 # Send QR code image for a proxy secret (no text URL — avoids Telegram bot bans)
 send_proxy_qr() {
-    local ip="$1" port="$2" secret="$3" caption="${4:-Scan in Telegram to connect}"
+    local ip="$1" port="$2" secret="$3" caption="${4:-在 Telegram 中扫描即可连接}"
     local hl="https://t.me/proxy?server=${ip}&port=${port}&secret=${secret}"
     local el=$(printf '%s' "$hl" | sed 's/&/%26/g;s/?/%3F/g;s/=/%3D/g;s/:/%3A/g;s|/|%2F|g')
     tg_send_photo "https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${el}" "$caption"
@@ -11113,7 +11125,7 @@ tg_send_photo_to() {
 }
 
 send_proxy_qr_to() {
-    local target_cid="$1" ip="$2" port="$3" secret="$4" caption="${5:-Scan in Telegram to connect}"
+    local target_cid="$1" ip="$2" port="$3" secret="$4" caption="${5:-在 Telegram 中扫描即可连接}"
     local hl="https://t.me/proxy?server=${ip}&port=${port}&secret=${secret}"
     local el=$(printf '%s' "$hl" | sed 's/&/%26/g;s/?/%3F/g;s/=/%3D/g;s/:/%3A/g;s|/|%2F|g')
     tg_send_photo_to "$target_cid" "https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${el}" "$caption"
@@ -11454,8 +11466,8 @@ _process_cmd() {
             ;;
         /support\ *|/support@*\ *|/mp_support\ *|/mp_support@*\ *)
             local msg; msg=$(echo "$text" | cut -d' ' -f2-)
-            [ -z "$msg" ] || [ "$msg" = "/support" ] || [ "$msg" = "/mp_support" ] && { tg_send_to "$chat_id" "❌ 用法： /support <your question or issue>"; return; }
-            tg_send "📩 *新的客户支持工单*\n\n👤 *用户聊天 ID*: \`${chat_id}\`\n💬 *消息*:\n${msg}\n\n👉 *如需回复*, type: \`/reply ${chat_id} <回复内容>\`"
+            [ -z "$msg" ] || [ "$msg" = "/support" ] || [ "$msg" = "/mp_support" ] && { tg_send_to "$chat_id" "❌ 用法： /support <message>"; return; }
+            tg_send "📩 *新的客户支持工单*\n\n👤 *用户聊天 ID*：\`${chat_id}\`\n💬 *消息*：\n${msg}\n\n👉 *如需回复*，请输入：\`/reply ${chat_id} <message>\`"
             tg_send_to "$chat_id" "✅ *工单已收到！*\n\n您的消息已转交支持团队，我们会尽快回复。"
             return
             ;;
@@ -11509,12 +11521,12 @@ _process_cmd() {
         /mp_status|/mp_status@*)
             load_tg_settings
             if ! is_running; then
-                tg_send "📱 *MT代理状态*\n\n🔴 状态: 已停止"
+                tg_send "📱 *MT 代理状态*\n\n🔴 状态：已停止"
                 return
             fi
             local _si _so _sc; read -r _si _so _sc <<< "$(get_stats)"
             local up=$(get_uptime)
-            tg_send "📱 *MT代理状态*\n\n🟢 状态: 运行中\n⏱ 运行时长: $(format_duration $up)\n👥 连接数: ${_sc}\n📊 流量： ↓ $(format_bytes ${_cum_out:-0}) ↑ $(format_bytes ${_cum_in:-0})\n🔗 端口： ${PROXY_PORT} | 域名： ${PROXY_DOMAIN}"
+            tg_send "📱 *MT 代理状态*\n\n🟢 状态：运行中\n⏱ 运行时长：$(format_duration $up)\n👥 连接数：${_sc}\n📊 流量：↓ $(format_bytes ${_cum_out:-0}) ↑ $(format_bytes ${_cum_in:-0})\n🔗 端口：${PROXY_PORT} | 域名：${PROXY_DOMAIN}"
             ;;
         /mp_secrets|/mp_secrets@*)
             load_tg_settings
@@ -11577,7 +11589,7 @@ _process_cmd() {
                 tg_send "✅ 密钥 *$(_esc "$label")* 已创建！\n\n🔗 [连接](https://t.me/proxy?server=${ip}&port=${PROXY_PORT}&secret=${fs})\n📡 \`${ip}:${PROXY_PORT}\` | 🔑 \`${fs}\`"
                 send_proxy_qr "$ip" "$PROXY_PORT" "$fs"
             else
-                tg_send "❌ 无法 添加密钥 '$(_esc "$label")' (may already exist)"
+                tg_send "❌ 无法添加密钥 '$(_esc "$label")'（可能已存在）"
             fi
             ;;
         /mp_remove\ *|/mp_remove@*\ *|/mp_revoke\ *|/mp_revoke@*\ *)
@@ -11752,7 +11764,7 @@ _process_cmd() {
             case "$sub" in
                 on|enable)
                     "${INSTALL_DIR}/mtproxymax" lockdown on &>/dev/null
-                    tg_send "🚨 *紧急锁定已启用*\n内核 SYN 防护： ACTIVE\n隐身预设： ULTRA\nMSS 钳制： ACTIVE"
+                    tg_send "🚨 *紧急锁定已启用*\n内核 SYN 防护：已启用\n隐匿预设：超强\nMSS 钳制：已启用"
                     ;;
                 off|disable)
                     "${INSTALL_DIR}/mtproxymax" lockdown off &>/dev/null
@@ -11761,7 +11773,7 @@ _process_cmd() {
                 *)
                     load_tg_settings
                     local st="🟢 正常"; [ "${LOCKDOWN_MODE:-false}" = "true" ] && st="🔴 锁定已启用"
-                    tg_send "🔒 *紧急锁定模式*: ${st}\n\n用法：\n\`/mp_lockdown on\` — 启用紧急防护\n\`/mp_lockdown off\` — 恢复正常模式"
+                    tg_send "🔒 *紧急锁定模式*：${st}\n\n用法：\n\`/mp_lockdown on\` — 启用紧急防护\n\`/mp_lockdown off\` — 恢复正常模式"
                     ;;
             esac
             ;;
@@ -11789,12 +11801,12 @@ _process_cmd() {
 📈 *总流量*: $(format_human_bytes ${_cum_out:-0}) DL / $(format_human_bytes ${_cum_in:-0}) UL"
             # v1.4 LTS digest additions
             load_ssl_config 2>/dev/null || true
-            local ssl_d="Off"; [ "${SSL_ENABLED:-false}" = "true" ] && ssl_d="有效 (${SSL_DOMAIN})"
+            local ssl_d="已关闭"; [ "${SSL_ENABLED:-false}" = "true" ] && ssl_d="已启用（${SSL_DOMAIN}）"
             msg+="\n🔐 *SSL 防护*: ${ssl_d}"
             load_speed_limits 2>/dev/null || true
             [ "${#SPEED_LIMIT_TARGETS[@]}" -gt 0 ] && msg+="\n🚀 *HTB QoS*: ${#SPEED_LIMIT_TARGETS[@]} 条规则"
             load_cloud_backup_config 2>/dev/null || true
-            [ "${CLOUD_BACKUP_ENABLED:-false}" = "true" ] && msg+="\n☁️ *Cloud Backup*: ${CLOUD_BACKUP_MODE:-telegram}"
+            [ "${CLOUD_BACKUP_ENABLED:-false}" = "true" ] && msg+="\n☁️ *云端备份*：${CLOUD_BACKUP_MODE:-telegram}"
             tg_send "$msg"
             ;;
         /reply\ *|/reply@*\ *)
@@ -11811,7 +11823,7 @@ _process_cmd() {
             tg_send "📢 广播已发送给所有用户。"
             ;;
         /mp_help|/mp_help@*)
-            tg_send "📋 *MTProxyMax 命令 (${VERSION})*\n\n*公开自助服务：*\n/start — 自助开通服务\n/my\_status <label> — 查询流量配额和到期时间\n/voucher <code> — 兑换兑换码\n/support <msg> — 提交支持工单\n\n*管理员控制台：*\n/mp\_fleet — 全局联邦集群面板\n/mp\_voucher create <cnt> <qta> <dys> — 生成兑换码\n/mp\_voucher list — 列出兑换码\n/mp\_status — Proxy status\n/mp\_secrets — 列出密钥\n/mp\_link — 获取代理链接和二维码\n/mp\_add <label> — 添加密钥\n/mp\_remove / /mp\_revoke <label> — 移除密钥\n/mp\_rotate <label> — 轮换密钥\n/mp\_enable <label> — 启用密钥\n/mp\_disable <label> — 禁用密钥\n/mp\_limits — 显示用户限制\n/mp\_setlimit — 设置用户限制\n/mp\_upstreams — 列出上游代理\n/mp\_traffic — Traffic report\n/mp\_health — Health check\n/mp\_lockdown [on|off] — 紧急防护\n/mp\_digest — 系统摘要报告\n/mp\_broadcast <msg> — 向所有用户广播\n/reply <chat\_id> <msg> — 回复支持工单\n/mp\_restart — 重启代理\n/mp\_update — 检查更新\n/mp\_help — 显示此帮助"
+            tg_send "📋 *MTProxyMax 命令（${VERSION}）*\n\n*公开自助服务：*\n/start — 自助开通服务\n/my\_status <label> — 查询流量配额和到期时间\n/voucher <code> — 兑换兑换码\n/support <msg> — 提交支持工单\n\n*管理员控制台：*\n/mp\_fleet — 全局联邦集群面板\n/mp\_voucher create <cnt> <qta> <dys> — 生成兑换码\n/mp\_voucher list — 列出兑换码\n/mp\_status — 代理状态\n/mp\_secrets — 列出密钥\n/mp\_link — 获取代理链接和二维码\n/mp\_add <label> — 添加密钥\n/mp\_remove / /mp\_revoke <label> — 移除密钥\n/mp\_rotate <label> — 轮换密钥\n/mp\_enable <label> — 启用密钥\n/mp\_disable <label> — 禁用密钥\n/mp\_limits — 显示用户限制\n/mp\_setlimit — 设置用户限制\n/mp\_upstreams — 列出上游代理\n/mp\_traffic — 流量报告\n/mp\_health — 健康检查\n/mp\_lockdown [on|off] — 紧急防护\n/mp\_digest — 系统摘要报告\n/mp\_broadcast <msg> — 向所有用户广播\n/reply <chat\_id> <msg> — 回复支持工单\n/mp\_restart — 重启代理\n/mp\_update — 检查更新\n/mp\_help — 显示此帮助"
             ;;
     esac
 }
@@ -11935,13 +11947,13 @@ while true; do
     if [ $((_now - _last_health)) -ge 300 ]; then
         _last_health=$_now
         if [ "$TELEGRAM_ALERTS_ENABLED" = "true" ] && ! is_running && [ ! -f /tmp/.mtproxymax_stopped ]; then
-            tg_send "🔴 *Alert*: Proxy is down! Attempting auto-restart..."
+            tg_send "🔴 *警报*：代理已停止！正在尝试自动重启..."
             "${INSTALL_DIR}/mtproxymax" start &>/dev/null
             sleep 5
             if is_running; then
-                tg_send "✅ Proxy auto-recovered"
+                tg_send "✅ 代理已自动恢复"
             else
-                tg_send "❌ Auto-recovery failed — manual intervention needed"
+                tg_send "❌ 自动恢复失败——需要人工处理"
             fi
         fi
     fi
@@ -11953,7 +11965,7 @@ while true; do
             _ri=0 _ro=0 _rc=0
             read -r _ri _ro _rc <<< "$(get_stats)" || true
             _up=$(get_uptime)
-            tg_send "📊 *Periodic Report*\n\n🟢 运行中 | ⏱ $(format_duration ${_up:-0})\n👥 连接数: ${_rc}\n📊 ↓ $(format_bytes ${_cum_out:-0}) ↑ $(format_bytes ${_cum_in:-0})"
+            tg_send "📊 *定期报告*\n\n🟢 运行中 | ⏱ $(format_duration ${_up:-0})\n👥 连接数：${_rc}\n📊 ↓ $(format_bytes ${_cum_out:-0}) ↑ $(format_bytes ${_cum_in:-0})"
         fi
     fi
 
@@ -11989,8 +12001,13 @@ SERVICE_EOF
 
         systemctl daemon-reload
         systemctl enable mtproxymax-telegram.service 2>/dev/null
-        systemctl restart mtproxymax-telegram.service 2>/dev/null
-        log_success "Telegram bot service started"
+        if systemctl restart mtproxymax-telegram.service 2>/dev/null \
+            && systemctl is-active --quiet mtproxymax-telegram.service; then
+            log_success "Telegram 机器人服务已启动"
+        else
+            log_error "Telegram 机器人服务启动失败，请运行：systemctl status mtproxymax-telegram.service"
+            return 1
+        fi
     fi
 }
 
@@ -12012,9 +12029,9 @@ save_replication() {
     tmp=$(_mktemp) || { log_error "无法创建临时文件"; return 1; }
 
     {
-        echo "# MTProxyMax Replication Slaves — v${VERSION}"
+        echo "# MTProxyMax 复制从节点 — v${VERSION}"
         echo "# Format: HOST|PORT|LABEL|ENABLED|LAST_SYNC|STATUS"
-        echo "# DO NOT EDIT MANUALLY — use 'mtproxymax replication' commands"
+        echo "# 请勿手动编辑，请使用 'mtproxymax replication' 命令"
         local i
         for i in "${!REPL_HOSTS[@]}"; do
             echo "${REPL_HOSTS[$i]}|${REPL_PORTS[$i]}|${REPL_LABELS[$i]}|${REPL_ENABLED[$i]}|${REPL_LAST_SYNC[$i]}|${REPL_STATUS[$i]}"
@@ -12025,7 +12042,7 @@ save_replication() {
     # Serialise with sync-timer flock to prevent lost-update races with save_sync_status()
     exec 201>"${INSTALL_DIR:-/opt/mtproxymax}/.mtproxymax-sync.lock" 2>/dev/null || true
     if command -v flock &>/dev/null; then
-        flock -w 5 201 2>/dev/null || { log_error "无法 acquire lock for replication config"; rm -f "$tmp"; exec 201>&- 2>/dev/null; return 1; }
+    flock -w 5 201 2>/dev/null || { log_error "无法获取复制配置锁"; rm -f "$tmp"; exec 201>&- 2>/dev/null; return 1; }
     fi
     mv "$tmp" "$REPLICATION_FILE"
     exec 201>&- 2>/dev/null || true
@@ -12065,8 +12082,8 @@ replication_add() {
     local host="${1:-}" port="${2:-22}" label="${3:-}"
 
     if [ "${REPLICATION_ROLE}" = "slave" ]; then
-        log_error "This server is a slave — only a master can register peers"
-        log_info "Run: mtproxymax replication setup  to change role"
+        log_error "此服务器是从节点，只有主节点可以注册对等节点"
+        log_info "如需更改角色，请运行：mtproxymax replication setup"
         return 1
     fi
 
@@ -12076,12 +12093,12 @@ replication_add() {
     fi
 
     if [[ ! "$host" =~ ^[a-zA-Z0-9._-]+$ ]]; then
-        log_error "Invalid host format. Use IPv4 or FQDN (letters, digits, dots, hyphens). IPv6 is not supported — use IPv4 or a domain name instead."
+        log_error "主机格式无效。请使用 IPv4 或 FQDN（字母、数字、点和连字符）。不支持 IPv6，请改用 IPv4 或域名。"
         return 1
     fi
 
     if ! [[ "$port" =~ ^[0-9]+$ ]] || [ "$port" -lt 1 ] || [ "$port" -gt 65535 ]; then
-        log_error "Port must be 1-65535"
+        log_error "端口必须在 1–65535 之间"
         return 1
     fi
 
@@ -12089,7 +12106,7 @@ replication_add() {
     local i
     for i in "${!REPL_HOSTS[@]}"; do
         if [ "${REPL_HOSTS[$i]}" = "$host" ]; then
-            log_error "Slave '${host}' already registered"
+        log_error "从节点 '${host}' 已注册"
             return 1
         fi
     done
@@ -12112,7 +12129,7 @@ replication_remove() {
     local target="${1:-}"
 
     if [ "${REPLICATION_ROLE}" = "slave" ]; then
-        log_error "This server is a slave — only a master manages the slave list"
+        log_error "此服务器是从节点，只有主节点可以管理从节点列表"
         return 1
     fi
 
@@ -12163,7 +12180,7 @@ replication_list() {
     load_replication
 
     if [ ${#REPL_HOSTS[@]} -eq 0 ]; then
-        log_info "No slaves configured. Run: mtproxymax replication add <host>"
+        log_info "尚未配置从节点。请运行：mtproxymax replication add <host>"
         return 0
     fi
 
@@ -12271,7 +12288,7 @@ save_sync_status() {
     local tmp; tmp=$(mktemp "${INSTALL_DIR}/.mtproxymax-sync.XXXXXX" 2>/dev/null) || return 1
     chmod 600 "$tmp"
     {
-        echo "# MTProxyMax Replication Slaves"
+        echo "# MTProxyMax 复制从节点"
         echo "# Format: HOST|PORT|LABEL|ENABLED|LAST_SYNC|STATUS"
         local i
         for i in "${!REPL_HOSTS[@]}"; do
@@ -12322,7 +12339,7 @@ do_sync() {
     rc=$?
 
     if [ "${rc:--1}" -ne 0 ]; then
-        log_sync "ERROR [${label}/${host}]: rsync failed (exit ${rc}): $(echo "$output" | tail -1)"
+        log_sync "错误 [${label}/${host}]：rsync 失败（退出码 ${rc}）：$(echo "$output" | tail -1)"
         return 1
     fi
 
@@ -12338,11 +12355,11 @@ do_sync() {
             if [ "${r_rc:--1}" -eq 0 ]; then
                 log_sync "RESTART [${label}/${host}]: Container restarted"
             else
-                log_sync "WARN [${label}/${host}]: Docker restart failed: $(echo "$r_out" | tail -1)"
+                log_sync "警告 [${label}/${host}]：Docker 重启失败：$(echo "$r_out" | tail -1)"
             fi
         fi
     else
-        log_sync "NOOP [${label}/${host}]: No changes"
+        log_sync "无需操作 [${label}/${host}]：没有变化"
     fi
 
     return 0
@@ -12353,7 +12370,7 @@ main() {
     exec 200>"${LOCK_FILE}" 2>/dev/null || true
     if command -v flock &>/dev/null; then
         flock -n 200 || {
-            echo "[$(date '+%Y-%m-%d %H:%M:%S')] SKIP: Another sync already running" >> "${REPLICATION_LOG}"
+            echo "[$(date '+%Y-%m-%d %H:%M:%S')] 跳过：另一项同步正在运行" >> "${REPLICATION_LOG}"
             exit 0
         }
     fi
@@ -12389,7 +12406,7 @@ main
 SYNC_SCRIPT_EOF
 
     chmod 750 "$script_path"
-    log_success "Sync script generated: ${script_path}"
+    log_success "同步脚本已生成：${script_path}"
 }
 
 # Setup systemd service + timer
@@ -12397,7 +12414,7 @@ setup_replication_service() {
     replication_generate_sync_script
 
     if ! command -v systemctl &>/dev/null; then
-        log_warn "systemd 未找到. Add cron manually:"
+    log_warn "未找到 systemd，请手动添加 cron："
         echo "  * * * * * /bin/bash ${INSTALL_DIR}/mtproxymax-sync.sh"
         return 1
     fi
@@ -12431,14 +12448,14 @@ REPL_TIMER_EOF
     systemctl daemon-reload
     systemctl enable mtproxymax-sync.timer 2>/dev/null
     systemctl start mtproxymax-sync.timer 2>/dev/null
-    log_success "Replication timer started (every ${REPLICATION_SYNC_INTERVAL}s)"
+    log_success "复制定时器已启动（每 ${REPLICATION_SYNC_INTERVAL} 秒）"
 }
 
 stop_replication_service() {
     if command -v systemctl &>/dev/null; then
         systemctl stop mtproxymax-sync.timer 2>/dev/null || true
         systemctl disable mtproxymax-sync.timer 2>/dev/null || true
-        log_info "Replication timer stopped"
+    log_info "复制定时器已停止"
     fi
 }
 
@@ -12459,23 +12476,23 @@ replication_setup_wizard() {
     command -v ssh        &>/dev/null || _missing_deps+=("openssh-client")
     command -v ssh-keygen &>/dev/null || _missing_deps+=("openssh-keygen")
     if [ ${#_missing_deps[@]} -gt 0 ]; then
-        log_error "Missing required tools: ${_missing_deps[*]}"
-        log_info  "Install them first, e.g.: apt install ${_missing_deps[*]}"
+    log_error "缺少必需工具：${_missing_deps[*]}"
+    log_info  "请先安装，例如：apt install ${_missing_deps[*]}"
         return 1
     fi
     clear_screen
     draw_header "主从复制设置"
     echo ""
-    echo -e "  Configures Master-Slave config sync via rsync+SSH."
-    echo -e "  Changes on the ${BOLD}Master${NC} auto-push to all Slaves."
+    echo -e "  通过 rsync+SSH 配置主从设置同步。"
+    echo -e "  ${BOLD}主节点${NC}上的更改会自动推送到所有从节点。"
     echo ""
     draw_line
 
     echo ""
-    echo -e "  ${BOLD}Step 1: Role for this server${NC}"
+    echo -e "  ${BOLD}步骤 1：设置此服务器的角色${NC}"
     echo ""
-    echo -e "  [1] ${BRIGHT_GREEN}Master${NC}     — Push config to slave(s)"
-    echo -e "  [2] ${BRIGHT_CYAN}Slave${NC}      — Receive config from master"
+    echo -e "  [1] ${BRIGHT_GREEN}主节点${NC} — 向从节点推送配置"
+    echo -e "  [2] ${BRIGHT_CYAN}从节点${NC} — 从主节点接收配置"
     echo -e "  [3] ${DIM}Standalone${NC} — 禁用复制"
     echo ""
     local role_choice
@@ -12490,16 +12507,16 @@ replication_setup_wizard() {
             # Slave has no peers — clear any stale replication.conf from a previous master setup
             > "${REPLICATION_FILE}" 2>/dev/null || true
             echo ""
-            log_success "Role set to: Slave"
+            log_success "角色已设为：从节点"
             echo ""
-            echo -e "  On the Master server, run:"
+            echo -e "  请在主节点服务器上运行："
             local _hint_ip _hint_host
             _hint_ip=$(hostname -I 2>/dev/null | awk '{print $1}')
             [ -z "$_hint_ip" ] && _hint_ip=$(ip -4 route get 1 2>/dev/null | awk '{print $7; exit}')
             _hint_host=$(hostname -s 2>/dev/null)
             echo -e "    ${CYAN}mtproxymax replication add ${_hint_ip:-<YOUR_IP>} 22${_hint_host:+ ${_hint_host}}${NC}"
             echo ""
-            echo -e "  Ensure Master's SSH public key is in: ${DIM}~/.ssh/authorized_keys${NC}"
+            echo -e "  确保主节点的 SSH 公钥已写入：${DIM}~/.ssh/authorized_keys${NC}"
             echo ""
             press_any_key
             return 0
@@ -12508,7 +12525,7 @@ replication_setup_wizard() {
             REPLICATION_ROLE="standalone"
             REPLICATION_ENABLED="false"
             save_settings
-            log_info "Replication disabled (standalone)"
+            log_info "复制已禁用（独立模式）"
             press_any_key
             return 0
             ;;
@@ -12517,12 +12534,12 @@ replication_setup_wizard() {
     # Master flow
     REPLICATION_ROLE="master"
     echo ""
-    echo -e "  ${BOLD}Step 2: SSH Key${NC}"
+    echo -e "  ${BOLD}步骤 2：SSH 密钥${NC}"
     echo ""
 
     local key_path="${REPLICATION_SSH_KEY_PATH}"
     if [ -f "${key_path}" ]; then
-        echo -e "  ${GREEN}${SYM_CHECK}${NC} Key exists: ${DIM}${key_path}${NC}"
+        echo -e "  ${GREEN}${SYM_CHECK}${NC} 密钥已存在：${DIM}${key_path}${NC}"
         echo -en "  Regenerate? [y/N]: "
         local regen; read -r regen
         [[ "$regen" =~ ^[Yy]$ ]] && rm -f "${key_path}" "${key_path}.pub"
@@ -12533,39 +12550,39 @@ replication_setup_wizard() {
         chmod 700 "${REPLICATION_SSH_DIR}"
         ssh-keygen -t ed25519 -f "${key_path}" -N "" -C "mtproxymax-replication" &>/dev/null
         chmod 600 "${key_path}"
-        log_success "ed25519 key generated"
+        log_success "ed25519 密钥已生成"
     fi
 
     echo ""
-    echo -e "  ${BOLD}Public key${NC} (add to slave ~/.ssh/authorized_keys if needed):"
+    echo -e "  ${BOLD}公钥${NC}（必要时添加到从节点的 ~/.ssh/authorized_keys）："
     echo ""
     echo -e "  ${DIM}$(cat "${key_path}.pub" 2>/dev/null)${NC}"
     echo ""
     draw_line
 
     echo ""
-    echo -e "  ${BOLD}Step 2b: SSH User${NC}"
+    echo -e "  ${BOLD}步骤 2b：SSH 用户${NC}"
     echo ""
-    echo -e "  ${DIM}User account on slave servers for SSH/rsync (default: root)${NC}"
-    echo -en "  SSH user [${REPLICATION_SSH_USER:-root}]: "
+    echo -e "  ${DIM}从节点上用于 SSH/rsync 的用户账户（默认：root）${NC}"
+    echo -en "  SSH 用户 [${REPLICATION_SSH_USER:-root}]："
     local ssh_user_input; read -r ssh_user_input
     if [ -n "$ssh_user_input" ]; then
         if [[ "$ssh_user_input" =~ ^[a-zA-Z_][a-zA-Z0-9_-]*$ ]]; then
             REPLICATION_SSH_USER="$ssh_user_input"
         else
-            log_warn "Invalid username — keeping '${REPLICATION_SSH_USER:-root}'"
+        log_warn "用户名无效，保留 '${REPLICATION_SSH_USER:-root}'"
         fi
     fi
     draw_line
 
     echo ""
-    echo -e "  ${BOLD}Step 3: Add Slave 服务器(s)${NC}"
+    echo -e "  ${BOLD}步骤 3：添加从节点服务器${NC}"
     echo ""
 
     load_replication
     local add_more="y"
     while [[ "$add_more" =~ ^[Yy]$ ]]; do
-        echo -en "  Slave host (IP or domain): "
+        echo -en "  从节点主机（IP 或域名）："
         local slave_host; read -r slave_host
         [ -z "$slave_host" ] && break
 
@@ -12575,41 +12592,41 @@ replication_setup_wizard() {
         slave_label=$(read_choice "label" "$slave_host")
 
         echo ""
-        echo -e "  ${YELLOW}${SYM_WARN} Note:${NC} The first connection uses Trust-On-First-Use (TOFU)."
-        echo -e "  ${DIM}The slave's SSH host key will be automatically accepted and saved.${NC}"
-        echo -e "  ${DIM}For maximum security, verify the fingerprint manually beforehand.${NC}"
+        echo -e "  ${YELLOW}${SYM_WARN} 注意：${NC}首次连接采用首次使用信任（TOFU）机制。"
+        echo -e "  ${DIM}从节点的 SSH 主机密钥将被自动接受并保存。${NC}"
+        echo -e "  ${DIM}为获得最高安全性，请事先手动核验指纹。${NC}"
         echo ""
-        echo -e "  Copying SSH key to ${slave_host}..."
+        echo -e "  正在将 SSH 密钥复制到 ${slave_host}..."
         if command -v ssh-copy-id &>/dev/null; then
             if ssh-copy-id -i "${key_path}.pub" -p "${slave_port}" \
                 -o StrictHostKeyChecking=accept-new \
                 "${REPLICATION_SSH_USER}@${slave_host}" 2>/dev/null; then
-                log_success "Key copied to ${slave_host}"
+            log_success "密钥已复制到 ${slave_host}"
             else
-                log_warn "ssh-copy-id failed — add the public key manually to ${REPLICATION_SSH_USER}@${slave_host}:~/.ssh/authorized_keys"
+            log_warn "ssh-copy-id 失败，请手动将公钥添加到 ${REPLICATION_SSH_USER}@${slave_host}:~/.ssh/authorized_keys"
             fi
         else
-            log_warn "ssh-copy-id 未找到 — add the public key manually"
+        log_warn "未找到 ssh-copy-id，请手动添加公钥"
         fi
 
-        echo -en "  Testing SSH connection... "
+        echo -en "  正在测试 SSH 连接... "
         if ssh -i "${key_path}" -p "${slave_port}" \
             -o BatchMode=yes -o ConnectTimeout=10 -o StrictHostKeyChecking=accept-new \
             "${REPLICATION_SSH_USER}@${slave_host}" "echo ok" &>/dev/null; then
             echo -e "${GREEN}OK${NC}"
             replication_add "$slave_host" "$slave_port" "$slave_label"
         else
-            echo -e "${RED}FAILED${NC}"
-            log_error "SSH failed — slave not added. Fix and run: mtproxymax replication add ${slave_host} ${slave_port} ${slave_label}"
+            echo -e "${RED}失败${NC}"
+            log_error "SSH 连接失败，未添加从节点。修复后请运行：mtproxymax replication add ${slave_host} ${slave_port} ${slave_label}"
         fi
 
         echo ""
-        echo -en "  Add another slave? [y/N]: "
+        echo -en "  是否添加另一个从节点？[y/N]："
         read -r add_more
     done
 
     echo ""
-    echo -e "  ${BOLD}Step 4: Sync Interval${NC}"
+    echo -e "  ${BOLD}步骤 4：同步间隔${NC}"
     local interval
     interval=$(read_choice "sync interval in seconds" "${REPLICATION_SYNC_INTERVAL}")
     if [[ "$interval" =~ ^[0-9]+$ ]] && [ "$interval" -ge 10 ]; then
@@ -12620,7 +12637,7 @@ replication_setup_wizard() {
     load_replication
     if [ ${#REPL_HOSTS[@]} -gt 0 ]; then
         echo ""
-        echo -e "  ${BOLD}Step 5: Dry-run test to ${REPL_LABELS[0]}${NC}"
+        echo -e "  ${BOLD}步骤 5：对 ${REPL_LABELS[0]} 进行试运行测试${NC}"
         echo ""
         local exclude_args=() ex
         IFS=',' read -ra _ex <<< "${REPLICATION_EXCLUDE}"
@@ -12642,8 +12659,8 @@ replication_setup_wizard() {
     setup_replication_service
 
     echo ""
-    log_success "Replication configured!"
-    echo -e "  Role: ${BRIGHT_GREEN}Master${NC} | Interval: ${REPLICATION_SYNC_INTERVAL}s | Slaves: ${#REPL_HOSTS[@]}"
+    log_success "复制功能配置完成！"
+    echo -e "  角色：${BRIGHT_GREEN}主节点${NC} | 间隔：${REPLICATION_SYNC_INTERVAL} 秒 | 从节点：${#REPL_HOSTS[@]}"
     echo ""
     press_any_key
 }
@@ -12663,17 +12680,17 @@ replication_status() {
         slave)  role_color="$BRIGHT_CYAN" ;;
     esac
 
-    echo -e "  Role:     ${role_color}${REPLICATION_ROLE}${NC}"
-    echo -e "  已启用:  $([ "$REPLICATION_ENABLED" = "true" ] && echo "${GREEN}yes${NC}" || echo "${DIM}no${NC}")"
+    echo -e "  角色：${role_color}${REPLICATION_ROLE}${NC}"
+    echo -e "  已启用：$([ "$REPLICATION_ENABLED" = "true" ] && echo "${GREEN}是${NC}" || echo "${DIM}否${NC}")"
     [ "${REPLICATION_ROLE}" = "master" ] && \
-        echo -e "  Interval: ${REPLICATION_SYNC_INTERVAL}s"
-    echo -e "  SSH Key:  $([ -f "${REPLICATION_SSH_KEY_PATH}" ] && echo "${GREEN}present${NC}" || echo "${RED}missing${NC}")"
+        echo -e "  间隔：${REPLICATION_SYNC_INTERVAL} 秒"
+    echo -e "  SSH 密钥：$([ -f "${REPLICATION_SSH_KEY_PATH}" ] && echo "${GREEN}存在${NC}" || echo "${RED}缺失${NC}")"
 
     local t_state="inactive"
     if command -v systemctl &>/dev/null; then
         t_state=$(systemctl is-active mtproxymax-sync.timer 2>/dev/null)
         t_state="${t_state:-inactive}"
-        echo -e "  Timer:    $([ "$t_state" = "active" ] && echo "${GREEN}${t_state}${NC}" || echo "${DIM}${t_state}${NC}")"
+        echo -e "  定时器：$([ "$t_state" = "active" ] && echo "${GREEN}活动${NC}" || echo "${DIM}${t_state}${NC}")"
     fi
 
     if [ "${REPLICATION_ROLE}" = "master" ] && [ ${#REPL_HOSTS[@]} -gt 0 ]; then
@@ -12681,12 +12698,12 @@ replication_status() {
         replication_list
     elif [ "${REPLICATION_ROLE}" = "slave" ]; then
         echo ""
-        echo -e "  ${DIM}正在接收主节点配置. All changes must be made on the master.${NC}"
+        echo -e "  ${DIM}正在接收主节点配置。所有更改都必须在主节点上进行。${NC}"
     fi
 
     if [ -f "${REPLICATION_LOG}" ]; then
         echo ""
-        echo -e "  ${BOLD}Recent log:${NC}"
+        echo -e "  ${BOLD}最近日志：${NC}"
         tail -5 "${REPLICATION_LOG}" | while IFS= read -r line; do
             echo -e "  ${DIM}${line}${NC}"
         done
@@ -12700,7 +12717,7 @@ replication_test() {
     load_replication
 
     if [ ${#REPL_HOSTS[@]} -eq 0 ]; then
-        log_error "No slaves configured"
+        log_error "尚未配置从节点"
         return 1
     fi
 
@@ -12722,9 +12739,9 @@ replication_test() {
         if echo "$result" | grep -q "ssh_ok"; then
             local docker_status
             docker_status=$(echo "$result" | grep -v "ssh_ok" | head -1)
-            echo -e "${GREEN}SSH OK${NC} | docker: ${docker_status:-not running}"
+            echo -e "${GREEN}SSH 正常${NC} | Docker：${docker_status:-未运行}"
         else
-            echo -e "${RED}FAILED${NC} ($(echo "$result" | tail -1))"
+            echo -e "${RED}失败${NC}（$(echo "$result" | tail -1)）"
         fi
     done
     echo ""
@@ -12734,7 +12751,7 @@ replication_test() {
 replication_sync_now() {
     echo ""
     if [ "${REPLICATION_ROLE}" != "master" ]; then
-        log_warn "This server is '${REPLICATION_ROLE}' — only master initiates sync"
+        log_warn "此服务器角色为 '${REPLICATION_ROLE}'，只有主节点可以发起同步"
         echo ""
         return 1
     fi
@@ -12742,15 +12759,15 @@ replication_sync_now() {
     replication_generate_sync_script
     if command -v systemctl &>/dev/null && \
         systemctl is-active mtproxymax-sync.timer &>/dev/null; then
-        echo -e "  Triggering sync via systemd..."
+        echo -e "  正在通过 systemd 触发同步..."
         systemctl start mtproxymax-sync.service
         echo -e "  ${GREEN}Done.${NC}"
-        echo -e "  View logs: ${DIM}mtproxymax replication logs${NC}"
+        echo -e "  查看日志：${DIM}mtproxymax replication logs${NC}"
     elif [ -f "${INSTALL_DIR}/mtproxymax-sync.sh" ]; then
-        echo -e "  运行中 sync script directly..."
+        echo -e "  正在直接运行同步脚本..."
         bash "${INSTALL_DIR}/mtproxymax-sync.sh"
     else
-        log_error "Sync script 未找到. Run: mtproxymax replication setup"
+        log_error "未找到同步脚本。请运行：mtproxymax replication setup"
         return 1
     fi
     echo ""
@@ -12760,11 +12777,11 @@ replication_sync_now() {
 replication_show_logs() {
     echo ""
     if [ -f "${REPLICATION_LOG}" ]; then
-        echo -e "  ${BOLD}Sync log (${REPLICATION_LOG}):${NC}"
+    echo -e "  ${BOLD}同步日志（${REPLICATION_LOG}）：${NC}"
         echo ""
         tail -50 "${REPLICATION_LOG}"
     else
-        echo -e "  ${DIM}No log file yet.${NC}"
+        echo -e "  ${DIM}暂无日志文件。${NC}"
     fi
 
     if command -v journalctl &>/dev/null; then
@@ -13258,7 +13275,7 @@ load_instances() {
 
 save_instances() {
     local tmp; tmp=$(_mktemp) || return 1
-    echo "# MTProxyMax Instances — Format: PORT|METRICS_PORT|ENABLED|LABEL" > "$tmp"
+    echo "# MTProxyMax 实例——格式：PORT|METRICS_PORT|ENABLED|LABEL" > "$tmp"
     local i
     for i in "${!INSTANCE_PORTS[@]}"; do
         echo "${INSTANCE_PORTS[$i]}|${INSTANCE_METRICS_PORTS[$i]}|${INSTANCE_ENABLED[$i]}|${INSTANCE_LABELS[$i]}" >> "$tmp"
@@ -13290,12 +13307,12 @@ instance_add() {
     validate_port "$port" || return 1
 
     # Check not same as primary
-    [ "$port" = "$PROXY_PORT" ] && { log_error "Port ${port} is already the primary proxy port"; return 1; }
+    [ "$port" = "$PROXY_PORT" ] && { log_error "端口 ${port} 已是主代理端口"; return 1; }
 
     # Check not duplicate
     local i
     for i in "${!INSTANCE_PORTS[@]}"; do
-        [ "${INSTANCE_PORTS[$i]}" = "$port" ] && { log_error "Instance on port ${port} 已存在"; return 1; }
+        [ "${INSTANCE_PORTS[$i]}" = "$port" ] && { log_error "端口 ${port} 上的实例已存在"; return 1; }
     done
 
     local mport; mport=$(_next_free_metrics_port)
@@ -13350,7 +13367,7 @@ instance_add() {
         }
 
     apply_firewall_rules 2>/dev/null || true
-    log_success "Instance started on port ${port} (container: ${cname}, metrics: ${mport})"
+    log_success "实例已在端口 ${port} 启动（容器：${cname}，指标端口：${mport}）"
 }
 
 instance_remove() {
@@ -13359,7 +13376,7 @@ instance_remove() {
     for i in "${!INSTANCE_PORTS[@]}"; do
         [ "${INSTANCE_PORTS[$i]}" = "$port" ] && idx=$i && break
     done
-    [ "$idx" = "-1" ] && { log_error "No instance on port ${port}"; return 1; }
+    [ "$idx" = "-1" ] && { log_error "端口 ${port} 上没有实例"; return 1; }
 
     # Stop and remove container
     local cname="mtproxymax-${port}"
@@ -13385,20 +13402,20 @@ instance_remove() {
     save_instances
     apply_firewall_rules 2>/dev/null || true
 
-    log_success "Instance on port ${port} removed"
+    log_success "端口 ${port} 上的实例已移除"
 }
 
 instance_list() {
     echo ""
     draw_header "代理实例"
     echo ""
-    echo -e "  ${BOLD}Primary:${NC} port ${PROXY_PORT} (container: ${CONTAINER_NAME})"
+    echo -e "  ${BOLD}主实例：${NC}端口 ${PROXY_PORT}（容器：${CONTAINER_NAME}）"
     local running; is_proxy_running && running="${GREEN}running${NC}" || running="${RED}stopped${NC}"
-    echo -e "    状态: ${running}"
+    echo -e "    状态：${running}"
     echo ""
 
     if [ ${#INSTANCE_PORTS[@]} -eq 0 ]; then
-        echo -e "  ${DIM}No additional instances${NC}"
+        echo -e "  ${DIM}没有其他实例${NC}"
     else
         local i
         for i in "${!INSTANCE_PORTS[@]}"; do
@@ -13406,8 +13423,8 @@ instance_list() {
             local cname="mtproxymax-${port}"
             local st
             docker ps --format '{{.Names}}' 2>/dev/null | grep -q "^${cname}$" && st="${GREEN}running${NC}" || st="${RED}stopped${NC}"
-            echo -e "  ${BOLD}${label}:${NC} port ${port} (container: ${cname})"
-            echo -e "    状态: ${st} | Metrics: ${INSTANCE_METRICS_PORTS[$i]}"
+            echo -e "  ${BOLD}${label}：${NC}端口 ${port}（容器：${cname}）"
+            echo -e "    状态：${st} | 指标端口：${INSTANCE_METRICS_PORTS[$i]}"
         done
     fi
     echo ""
@@ -13442,7 +13459,7 @@ create_backup() {
     chmod 600 "$backup_file"
     rm -f "${INSTALL_DIR}/backup_meta.txt"
 
-    log_success "Backup created: ${backup_file}"
+    log_success "备份已创建：${backup_file}"
     backup_cloud_push "$backup_file" 2>/dev/null || true
     echo "$backup_file"
 }
@@ -13454,7 +13471,7 @@ restore_backup() {
 
     # Validate backup
     if ! tar tzf "$backup_file" 2>/dev/null | grep -q "settings.conf"; then
-        log_error "Invalid backup file (missing settings.conf)"
+        log_error "备份文件无效（缺少 settings.conf）"
         return 1
     fi
 
@@ -13462,14 +13479,14 @@ restore_backup() {
     local meta; meta=$(tar xzf "$backup_file" -O backup_meta.txt 2>/dev/null)
     if [ -n "$meta" ]; then
         echo ""
-        echo -e "  ${BOLD}Backup Info:${NC}"
+    echo -e "  ${BOLD}备份信息：${NC}"
         echo "$meta" | while IFS='=' read -r k v; do echo -e "    ${k}: ${v}"; done
         echo ""
     fi
 
-    echo -en "  ${YELLOW}This will overwrite current configuration. 是否继续？ [y/N]:${NC} "
+    echo -en "  ${YELLOW}此操作将覆盖当前配置。是否继续？[y/N]：${NC} "
     local confirm; read -r confirm
-    [[ "$confirm" =~ ^[yY] ]] || { log_info "Restore cancelled"; return 0; }
+    [[ "$confirm" =~ ^[yY] ]] || { log_info "已取消恢复"; return 0; }
 
     # 创建备份 of current state first
     log_info "正在备份当前状态..."
@@ -13479,15 +13496,15 @@ restore_backup() {
     tar xzf "$backup_file" -C "$INSTALL_DIR" --exclude='backup_meta.txt' 2>/dev/null
     chmod 600 "${SECRETS_FILE}" 2>/dev/null
 
-    log_success "Backup restored from: ${backup_file}"
-    log_info "Run 'mtproxymax restart' to apply changes"
+    log_success "已从备份恢复：${backup_file}"
+    log_info "请运行 'mtproxymax restart' 应用更改"
 }
 
 list_backups() {
     mkdir -p "$BACKUP_DIR"
     local files; files=$(ls -1t "${BACKUP_DIR}"/mtproxymax-*.tar.gz 2>/dev/null) || true
     if [ -z "$files" ]; then
-        log_info "No backups found in ${BACKUP_DIR}"
+    log_info "在 ${BACKUP_DIR} 中未找到备份"
         return
     fi
     echo ""
@@ -13810,7 +13827,7 @@ show_status_json() {
 show_metrics() {
     local m
     if ! m=$(_fetch_metrics 2>/dev/null); then
-        log_error "Metrics endpoint unavailable — is the proxy running?"
+    log_error "指标端点不可用，请确认代理是否正在运行"
         return 1
     fi
 
@@ -13895,16 +13912,16 @@ show_metrics() {
     [ "${me_att:-0}" -gt 0 ] && me_rate_disp="${me_rate}%" || me_rate_disp="—"
 
     draw_header "指标"
-    echo -e "  ${DIM}uptime:${NC} $(format_duration "${uptime:-0}")   ${DIM}upstream:${NC} ${up_status}   ${DIM}active:${NC} ${c_cur:-0}   ${DIM}writers:${NC} ${me_wa:-0}/${me_ww:-0}"
+    echo -e "  ${DIM}运行时长：${NC}$(format_duration "${uptime:-0}")   ${DIM}上游：${NC}${up_status}   ${DIM}活动连接：${NC}${c_cur:-0}   ${DIM}写入器：${NC}${me_wa:-0}/${me_ww:-0}"
     echo ""
 
     echo -e "  ${BOLD}连接数${NC}"
-    echo -e "  ${DIM}total:${NC} ${c_tot:-0}   ${DIM}authorized:${NC} ${BRIGHT_GREEN}${c_good}${NC}   ${DIM}rejected:${NC} ${BRIGHT_RED}${c_bad:-0}${NC}"
-    echo -e "  ${DIM}active:${NC} ${c_cur:-0}  (ME: ${c_me:-0}  direct: ${c_dir:-0})"
+    echo -e "  ${DIM}总计：${NC}${c_tot:-0}   ${DIM}已授权：${NC}${BRIGHT_GREEN}${c_good}${NC}   ${DIM}已拒绝：${NC}${BRIGHT_RED}${c_bad:-0}${NC}"
+    echo -e "  ${DIM}活动连接：${NC}${c_cur:-0}（中间端：${c_me:-0}，直连：${c_dir:-0}）"
     echo ""
 
     echo -e "  ${BOLD}Upstream${NC}"
-    echo -e "  ${DIM}attempts:${NC} ${up_att:-0}   ${DIM}success:${NC} ${BRIGHT_GREEN}${up_ok:-0}${NC}   ${DIM}failed:${NC} ${BRIGHT_RED}${up_fail:-0}${NC}   ${DIM}rate:${NC} ${up_status}"
+    echo -e "  ${DIM}尝试：${NC}${up_att:-0}   ${DIM}成功：${NC}${BRIGHT_GREEN}${up_ok:-0}${NC}   ${DIM}失败：${NC}${BRIGHT_RED}${up_fail:-0}${NC}   ${DIM}成功率：${NC}${up_status}"
     while IFS='|' read -r _ bk bn ok fail pct; do
         local ppct
         ppct=$(awk -v p="$pct" 'BEGIN{if(p+0<0) print "—"; else printf "%.0f%%", p}')
@@ -13915,24 +13932,24 @@ show_metrics() {
     local user_lines
     user_lines=$(echo "$parsed" | grep '^U|' | sort -t'|' -k3 -rn)
     if [ -n "$user_lines" ]; then
-        echo -e "  ${BOLD}Users${NC}"
+        echo -e "  ${BOLD}用户${NC}"
         while IFS='|' read -r _ uname ucur utot urx utx uips; do
-            echo -e "  ${GREEN}${SYM_OK}${NC} ${BOLD}${uname}${NC}  active: ${ucur}  total: ${utot}  ${SYM_DOWN} $(format_bytes "$urx")  ${SYM_UP} $(format_bytes "$utx")  IP 数： ${uips}"
+            echo -e "  ${GREEN}${SYM_OK}${NC} ${BOLD}${uname}${NC}  活动：${ucur}  总计：${utot}  ${SYM_DOWN} $(format_bytes "$urx")  ${SYM_UP} $(format_bytes "$utx")  IP 数：${uips}"
         done <<< "$user_lines"
         echo ""
     fi
 
-    echo -e "  ${BOLD}ME Health${NC}"
-    echo -e "  ${DIM}reconnects:${NC} ${me_ok:-0}/${me_att:-0} (${me_rate_disp})   ${DIM}writers:${NC} ${me_wa:-0} active / ${me_ww:-0} warm"
-    [ "${me_quar:-0}" -gt 0 ] && echo -e "  ${DIM}quarantined endpoints:${NC} ${YELLOW}${me_quar}${NC}"
-    [ "${me_crc:-0}"  -gt 0 ] && echo -e "  ${DIM}CRC mismatches:${NC}       ${YELLOW}${me_crc}${NC}"
-    [ "${pool:-0}"    -gt 0 ] && echo -e "  ${DIM}writers draining:${NC}     ${pool}"
+    echo -e "  ${BOLD}ME 健康状态${NC}"
+    echo -e "  ${DIM}重连：${NC}${me_ok:-0}/${me_att:-0}（${me_rate_disp}）   ${DIM}写入器：${NC}${me_wa:-0} 个活动 / ${me_ww:-0} 个预热"
+    [ "${me_quar:-0}" -gt 0 ] && echo -e "  ${DIM}已隔离端点：${NC}${YELLOW}${me_quar}${NC}"
+    [ "${me_crc:-0}"  -gt 0 ] && echo -e "  ${DIM}CRC 不匹配：${NC}${YELLOW}${me_crc}${NC}"
+    [ "${pool:-0}"    -gt 0 ] && echo -e "  ${DIM}正在排空的写入器：${NC}${pool}"
     echo ""
 
     if [ "${desync:-0}" -gt 0 ] || [ "${padinv:-0}" -gt 0 ]; then
         echo -e "  ${BOLD}Security${NC}"
-        [ "${desync:-0}"  -gt 0 ] && echo -e "  ${DIM}desync events:${NC}   ${YELLOW}${desync}${NC}"
-        [ "${padinv:-0}"  -gt 0 ] && echo -e "  ${DIM}invalid padding:${NC} ${YELLOW}${padinv}${NC}"
+    [ "${desync:-0}"  -gt 0 ] && echo -e "  ${DIM}失同步事件：${NC}${YELLOW}${desync}${NC}"
+    [ "${padinv:-0}"  -gt 0 ] && echo -e "  ${DIM}无效填充：${NC}${YELLOW}${padinv}${NC}"
         echo ""
     fi
 }
@@ -13962,8 +13979,8 @@ show_status() {
         connections=0
     fi
 
-    draw_box_line "  ${BOLD}Engine:${NC} telemt v$(get_telemt_version)  ${BOLD}状态:${NC} ${status_str}" "$w"
-    draw_box_line "  ${BOLD}端口：${NC}   ${PROXY_PORT}            ${BOLD}运行时长:${NC} ${uptime_str}" "$w"
+    draw_box_line "  ${BOLD}引擎：${NC}Telemt v$(get_telemt_version)  ${BOLD}状态：${NC}${status_str}" "$w"
+    draw_box_line "  ${BOLD}端口：${NC}   ${PROXY_PORT}            ${BOLD}运行时长：${NC}${uptime_str}" "$w"
     draw_box_line "  ${BOLD}域名：${NC} ${PROXY_DOMAIN}" "$w"
     draw_box_line "  ${BOLD}流量：${NC} ${SYM_DOWN} $(format_bytes "$traffic_in")  ${SYM_UP} $(format_bytes "$traffic_out")" "$w"
     draw_box_line "  ${BOLD}连接数:${NC} ${connections}" "$w"
@@ -14065,7 +14082,7 @@ cli_main() {
                         esac; shift
                     done
                     if [ "$_dry" = "true" ]; then
-                        log_info "DRY RUN — would 移除密钥 '${_rm_label}' (no changes made)"
+    log_info "试运行：将移除密钥 '${_rm_label}'（未执行任何更改）"
                     else
                         secret_remove "$_rm_label" "false" "$_no_restart" || return 1
                     fi
@@ -14267,7 +14284,7 @@ cli_main() {
                 tags)
                     local _st_label="$1"
                     if [ -z "$_st_label" ]; then
-                        [ ! -f "$_TAGS_FILE" ] && { log_info "No tags set"; return 0; }
+                        [ ! -f "$_TAGS_FILE" ] && { log_info "尚未设置标签"; return 0; }
                         cat "$_TAGS_FILE" 2>/dev/null | column -t -s'|' 2>/dev/null || cat "$_TAGS_FILE"
                     else
                         local _t; _t=$(secret_get_tags "$_st_label")
@@ -14314,13 +14331,13 @@ cli_main() {
                 [ -n "$BLOCKLIST_COUNTRIES" ] && { geoblock_remove_all; _remove_default_drop; }
                 PROXY_PORT="$new_port"
                 save_settings
-                log_success "Port changed to ${new_port}"
+                log_success "端口已更改为 ${new_port}"
                 if is_proxy_running; then
                     load_secrets
                     restart_proxy_container
                 fi
             else
-                log_error "Invalid port: ${new_port} (must be 1-65535)"
+                log_error "端口无效：${new_port}（必须在 1–65535 之间）"
                 return 1
             fi
             ;;
@@ -14330,7 +14347,7 @@ cli_main() {
             local ipv4="${1:-}"
             local ipv6="${2:-}"
             if [ -z "$ipv4" ] || [ "$ipv4" = "get" ]; then
-                echo -e "  ── ${BOLD}Bind Addresses${NC} ──"
+                echo -e "  ── ${BOLD}监听地址${NC} ──"
                 echo "  IPv4: ${PROXY_BIND_IPV4:-0.0.0.0}"
                 echo "  IPv6: ${PROXY_BIND_IPV6:-::}"
                 echo -e "\n  ${DIM}用法： mtproxymax bind <ipv4> [ipv6]${NC}"
@@ -14340,7 +14357,7 @@ cli_main() {
             PROXY_BIND_IPV4="$ipv4"
             [ -n "$ipv6" ] && PROXY_BIND_IPV6="$ipv6"
             save_settings
-            log_success "Bind addresses updated."
+            log_success "监听地址已更新。"
             if is_proxy_running; then
                 load_secrets
                 restart_proxy_container
@@ -14353,9 +14370,9 @@ cli_main() {
             case "$ip_arg" in
                 ""|get)
                     if [ -n "${CUSTOM_IP}" ]; then
-                        echo "${CUSTOM_IP} (custom)"
+                        echo "${CUSTOM_IP}（自定义）"
                     else
-                        echo "$(get_public_ip) (auto-detected)"
+                        echo "$(get_public_ip)（自动检测）"
                     fi
                     return 0
                     ;;
@@ -14363,16 +14380,16 @@ cli_main() {
                     check_root
                     CUSTOM_IP=""
                     save_settings
-                    log_success "IP reset to auto-detect ($(CUSTOM_IP="" get_public_ip))"
+                    log_success "IP 已恢复为自动检测（$(CUSTOM_IP="" get_public_ip)）"
                     ;;
                 *)
                     check_root
                     if [[ "$ip_arg" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]] || [[ "$ip_arg" =~ ^[0-9a-fA-F:]+$ ]] || [[ "$ip_arg" =~ ^[a-zA-Z0-9]([a-zA-Z0-9._-]*[a-zA-Z0-9])?$ ]]; then
                         CUSTOM_IP="$ip_arg"
                         save_settings
-                        log_success "IP/domain set to ${ip_arg}"
+                        log_success "IP/域名已设为 ${ip_arg}"
                     else
-                        log_error "Invalid IP address or domain: ${ip_arg}"
+                        log_error "IP 地址或域名无效：${ip_arg}"
                         return 1
                     fi
                     ;;
@@ -14384,14 +14401,14 @@ cli_main() {
             local new_domain="$1"
             case "$new_domain" in
                 ""|get)
-                    echo "${PROXY_DOMAIN:-<not set>}"
+                    echo "${PROXY_DOMAIN:-<未设置>}"
                     return 0
                     ;;
                 clear)
                     check_root
                     PROXY_DOMAIN=""
                     save_settings
-                    log_success "Domain cleared"
+                    log_success "域名已清除"
                     if is_proxy_running; then
                         load_secrets
                         restart_proxy_container
@@ -14403,15 +14420,15 @@ cli_main() {
                         PROXY_DOMAIN="$new_domain"
                         sync_domain_cert_len "true" "false" || true
                         save_settings
-                        log_success "Domain changed to ${new_domain}"
+                        log_success "域名已更改为 ${new_domain}"
                         audit_log "domain change → ${new_domain}"
-                        log_warn "Existing proxy links still encode the old domain"
+                        log_warn "现有代理链接仍包含旧域名"
                         local _rot="y"
                         if [ -t 0 ]; then
-                            echo -en "  ${BOLD}Rotate all secrets for new domain? [Y/n]:${NC} "
+                            echo -en "  ${BOLD}是否为新域名轮换所有密钥？[Y/n]：${NC} "
                             read -r _rot || _rot="y"
                         else
-                            log_info "Non-interactive mode: rotating secrets and restarting automatically"
+                            log_info "非交互模式：自动轮换密钥并重启"
                         fi
                         if [[ ! "$_rot" =~ ^[nN] ]]; then
                             local _ri
@@ -14419,14 +14436,14 @@ cli_main() {
                                 SECRETS_KEYS[$_ri]=$(generate_secret)
                             done
                             save_secrets
-                            log_success "All secrets rotated — share new links with your users"
+                            log_success "所有密钥均已轮换，请向用户分享新链接"
                         fi
                         if is_proxy_running; then
                             load_secrets
                             restart_proxy_container
                         fi
                     else
-                        log_error "Invalid domain format (use valid hostname like cloudflare.com)"
+                        log_error "域名格式无效（请使用 cloudflare.com 之类的有效主机名）"
                         return 1
                     fi
                     ;;
@@ -14437,7 +14454,7 @@ cli_main() {
             load_settings
             local _mh="${1:-}" _mp="${2:-}"
             if [ -z "$_mh" ]; then
-                echo -e "  Mask backend: ${MASKING_HOST:-${PROXY_DOMAIN}}:${MASKING_PORT:-443}"
+                echo -e "  伪装后端：${MASKING_HOST:-${PROXY_DOMAIN}}:${MASKING_PORT:-443}"
                 return
             fi
             check_root
@@ -14446,11 +14463,11 @@ cli_main() {
             if [[ "$_mh" == *:* ]] && [ -z "$_mp" ]; then
                 _mp="${_mh##*:}"; _mh="${_mh%%:*}"
             fi
-            [ -n "$_mp" ] && { [[ "$_mp" =~ ^[0-9]+$ ]] && [ "$_mp" -ge 1 ] && [ "$_mp" -le 65535 ] || { log_error "Invalid port"; return 1; }; }
+            [ -n "$_mp" ] && { [[ "$_mp" =~ ^[0-9]+$ ]] && [ "$_mp" -ge 1 ] && [ "$_mp" -le 65535 ] || { log_error "端口无效"; return 1; }; }
             MASKING_HOST="$_mh"
             [ -n "$_mp" ] && MASKING_PORT="$_mp"
             save_settings
-            log_success "Mask backend set to ${MASKING_HOST}:${MASKING_PORT:-443}"
+            log_success "伪装后端已设为 ${MASKING_HOST}:${MASKING_PORT:-443}"
             if is_proxy_running; then
                 load_secrets
                 restart_proxy_container
@@ -14463,14 +14480,14 @@ cli_main() {
             if [ -z "$_val" ]; then
                 local _cur="${MASKING_RELAY_MAX_BYTES:-}"
                 if [ -z "$_cur" ]; then
-                    echo -e "  mask_relay_max_bytes: ${DIM}(engine default — 32768)${NC}"
+                    echo -e "  mask_relay_max_bytes：${DIM}（引擎默认值：32768）${NC}"
                 elif [ "$_cur" = "0" ]; then
-                    echo -e "  mask_relay_max_bytes: ${BOLD}0${NC} ${DIM}(unlimited)${NC}"
+                    echo -e "  mask_relay_max_bytes：${BOLD}0${NC} ${DIM}（不限）${NC}"
                 else
-                    echo -e "  mask_relay_max_bytes: ${BOLD}${_cur}${NC} bytes"
+                    echo -e "  mask_relay_max_bytes：${BOLD}${_cur}${NC} 字节"
                 fi
-                echo -e "  ${DIM}Caps bytes relayed per direction on mask fallback paths.${NC}"
-                echo -e "  ${DIM}Set to 0 for unlimited (useful for large mask backends).${NC}"
+                echo -e "  ${DIM}限制伪装回退路径每个方向转发的字节数。${NC}"
+                echo -e "  ${DIM}设为 0 表示不限（适用于大型伪装后端）。${NC}"
                 return
             fi
             check_root
@@ -14480,11 +14497,11 @@ cli_main() {
             elif [[ "$_val" =~ ^[0-9]+$ ]]; then
                 MASKING_RELAY_MAX_BYTES="$_val"
             else
-                log_error "Value must be a non-negative integer, 'clear', or 'default'"
+                log_error "值必须是非负整数，或使用 'clear'、'default'"
                 return 1
             fi
             save_settings
-            log_success "mask_relay_max_bytes set to ${MASKING_RELAY_MAX_BYTES:-default}"
+            log_success "mask_relay_max_bytes 已设为 ${MASKING_RELAY_MAX_BYTES:-默认值}"
             if is_proxy_running; then
                 restart_proxy_container
             fi
@@ -14595,11 +14612,11 @@ cli_main() {
                                 if [ -n "$_next_up_found" ]; then
                                     upstream_toggle "$_next_up_found" "enable" >/dev/null 2>&1 || true
                                     if [ "${TELEGRAM_ENABLED:-false}" = "true" ]; then
-                                        tg_send "🔄 *Autonomous Upstream Failover Triggered*\n\nUpstream *$(_esc "$up_name")* failed 3 consecutive health pings and was automatically disabled.\n\n✅ Switched traffic to healthy standby upstream: *$(_esc "$_next_up_found")*."
+            tg_send "🔄 *已触发上游自动故障转移*\n\n上游 *$(_esc "$up_name")* 连续 3 次健康探测失败，已自动禁用。\n\n✅ 流量已切换到健康的备用上游：*$(_esc "$_next_up_found")*。"
                                     fi
                                 else
                                     if [ "${TELEGRAM_ENABLED:-false}" = "true" ]; then
-                                        tg_send "🔄 *Autonomous Upstream Failover Triggered*\n\nUpstream *$(_esc "$up_name")* failed 3 consecutive health pings and was automatically disabled.\n\n⚠️ No healthy standby upstreams found. Routing traffic directly via host public IP."
+            tg_send "🔄 *已触发上游自动故障转移*\n\n上游 *$(_esc "$up_name")* 连续 3 次健康探测失败，已自动禁用。\n\n⚠️ 未找到健康的备用上游，流量将通过主机公网 IP 直连。"
                                     fi
                                 fi
                             fi
@@ -14641,7 +14658,7 @@ cli_main() {
                                 secret_toggle "$mem" "disable" >/dev/null 2>&1 || true
                             done
                             if [ "${TELEGRAM_ENABLED:-false}" = "true" ]; then
-                                tg_send "⚠️ *Shared Quota Pool Exceeded*\n\nPool *$(_esc "$p_name")* reached limit ($(format_bytes "$p_limit")). All member links paused."
+            tg_send "⚠️ *共享配额池已超限*\n\n配额池 *$(_esc "$p_name")* 已达到上限（$(format_bytes "$p_limit")），所有成员链接均已暂停。"
                             fi
                         fi
                     fi
@@ -14653,7 +14670,7 @@ cli_main() {
             load_settings
             local _val="${1:-}"
             if [ -z "$_val" ]; then
-                echo -e "  Auto-rotate: ${SECRET_AUTO_ROTATE_DAYS:-0} days ${DIM}(0 = disabled)${NC}"
+                echo -e "  自动轮换：${SECRET_AUTO_ROTATE_DAYS:-0} 天 ${DIM}（0 = 已禁用）${NC}"
                 return
             fi
             check_root
@@ -14662,11 +14679,11 @@ cli_main() {
             elif [[ "$_val" =~ ^[0-9]+$ ]] && [ "$_val" -ge 1 ] && [ "$_val" -le 3650 ]; then
                 SECRET_AUTO_ROTATE_DAYS="$_val"
             else
-                log_error "Value must be a positive integer (days) or 'off'"
+                    log_error "值必须是正整数（天数）或 'off'"
                 return 1
             fi
             save_settings
-            log_success "Auto-rotate policy: ${SECRET_AUTO_ROTATE_DAYS} days"
+                log_success "自动轮换策略：${SECRET_AUTO_ROTATE_DAYS} 天"
             ;;
 
         template)
@@ -14973,8 +14990,8 @@ cli_main() {
             local sub="${1:-get}"; shift 2>/dev/null || true
             case "$sub" in
                 get|show|"")
-                    echo -e "  ${BOLD}Telegram infrastructure URLs${NC}"
-                    echo -e "  ${DIM}Empty = use Telegram's defaults (core.telegram.org)${NC}"
+            echo -e "  ${BOLD}Telegram 基础设施 URL${NC}"
+            echo -e "  ${DIM}留空表示使用 Telegram 默认值（core.telegram.org）${NC}"
                     echo ""
                     echo -e "  proxy_secret_url:    ${PROXY_SECRET_URL:-${DIM}(default)${NC}}"
                     echo -e "  proxy_config_v4_url: ${PROXY_CONFIG_V4_URL:-${DIM}(default)${NC}}"
@@ -14984,22 +15001,22 @@ cli_main() {
                     check_root
                     PROXY_SECRET_URL=""; PROXY_CONFIG_V4_URL=""; PROXY_CONFIG_V6_URL=""
                     save_settings
-                    log_success "Telegram URLs reset to defaults"
+                log_success "Telegram URL 已恢复默认值"
                     if is_proxy_running; then restart_proxy_container; fi
                     ;;
                 set)
                     check_root
                     local _field="$1" _val="$2"
                     [ -z "$_field" ] || [ -z "$_val" ] && { log_error "用法： mtproxymax tg-urls set <secret|config-v4|config-v6> <url>"; return 1; }
-                    [[ "$_val" =~ ^https?:// ]] || { log_error "URL must start with http:// or https://"; return 1; }
+                [[ "$_val" =~ ^https?:// ]] || { log_error "URL 必须以 http:// 或 https:// 开头"; return 1; }
                     case "$_field" in
                         secret)     PROXY_SECRET_URL="$_val" ;;
                         config-v4)  PROXY_CONFIG_V4_URL="$_val" ;;
                         config-v6)  PROXY_CONFIG_V6_URL="$_val" ;;
-                        *) log_error "Field must be: secret | config-v4 | config-v6"; return 1 ;;
+                    *) log_error "字段必须是：secret | config-v4 | config-v6"; return 1 ;;
                     esac
                     save_settings
-                    log_success "Telegram URL set: ${_field} = ${_val}"
+                log_success "Telegram URL 已设置：${_field} = ${_val}"
                     if is_proxy_running; then restart_proxy_container; fi
                     ;;
                 *)
@@ -15019,10 +15036,10 @@ cli_main() {
                     if [[ "$_in" =~ ^[0-9a-f]{32}$ ]]; then
                         AD_TAG="$_in"
                         save_settings
-                        log_success "Ad-tag set to: ${_in}"
+                log_success "广告标签已设为：${_in}"
                         load_secrets; reload_proxy_config
                     else
-                        log_error "Ad-tag must be exactly 32 hexadecimal characters (obtained from @MTProxyBot)"
+                log_error "广告标签必须恰好为 32 位十六进制字符（可从 @MTProxyBot 获取）"
                         return 1
                     fi
                     ;;
@@ -15030,15 +15047,15 @@ cli_main() {
                     check_root
                     AD_TAG=""
                     save_settings
-                    log_success "Ad-tag removed (promoted channel disabled)"
+            log_success "广告标签已移除（推广频道已禁用）"
                     load_secrets; reload_proxy_config
                     ;;
                 view|"")
                     if [ -n "$AD_TAG" ]; then
-                        echo -e "  ${BOLD}Ad-tag:${NC} ${AD_TAG}"
+                        echo -e "  ${BOLD}广告标签：${NC}${AD_TAG}"
                     else
-                        echo -e "  ${DIM}No ad-tag configured${NC}"
-                        echo -e "  ${DIM}Get one from @MTProxyBot on Telegram${NC}"
+                echo -e "  ${DIM}尚未配置广告标签${NC}"
+                echo -e "  ${DIM}可在 Telegram 中向 @MTProxyBot 获取${NC}"
                     fi
                     ;;
                 *)
@@ -15055,7 +15072,7 @@ cli_main() {
                     local code=$(echo "$2" | tr '[:upper:]' '[:lower:]')
                     if [[ "$code" =~ ^[a-z]{2}$ ]]; then
                         if echo ",$BLOCKLIST_COUNTRIES," | grep -q ",${code},"; then
-                            log_info "Country '${code^^}' is already blocked"
+            log_info "国家/地区 '${code^^}' 已被屏蔽"
                         else
                             _ensure_ipset && _download_country_cidrs "$code" && {
                                 [ -z "$BLOCKLIST_COUNTRIES" ] && BLOCKLIST_COUNTRIES="$code" || BLOCKLIST_COUNTRIES="${BLOCKLIST_COUNTRIES},${code}"
@@ -15065,7 +15082,7 @@ cli_main() {
                             }
                         fi
                     else
-                        log_error "Invalid country code (use 2-letter ISO code, e.g. us, de, ir)"
+            log_error "国家/地区代码无效（请使用两位 ISO 代码，例如 us、de、ir）"
                     fi
                     ;;
                 remove)
@@ -15078,12 +15095,12 @@ cli_main() {
                             _remove_country_rules "$code"
                             rm -f "${GEOBLOCK_CACHE_DIR}/${code}.zone"
                             [ -z "$BLOCKLIST_COUNTRIES" ] && _remove_default_drop
-                            log_success "Removed ${code^^} — rules and cache cleared"
+            log_success "已移除 ${code^^}，相关规则和缓存已清除"
                         else
-                            log_info "Country '${code^^}' is not blocked"
+            log_info "国家/地区 '${code^^}' 未被屏蔽"
                         fi
                     else
-                        log_error "Invalid country code (use 2-letter ISO code)"
+                        log_error "国家/地区代码无效（请使用两个字母的 ISO 代码）"
                     fi
                     ;;
                 clear)
@@ -15098,10 +15115,10 @@ cli_main() {
                     _remove_default_drop
                     BLOCKLIST_COUNTRIES=""
                     save_settings
-                    log_success "All geo-blocks cleared"
+            log_success "已清除所有地理位置屏蔽规则"
                     ;;
                 list|"")
-                    echo -e "  ${BOLD}Blocked countries:${NC} ${BLOCKLIST_COUNTRIES:-${DIM}none${NC}}"
+            echo -e "  ${BOLD}已屏蔽国家/地区：${NC}${BLOCKLIST_COUNTRIES:-${DIM}无${NC}}"
                     ;;
                 *)
                     log_error "未知: geoblock $1"; show_cli_help; return 1
@@ -15115,15 +15132,15 @@ cli_main() {
                 mask)
                     check_root
                     UNKNOWN_SNI_ACTION="mask"; save_settings; reload_proxy_config
-                    log_success "未知 SNI policy set to Mask (permissive)"
+            log_success "未知 SNI 策略已设为 Mask（宽松）"
                     ;;
                 drop)
                     check_root
                     UNKNOWN_SNI_ACTION="drop"; save_settings; reload_proxy_config
-                    log_success "未知 SNI policy set to Drop (strict)"
+            log_success "未知 SNI 策略已设为 Drop（严格）"
                     ;;
                 "")
-                    echo -e "  ${BOLD}未知 SNI policy:${NC} ${UNKNOWN_SNI_ACTION}"
+            echo -e "  ${BOLD}未知 SNI 策略：${NC}${UNKNOWN_SNI_ACTION}"
                     ;;
                 *)
                     log_error "用法： mtproxymax sni-policy [mask|drop]"; return 1
@@ -15146,7 +15163,7 @@ cli_main() {
             # Batch-load all user stats
             _load_all_cumulative_user_stats 2>/dev/null
             echo ""
-            echo -e "  ${BOLD}Total:${NC} ${SYM_DOWN} $(format_bytes "$t_in")  ${SYM_UP} $(format_bytes "$t_out")  ${BOLD}连接数:${NC} ${conns}"
+            echo -e "  ${BOLD}总计：${NC}${SYM_DOWN} $(format_bytes "$t_in")  ${SYM_UP} $(format_bytes "$t_out")  ${BOLD}连接数：${NC}${conns}"
             echo ""
 
             # Per-user breakdown
@@ -15213,7 +15230,7 @@ cli_main() {
                     while true; do
                         tput clear 2>/dev/null || printf '\033[2J\033[H'
                         show_metrics
-                        echo -e "  ${DIM}[live — refreshing every ${interval}s, Ctrl+C to stop]${NC}"
+            echo -e "  ${DIM}[实时模式：每 ${interval} 秒刷新，按 Ctrl+C 停止]${NC}"
                         sleep "$interval"
                     done
                 )
@@ -15225,7 +15242,7 @@ cli_main() {
 
         logs)
             load_settings
-            echo -e "  ${DIM}Streaming logs (Ctrl+C to stop)...${NC}"
+            echo -e "  ${DIM}正在流式显示日志（按 Ctrl+C 停止）...${NC}"
             docker logs -f --tail 50 "$CONTAINER_NAME" 2>&1
             ;;
 
@@ -15285,7 +15302,7 @@ cli_main() {
             if [ "$1" = "clear" ]; then
                 check_root
                 > "$CONNECTION_LOG" 2>/dev/null
-                log_success "Connection log cleared"
+                    log_success "连接日志已清除"
             elif [ -f "$CONNECTION_LOG" ] && [ -s "$CONNECTION_LOG" ]; then
                 echo ""
                 draw_header "连接日志"
@@ -15293,7 +15310,7 @@ cli_main() {
                 tail -n "${1:-50}" "$CONNECTION_LOG"
                 echo ""
             else
-                log_info "Connection log is empty"
+                    log_info "连接日志为空"
             fi
             ;;
 
@@ -15317,10 +15334,10 @@ cli_main() {
                 test)    telegram_test_message ;;
                 status|"")
                     if [ "$TELEGRAM_ENABLED" = "true" ]; then
-                        echo -e "  ${BOLD}Telegram:${NC} $(draw_status running '已启用')"
-                        echo -e "  ${DIM}Interval: every ${TELEGRAM_INTERVAL}h | Alerts: ${TELEGRAM_ALERTS_ENABLED} | 标签: ${TELEGRAM_SERVER_LABEL}${NC}"
+                        echo -e "  ${BOLD}Telegram：${NC}$(draw_status running '已启用')"
+        echo -e "  ${DIM}间隔：每 ${TELEGRAM_INTERVAL} 小时 | 警报：$([ "$TELEGRAM_ALERTS_ENABLED" = "true" ] && echo "已启用" || echo "已禁用") | 标签：${TELEGRAM_SERVER_LABEL}${NC}"
                     else
-                        echo -e "  ${BOLD}Telegram:${NC} $(draw_status disabled '已禁用')"
+                        echo -e "  ${BOLD}Telegram：${NC}$(draw_status disabled '已禁用')"
                     fi
                     ;;
                 interval)
@@ -15328,16 +15345,16 @@ cli_main() {
                     shift
                     local _ival="${1:-}"
                     if [ -z "$_ival" ]; then
-                        echo -e "  ${BOLD}Report interval:${NC} every ${TELEGRAM_INTERVAL}h"
+                        echo -e "  ${BOLD}报告间隔：${NC}每 ${TELEGRAM_INTERVAL} 小时"
                         echo -e "  ${DIM}用法： mtproxymax telegram interval <hours>${NC}"
                         return 0
                     fi
                     if [[ "$_ival" =~ ^[0-9]+$ ]] && [ "$_ival" -ge 1 ] && [ "$_ival" -le 168 ]; then
                         TELEGRAM_INTERVAL="$_ival"
                         save_settings
-                        log_success "Report interval set to every ${_ival}h"
+                        log_success "报告间隔已设为每 ${_ival} 小时"
                     else
-                        log_error "Invalid interval — must be 1-168 hours"
+                        log_error "间隔无效，必须为 1–168 小时"
                         return 1
                     fi
                     ;;
@@ -15346,14 +15363,14 @@ cli_main() {
                     shift
                     local _lbl="${*:-}"
                     if [ -z "$_lbl" ]; then
-                        echo -e "  ${BOLD}服务器 label:${NC} ${TELEGRAM_SERVER_LABEL}"
+                        echo -e "  ${BOLD}服务器标签：${NC}${TELEGRAM_SERVER_LABEL}"
                         echo -e "  ${DIM}用法： mtproxymax telegram label <name>${NC}"
                         return 0
                     fi
                     if [[ "$_lbl" =~ ^[a-zA-Z0-9_.\ -]+$ ]] && [ ${#_lbl} -le 32 ]; then
                         TELEGRAM_SERVER_LABEL="$_lbl"
                         save_settings
-                        log_success "服务器 label set to '${_lbl}'"
+                    log_success "服务器标签已设为 '${_lbl}'"
                     else
                         log_error "标签无效 — letters, digits, spaces, dots, hyphens, max 32 chars"
                         return 1
@@ -15367,15 +15384,15 @@ cli_main() {
                         on|true|enable)
                             TELEGRAM_ALERTS_ENABLED="true"
                             save_settings
-                            log_success "Alerts enabled"
+                        log_success "警报已启用"
                             ;;
                         off|false|disable)
                             TELEGRAM_ALERTS_ENABLED="false"
                             save_settings
-                            log_success "Alerts disabled"
+                        log_success "警报已禁用"
                             ;;
                         "")
-                            echo -e "  ${BOLD}Alerts:${NC} ${TELEGRAM_ALERTS_ENABLED}"
+                            echo -e "  ${BOLD}警报：${NC}${TELEGRAM_ALERTS_ENABLED}"
                             echo -e "  ${DIM}用法： mtproxymax telegram alerts <on|off>${NC}"
                             ;;
                         *)
@@ -15389,7 +15406,7 @@ cli_main() {
                     TELEGRAM_ENABLED="false"
                     save_settings
                     systemctl stop mtproxymax-telegram.service 2>/dev/null || true
-                    log_success "Telegram disabled"
+                    log_success "Telegram 已禁用"
                     ;;
                 remove)
                     check_root
@@ -15399,7 +15416,7 @@ cli_main() {
                     save_settings
                     systemctl stop mtproxymax-telegram.service 2>/dev/null || true
                     systemctl disable mtproxymax-telegram.service 2>/dev/null || true
-                    log_success "Telegram bot removed"
+                    log_success "Telegram 机器人已移除"
                     ;;
                 *) log_error "用法： mtproxymax telegram [setup|test|status|interval|label|alerts|disable|remove]"; return 1 ;;
             esac
@@ -15426,21 +15443,21 @@ cli_main() {
                     check_root
                     load_settings
                     if [ "${REPLICATION_ROLE}" != "master" ]; then
-                        log_error "Only a master can enable replication sync. Current role: ${REPLICATION_ROLE}"
-                        log_info "Run: mtproxymax replication setup"
+                    log_error "只有主节点可以启用复制同步。当前角色：${REPLICATION_ROLE}"
+                    log_info "请运行：mtproxymax replication setup"
                         return 1
                     fi
                     REPLICATION_ENABLED="true"
                     save_settings
                     setup_replication_service
-                    log_success "Replication enabled"
+                log_success "复制已启用"
                     ;;
                 disable)
                     check_root
                     REPLICATION_ENABLED="false"
                     save_settings
                     stop_replication_service
-                    log_success "Replication disabled"
+                log_success "复制已禁用"
                     ;;
                 sync)
                     check_root
@@ -15486,7 +15503,7 @@ cli_main() {
         rebuild)
             check_root
             load_settings
-            log_info "Force-rebuilding telemt engine from source (commit ${TELEMT_COMMIT})..."
+            log_info "正在从源代码强制重新构建 telemt 引擎（提交 ${TELEMT_COMMIT}）..."
             build_telemt_image source
             if is_proxy_running; then
                 load_secrets
@@ -15500,24 +15517,24 @@ cli_main() {
             shift 2>/dev/null || true
             case "$subcmd" in
                 status)
-                    echo -e "  ${BOLD}Telemt Engine${NC}"
-                    echo -e "  ${DIM}Installed:${NC}  v$(get_telemt_version)"
-                    echo -e "  ${DIM}Pinned to:${NC}  commit ${TELEMT_COMMIT}"
+                    echo -e "  ${BOLD}Telemt 引擎${NC}"
+                    echo -e "  ${DIM}已安装：${NC}v$(get_telemt_version)"
+                    echo -e "  ${DIM}固定版本：${NC}提交 ${TELEMT_COMMIT}"
                     echo ""
                     local _expected="${TELEMT_MIN_VERSION}-${TELEMT_COMMIT}"
                     local _current; _current=$(get_telemt_version)
                     if [ "$_current" = "$_expected" ]; then
-                        log_success "Engine is up to date"
+                        log_success "引擎已是最新版本"
                     elif _version_gte "$_current" "$_expected"; then
-                        log_success "Engine is up to date (v${_current}, ahead of pinned v${_expected})"
+                        log_success "引擎已是最新版本（v${_current}，高于固定版本 v${_expected}）"
                     else
                         log_info "发现可用更新: v${_current} -> v${_expected}"
-                        echo -e "  ${DIM}Run: mtproxymax update${NC}"
+                        echo -e "  ${DIM}请运行：mtproxymax update${NC}"
                     fi
                     ;;
                 rebuild)
                     check_root
-                    echo -en "  ${DIM}Force rebuild engine from commit ${TELEMT_COMMIT}? [Y/n]:${NC} "
+                    echo -en "  ${DIM}是否从提交 ${TELEMT_COMMIT} 强制重新构建引擎？[Y/n]：${NC} "
                     local confirm; read -r confirm
                     if [[ "$confirm" =~ ^[nN] ]]; then
                         return 0
@@ -15527,13 +15544,13 @@ cli_main() {
                         load_secrets
                         restart_proxy_container
                     fi
-                    log_success "Engine rebuilt"
+                    log_success "引擎已重新构建"
                     ;;
                 *)
                     echo -e "  ${BOLD}用法：${NC} mtproxymax engine <command>"
                     echo ""
-                    echo -e "  ${DIM}status${NC}     Show current engine version"
-                    echo -e "  ${DIM}rebuild${NC}    Force rebuild engine image"
+                    echo -e "  ${DIM}status${NC}     显示当前引擎版本"
+                    echo -e "  ${DIM}rebuild${NC}    强制重新构建引擎镜像"
                     ;;
             esac
             ;;
@@ -15600,33 +15617,33 @@ cli_main() {
                     save_settings
                     portal_generate
                     portal_export_data
-                    log_success "Portal enabled"
+                    log_success "门户已启用"
                     ;;
                 disable|off)
                     check_root
                     PORTAL_ENABLED="false"
                     save_settings
-                    log_success "Portal disabled"
+                    log_success "门户已禁用"
                     ;;
                 port)
                     check_root
                     [ -z "$1" ] && { echo "${PORTAL_PORT:-8080}"; return 0; }
-                    [[ "$1" =~ ^[0-9]+$ ]] && [ "$1" -ge 1 ] && [ "$1" -le 65535 ] || { log_error "Invalid port"; return 1; }
+                    [[ "$1" =~ ^[0-9]+$ ]] && [ "$1" -ge 1 ] && [ "$1" -le 65535 ] || { log_error "端口无效"; return 1; }
                     PORTAL_PORT="$1"
                     save_settings
-                    log_success "Portal port set to $1"
+                    log_success "门户端口已设为 $1"
                     ;;
                 generate)
                     check_root
                     portal_generate
                     portal_export_data
-                    log_success "Portal HTML and data generated in ${PORTAL_DIR}"
+                    log_success "门户 HTML 和数据已生成到 ${PORTAL_DIR}"
                     ;;
                 serve)
                     portal_serve "${1:-}"
                     ;;
                 status|"")
-                    echo -e "  ${BOLD}状态 Portal:${NC} $([ "${PORTAL_ENABLED:-false}" = "true" ] && echo "${GREEN}已启用${NC}" || echo "${YELLOW}已禁用${NC}") (端口： ${PORTAL_PORT:-8080})"
+                    echo -e "  ${BOLD}状态门户：${NC}$([ "${PORTAL_ENABLED:-false}" = "true" ] && echo "${GREEN}已启用${NC}" || echo "${YELLOW}已禁用${NC}")（端口：${PORTAL_PORT:-8080}）"
                     ;;
                 *) log_error "用法： mtproxymax portal [enable|disable|port|generate|serve|status]"; return 1 ;;
             esac
@@ -15642,24 +15659,24 @@ cli_main() {
                     SCANNER_SHIELD_ENABLED="true"
                     save_settings
                     scanner_shield_on
-                    log_success "Scanner shield enabled"
+                    log_success "扫描器防护已启用"
                     ;;
                 disable|off)
                     check_root
                     SCANNER_SHIELD_ENABLED="false"
                     save_settings
                     scanner_shield_off
-                    log_success "Scanner shield disabled"
+                    log_success "扫描器防护已禁用"
                     ;;
                 update)
                     check_root
                     scanner_shield_update
                     ;;
                 status|"")
-                    echo -e "  ${BOLD}Scanner Threat Shield:${NC} $([ "${SCANNER_SHIELD_ENABLED:-false}" = "true" ] && echo "${GREEN}已启用${NC}" || echo "${YELLOW}已禁用${NC}")"
+                    echo -e "  ${BOLD}扫描器威胁防护：${NC}$([ "${SCANNER_SHIELD_ENABLED:-false}" = "true" ] && echo "${GREEN}已启用${NC}" || echo "${YELLOW}已禁用${NC}")"
                     if command -v ipset &>/dev/null && ipset list mtproxymax-scanners &>/dev/null; then
                         local _cnt; _cnt=$(ipset list mtproxymax-scanners 2>/dev/null | grep -E '^[0-9]' | wc -l || echo 0)
-                        echo -e "  ${DIM}Blocked scanner IPs/Subnets in ipset:${NC} ${_cnt}"
+                        echo -e "  ${DIM}ipset 中已封锁的扫描器 IP/子网：${NC}${_cnt}"
                     fi
                     ;;
                 *) log_error "用法： mtproxymax scanner-shield [enable|disable|update|status]"; return 1 ;;
@@ -15725,7 +15742,7 @@ cli_main() {
 
         version)
             echo -e "  ${BOLD}MTProxyMax${NC} v${VERSION}"
-            echo -e "  ${DIM}Engine: telemt v$(get_telemt_version) (Rust)${NC}"
+            echo -e "  ${DIM}引擎：Telemt v$(get_telemt_version)（Rust）${NC}"
             echo -e "  ${DIM}SamNet Technologies${NC}"
             ;;
 
@@ -15744,7 +15761,7 @@ cli_main() {
             ;;
 
         *)
-            log_error "未知 command: ${cmd}"
+            log_error "未知命令：${cmd}"
             show_cli_help
             return 1
             ;;
@@ -15761,20 +15778,20 @@ show_stealth_menu() {
         echo -e "  ${BOLD}内核 SYN 防护：${NC}     $([ "${STEALTH_SHIELD:-false}" = "true" ] && echo "${GREEN}已启用${NC}" || echo "${YELLOW}已禁用${NC}")"
         echo -e "  ${BOLD}隐身预设：${NC}        $([ "${STEALTH_PRESET:-normal}" = "ultra" ] && echo "${RED}${BOLD}ULTRA${NC}" || echo "${GREEN}正常${NC}")"
         echo -e "  ${BOLD}TCP MSS 钳制：${NC}      $([ "${STEALTH_MSS_CLAMP:-false}" = "true" ] && echo "${GREEN}已启用${NC}" || echo "${YELLOW}已禁用${NC}")"
-        echo -e "  ${BOLD}Telemt Client MSS:${NC}     $([ -n "${CLIENT_MSS:-}" ] && echo "${GREEN}${CLIENT_MSS}${NC}" || echo "${DIM}off (default, max throughput)${NC}")"
-        echo -e "  ${BOLD}Domain SNI Pool:${NC}       ${CYAN}${PROXY_DOMAIN:-not set}${NC}"
-        echo -e "  ${BOLD}Emergency Lockdown:${NC}    $([ "${LOCKDOWN_MODE:-false}" = "true" ] && echo "${RED}${BOLD}ACTIVE${NC}" || echo "${GREEN}INACTIVE${NC}")"
-        echo -e "  ${BOLD}Secondary Port Pool:${NC}   ${CYAN}${PORT_POOL_PORTS:-none}${NC}"
+        echo -e "  ${BOLD}Telemt 客户端 MSS：${NC}$([ -n "${CLIENT_MSS:-}" ] && echo "${GREEN}${CLIENT_MSS}${NC}" || echo "${DIM}off（默认，最大吞吐量）${NC}")"
+        echo -e "  ${BOLD}域名 SNI 池：${NC}${CYAN}${PROXY_DOMAIN:-未设置}${NC}"
+        echo -e "  ${BOLD}紧急锁定：${NC}$([ "${LOCKDOWN_MODE:-false}" = "true" ] && echo "${RED}${BOLD}已启用${NC}" || echo "${GREEN}未启用${NC}")"
+        echo -e "  ${BOLD}辅助端口池：${NC}${CYAN}${PORT_POOL_PORTS:-无}${NC}"
         echo ""
-        echo -e "  ${DIM}[1]${NC} Toggle Kernel SYN Shield (>15 SYN/5s tarpit)"
-        echo -e "  ${DIM}[2]${NC} Switch Stealth Preset (Normal vs Ultra anti-replay)"
-        echo -e "  ${DIM}[3]${NC} Toggle TCP MSS Clamping (--clamp-mss-to-pmtu)"
-        echo -e "  ${DIM}[4]${NC} Configure Multi-Domain SNI Pool"
-        echo -e "  ${DIM}[5]${NC} Run DPI Forensics & Readiness Analyzer"
-        echo -e "  ${DIM}[6]${NC} Test Cover Domain Health (Watchdog probe)"
-        echo -e "  ${DIM}[7]${NC} Toggle 紧急锁定模式"
-        echo -e "  ${DIM}[8]${NC} Manage Secondary Port Pool Listener"
-        echo -e "  ${DIM}[9]${NC} Configure Telemt Client MSS (anti-censorship: ${CLIENT_MSS:-off})"
+        echo -e "  ${DIM}[1]${NC} 切换内核 SYN 防护（5 秒内超过 15 个 SYN 时进入陷阱）"
+        echo -e "  ${DIM}[2]${NC} 切换隐匿预设（普通/超强抗重放）"
+        echo -e "  ${DIM}[3]${NC} 切换 TCP MSS 钳制（--clamp-mss-to-pmtu）"
+        echo -e "  ${DIM}[4]${NC} 配置多域名 SNI 池"
+        echo -e "  ${DIM}[5]${NC} 运行 DPI 取证和就绪度分析"
+        echo -e "  ${DIM}[6]${NC} 测试伪装域名健康状态（监测探测）"
+        echo -e "  ${DIM}[7]${NC} 切换紧急锁定模式"
+        echo -e "  ${DIM}[8]${NC} 管理辅助端口池监听器"
+        echo -e "  ${DIM}[9]${NC} 配置 Telemt 客户端 MSS（抗审查：${CLIENT_MSS:-off}）"
         echo -e "  ${DIM}[0]${NC} 返回"
 
         local choice
@@ -15805,7 +15822,7 @@ show_stealth_menu() {
                 press_any_key
                 ;;
             4)
-                echo -en "  ${BOLD}Enter cover domain pool (comma-separated):${NC} "
+                echo -en "  ${BOLD}输入伪装域名池（以逗号分隔）：${NC} "
                 local dp; read -r dp
                 [ -n "$dp" ] && { run_domain_pool "$dp"; press_any_key; }
                 ;;
@@ -15826,8 +15843,8 @@ show_stealth_menu() {
                 press_any_key
                 ;;
             8)
-                echo -e "\n  ${BOLD}[1] Add port to pool   [2] Remove port from pool${NC}"
-                local _pchoice=$(read_choice "Action" "1")
+                echo -e "\n  ${BOLD}[1] 向池中添加端口   [2] 从池中移除端口${NC}"
+                local _pchoice=$(read_choice "操作" "1")
                 echo -en "  ${BOLD}请输入端口号：${NC} "
                 local _pport; read -r _pport
                 if [ "$_pchoice" = "1" ]; then
@@ -15838,14 +15855,14 @@ show_stealth_menu() {
                 press_any_key
                 ;;
             9)
-                echo -e "\n  ── ${BOLD}Telemt Client MSS Mode${NC} ──"
-                echo -e "  ${DIM}[1] Off / 已禁用 (normal TCP behavior, max throughput — default)${NC}"
-                echo -e "  ${DIM}[2] TSPU (DPI / censorship circumvention mode)${NC}"
+                echo -e "\n  ── ${BOLD}Telemt 客户端 MSS 模式${NC} ──"
+                echo -e "  ${DIM}[1] 关闭 / 已禁用（正常 TCP 行为、最大吞吐量，默认）${NC}"
+                echo -e "  ${DIM}[2] TSPU（DPI/审查规避模式）${NC}"
                 local _mchoice; _mchoice=$(read_choice "选项" "1")
                 case "$_mchoice" in
                     1) run_client_mss off ;;
                     2) run_client_mss tspu ;;
-                    *) log_warn "No changes made" ;;
+                    *) log_warn "未执行任何更改" ;;
                 esac
                 press_any_key
                 ;;
@@ -15858,42 +15875,42 @@ show_stealth_menu() {
 show_speed_limit_menu() {
     while true; do
         clear_screen
-        draw_header "HTB QOS THROTTLING (SPEED-LIMIT)"
+        draw_header "HTB QoS 限速"
         echo ""
         speed_limit_list
-        echo -e "  ${BRIGHT_CYAN}[1]${NC} Set QoS Speed Limit for Port / Global"
-        echo -e "  ${BRIGHT_CYAN}[2]${NC} Remove QoS Speed Limit"
-        echo -e "  ${BRIGHT_CYAN}[3]${NC} Apply / Refresh Kernel QoS Rules"
-        echo -e "  ${BRIGHT_CYAN}[4]${NC} Clear All QoS Speed Limits"
+        echo -e "  ${BRIGHT_CYAN}[1]${NC} 设置端口/全局 QoS 限速"
+        echo -e "  ${BRIGHT_CYAN}[2]${NC} 移除 QoS 限速"
+        echo -e "  ${BRIGHT_CYAN}[3]${NC} 应用/刷新内核 QoS 规则"
+        echo -e "  ${BRIGHT_CYAN}[4]${NC} 清除所有 QoS 限速"
         echo -e "  ${DIM}[0]${NC} 返回"
         echo ""
         local choice
         choice=$(read_choice "选项" "0")
         case "$choice" in
             1)
-                echo -en "  ${BOLD}Target (global or port number):${NC} "
+                echo -en "  ${BOLD}目标（global 或端口号）：${NC} "
                 local target; read -r target
-                echo -en "  ${BOLD}Download rate (kbps):${NC} "
+                echo -en "  ${BOLD}下载速率（kbps）：${NC} "
                 local down; read -r down
-                echo -en "  ${BOLD}Upload rate (kbps, optional):${NC} "
+                echo -en "  ${BOLD}上传速率（kbps，可选）：${NC} "
                 local up; read -r up
                 speed_limit_set "$target" "$down" "$up"
                 press_any_key
                 ;;
             2)
-                echo -en "  ${BOLD}Target to remove (global or port number):${NC} "
+                echo -en "  ${BOLD}要移除的目标（global 或端口号）：${NC} "
                 local target; read -r target
                 speed_limit_remove "$target"
                 press_any_key
                 ;;
             3)
                 speed_limit_apply
-                log_success "Kernel QoS rules refreshed"
+                log_success "内核 QoS 规则已刷新"
                 press_any_key
                 ;;
             4)
                 speed_limit_clear
-                log_success "All QoS rules cleared"
+                log_success "所有 QoS 规则已清除"
                 press_any_key
                 ;;
             0|q|Q|"") return ;;
@@ -15912,14 +15929,14 @@ show_qos_menu() {
         [ "${QOS_LIMIT_MBPS:-0}" -gt 0 ] && qos_status="${GREEN}${QOS_LIMIT_MBPS} Mbps / IP${NC}"
         local happy_status="${YELLOW}已禁用${NC}"
         if [ -n "${HAPPY_HOURS_WINDOW:-}" ]; then
-            happy_status="${CYAN}${HAPPY_HOURS_WINDOW}${NC} ($([ $(check_in_happy_hours "${HAPPY_HOURS_WINDOW}" >/dev/null 2>&1; echo $?) -eq 0 ] && echo "${GREEN}ACTIVE NOW${NC}" || echo "INACTIVE"))"
+            happy_status="${CYAN}${HAPPY_HOURS_WINDOW}${NC}（$([ $(check_in_happy_hours "${HAPPY_HOURS_WINDOW}" >/dev/null 2>&1; echo $?) -eq 0 ] && echo "${GREEN}当前生效${NC}" || echo "未生效")）"
         fi
 
-        echo -e "  ${DIM}[1]${NC} Per-IP Bandwidth Shaping (QoS): ${qos_status}"
-        echo -e "  ${DIM}[2]${NC} Off-Peak 优惠时段 Window:    ${happy_status}"
-        echo -e "  ${DIM}[3]${NC} Run Bandwidth Surge & Abuse Watchdog"
-        echo -e "  ${DIM}[4]${NC} Send 到期时间 Notification Reminders"
-        echo -e "  ${DIM}[5]${NC} Hierarchical Token Bucket (HTB) QoS Throttling"
+        echo -e "  ${DIM}[1]${NC} 单 IP 带宽整形（QoS）：${qos_status}"
+        echo -e "  ${DIM}[2]${NC} 非高峰优惠时段：${happy_status}"
+        echo -e "  ${DIM}[3]${NC} 运行带宽突增与滥用监测"
+        echo -e "  ${DIM}[4]${NC} 发送到期提醒"
+        echo -e "  ${DIM}[5]${NC} 分层令牌桶（HTB）QoS 限速"
         echo -e "  ${DIM}[0]${NC} 返回"
         echo ""
 
@@ -15928,7 +15945,7 @@ show_qos_menu() {
         case "$choice" in
             1)
                 echo ""
-                echo -en "  ${BOLD}Enter Per-IP Speed Limit in Mbps (0 to disable):${NC} "
+                echo -en "  ${BOLD}输入单 IP 限速（Mbps，0 表示禁用）：${NC} "
                 local sp; read -r sp
                 if [ "$sp" = "0" ]; then
                     run_qos off
@@ -15939,7 +15956,7 @@ show_qos_menu() {
                 ;;
             2)
                 echo ""
-                echo -en "  ${BOLD}Enter 优惠时段 window (e.g. 02:00-08:00 or 'off'):${NC} "
+                echo -en "  ${BOLD}请输入优惠时段（例如 02:00-08:00，或输入 'off'）：${NC}"
                 local hw; read -r hw
                 if [ "$hw" = "off" ] || [ "$hw" = "0" ]; then
                     run_happy_hours off
@@ -15976,13 +15993,13 @@ show_security_menu() {
         else
             sni_label="${GREEN}Mask${NC} (permissive)"
         fi
-        echo -e "  ${DIM}[1]${NC} Geo-Blocking"
-        echo -e "  ${DIM}[2]${NC} Proxy Chaining (上游代理)"
-        echo -e "  ${DIM}[3]${NC} 未知 SNI Policy: ${sni_label}"
-        echo -e "  ${DIM}[4]${NC} IP Banlist"
-        echo -e "  ${DIM}[5]${NC} Anti-DPI & Stealth Defenses"
-        echo -e "  ${DIM}[6]${NC} QoS Bandwidth & Quota Intelligence"
-        echo -e "  ${DIM}[7]${NC} Performance, Diagnostics & Self-Healing Suite"
+        echo -e "  ${DIM}[1]${NC} 地理封锁"
+        echo -e "  ${DIM}[2]${NC} 代理链（上游代理）"
+        echo -e "  ${DIM}[3]${NC} 未知 SNI 策略：${sni_label}"
+        echo -e "  ${DIM}[4]${NC} IP 封禁列表"
+        echo -e "  ${DIM}[5]${NC} 抗 DPI 与隐匿防御"
+        echo -e "  ${DIM}[6]${NC} QoS 带宽与配额管理"
+        echo -e "  ${DIM}[7]${NC} 性能、诊断与自愈套件"
         echo -e "  ${DIM}[0]${NC} 返回"
 
         local choice
@@ -15992,37 +16009,35 @@ show_security_menu() {
             2) show_upstream_menu ;;
             3)
                 echo ""
-                echo -e "  ${BOLD}未知 SNI Policy${NC}"
-                echo -e "  Controls how the engine handles TLS connections whose SNI"
-                echo -e "  doesn't match your configured domain."
+                echo -e "  ${BOLD}未知 SNI 策略${NC}"
+                echo -e "  控制引擎如何处理 SNI 与已配置域名不匹配的 TLS 连接。"
                 echo ""
-                echo -e "  ${DIM}[1]${NC} ${GREEN}Mask${NC}  — redirect to mask backend (recommended)"
-                echo -e "        Keeps old proxy links working after domain changes."
-                echo -e "  ${DIM}[2]${NC} ${RED}Drop${NC}  — reject immediately (strict)"
-                echo -e "        More secure, but old proxy links with a previous"
-                echo -e "        domain will stop working."
+                echo -e "  ${DIM}[1]${NC} ${GREEN}Mask${NC} — 重定向到伪装后端（推荐）"
+                echo -e "        更改域名后仍可继续使用旧代理链接。"
+                echo -e "  ${DIM}[2]${NC} ${RED}Drop${NC} — 立即拒绝（严格）"
+                echo -e "        更安全，但包含旧域名的代理链接将停止工作。"
                 echo ""
                 local sni_choice
                 sni_choice=$(read_choice "选项" "0")
                 case "$sni_choice" in
-                    1) UNKNOWN_SNI_ACTION="mask"; save_settings; reload_proxy_config; log_success "未知 SNI policy set to Mask" ;;
-                    2) UNKNOWN_SNI_ACTION="drop"; save_settings; reload_proxy_config; log_success "未知 SNI policy set to Drop" ;;
+                    1) UNKNOWN_SNI_ACTION="mask"; save_settings; reload_proxy_config; log_success "未知 SNI 策略已设为 Mask" ;;
+                    2) UNKNOWN_SNI_ACTION="drop"; save_settings; reload_proxy_config; log_success "未知 SNI 策略已设为 Drop" ;;
                     *) ;;
                 esac
                 press_any_key
                 ;;
             4)
                 bans_list
-                echo -e "  ${DIM}[1] Ban IP/CIDR  [2] Unban IP/CIDR  [0] 返回${NC}"
+                echo -e "  ${DIM}[1] 封禁 IP/CIDR  [2] 解除封禁 IP/CIDR  [0] 返回${NC}"
                 local bc; bc=$(read_choice "选项" "0")
                 case "$bc" in
                     1)
-                        echo -en "  ${BOLD}IP or CIDR to ban:${NC} "
+                        echo -en "  ${BOLD}要封禁的 IP 或 CIDR：${NC} "
                         local bi; read -r bi
                         [ -n "$bi" ] && { ban_ip "$bi" || true; }
                         ;;
                     2)
-                        echo -en "  ${BOLD}IP or CIDR to unban:${NC} "
+                        echo -en "  ${BOLD}要解除封禁的 IP 或 CIDR：${NC} "
                         local bi; read -r bi
                         [ -n "$bi" ] && { unban_ip "$bi" || true; }
                         ;;
@@ -16046,10 +16061,10 @@ show_upstream_menu() {
         load_upstreams
         upstream_list
 
-        echo -e "  ${DIM}[1]${NC} Add upstream"
-        echo -e "  ${DIM}[2]${NC} Remove upstream"
-        echo -e "  ${DIM}[3]${NC} Enable/disable upstream"
-        echo -e "  ${DIM}[4]${NC} Test upstream connectivity"
+        echo -e "  ${DIM}[1]${NC} 添加上游"
+        echo -e "  ${DIM}[2]${NC} 移除上游"
+        echo -e "  ${DIM}[3]${NC} 启用/禁用上游"
+        echo -e "  ${DIM}[4]${NC} 测试上游连接"
         echo -e "  ${DIM}[0]${NC} 返回"
 
         local choice
@@ -16057,11 +16072,11 @@ show_upstream_menu() {
         case "$choice" in
             1)
                 echo ""
-                echo -en "  ${BOLD}Name:${NC} "
+                echo -en "  ${BOLD}名称：${NC}"
                 local name; read -r name
                 [ -z "$name" ] && { press_any_key; continue; }
 
-                echo -e "  ${BOLD}Type:${NC}"
+                echo -e "  ${BOLD}类型：${NC}"
                 echo -e "    ${DIM}[1]${NC} SOCKS5"
                 echo -e "    ${DIM}[2]${NC} SOCKS4"
                 echo -e "    ${DIM}[3]${NC} Direct"
@@ -16071,15 +16086,15 @@ show_upstream_menu() {
                     1) type="socks5" ;;
                     2) type="socks4" ;;
                     3) type="direct" ;;
-                    *) log_error "Invalid type"; press_any_key; continue ;;
+                    *) log_error "类型无效"; press_any_key; continue ;;
                 esac
 
                 local addr="" user="" pass=""
                 if [ "$type" != "direct" ]; then
-                    echo -en "  ${BOLD}Address (host:port):${NC} "
+                    echo -en "  ${BOLD}地址（host:port）：${NC}"
                     read -r addr
-                    [ -z "$addr" ] && { log_error "Address required"; press_any_key; continue; }
-                    echo -en "  ${BOLD}Username (optional):${NC} "
+                [ -z "$addr" ] && { log_error "必须提供地址"; press_any_key; continue; }
+                    echo -en "  ${BOLD}用户名（可选）：${NC}"
                     read -r user
                     echo -en "  ${BOLD}Password (optional):${NC} "
                     read -r pass
@@ -16089,26 +16104,26 @@ show_upstream_menu() {
                 local weight; read -r weight
                 [ -z "$weight" ] && weight=10
 
-                echo -en "  ${BOLD}Bind to IP (optional, blank=auto):${NC} "
+                echo -en "  ${BOLD}绑定到 IP（可选，留空为自动）：${NC} "
                 local iface; read -r iface
 
                 upstream_add "$name" "$type" "$addr" "$user" "$pass" "$weight" "$iface" || true
                 press_any_key
                 ;;
             2)
-                echo -en "  ${BOLD}Name to remove:${NC} "
+                echo -en "  ${BOLD}要移除的名称：${NC} "
                 local name; read -r name
                 [ -n "$name" ] && { upstream_remove "$name" || true; }
                 press_any_key
                 ;;
             3)
-                echo -en "  ${BOLD}Name to toggle:${NC} "
+                echo -en "  ${BOLD}要切换状态的名称：${NC} "
                 local name; read -r name
                 [ -n "$name" ] && { upstream_toggle "$name" || true; }
                 press_any_key
                 ;;
             4)
-                echo -en "  ${BOLD}Name to test:${NC} "
+                echo -en "  ${BOLD}要测试的名称：${NC} "
                 local name; read -r name
                 [ -n "$name" ] && { upstream_test "$name" || true; }
                 press_any_key
@@ -16126,21 +16141,21 @@ show_voucher_menu() {
         echo ""
         voucher_list active | head -n 15
         echo ""
-        echo -e "  ${DIM}[1]${NC} Generate new vouchers"
-        echo -e "  ${DIM}[2]${NC} List all vouchers"
-        echo -e "  ${DIM}[3]${NC} Revoke a voucher code"
-        echo -e "  ${DIM}[4]${NC} Redeem a voucher code locally"
+        echo -e "  ${DIM}[1]${NC} 生成新兑换码"
+        echo -e "  ${DIM}[2]${NC} 列出所有兑换码"
+        echo -e "  ${DIM}[3]${NC} 撤销兑换码"
+        echo -e "  ${DIM}[4]${NC} 在本机兑换兑换码"
         echo -e "  ${DIM}[0]${NC} 返回"
         echo ""
         local choice
         choice=$(read_choice "选项" "0")
         case "$choice" in
             1)
-                echo -en "  ${BOLD}Number of vouchers to generate (default 1):${NC} "
+                echo -en "  ${BOLD}要生成的兑换码数量（默认 1）：${NC} "
                 local cnt; read -r cnt; cnt="${cnt:-1}"
-                echo -en "  ${BOLD}Quota per voucher (e.g. 10G, 50G, 0=unlim):${NC} "
+                echo -en "  ${BOLD}每个兑换码的配额（例如 10G、50G，0=不限）：${NC} "
                 local qta; read -r qta; qta="${qta:-10G}"
-                echo -en "  ${BOLD}Validity duration in days (default 30):${NC} "
+                echo -en "  ${BOLD}有效期天数（默认 30）：${NC} "
                 local dys; read -r dys; dys="${dys:-30}"
                 voucher_create "$cnt" "$qta" "$dys"
                 press_any_key
@@ -16152,15 +16167,15 @@ show_voucher_menu() {
                 press_any_key
                 ;;
             3)
-                echo -en "  ${BOLD}Enter voucher code to revoke:${NC} "
+                echo -en "  ${BOLD}输入要撤销的兑换码：${NC} "
                 local code; read -r code
                 [ -n "$code" ] && voucher_revoke "$code"
                 press_any_key
                 ;;
             4)
-                echo -en "  ${BOLD}Enter voucher code to redeem:${NC} "
+                echo -en "  ${BOLD}输入要兑换的兑换码：${NC} "
                 local code; read -r code
-                echo -en "  ${BOLD}Enter account label for new secret:${NC} "
+                echo -en "  ${BOLD}输入新密钥的账户标签：${NC} "
                 local lbl; read -r lbl
                 [ -n "$code" ] && voucher_redeem "$code" "$lbl"
                 press_any_key
@@ -16174,27 +16189,27 @@ show_voucher_menu() {
 show_rbac_menu() {
     while true; do
         clear_screen
-        draw_header "ROLE-BASED ACCESS CONTROL (RBAC)"
+        draw_header "基于角色的访问控制（RBAC）"
         echo ""
         admin_list
         echo ""
-        echo -e "  ${DIM}[1]${NC} Add Telegram Admin (superadmin or reseller)"
-        echo -e "  ${DIM}[2]${NC} Remove Telegram Admin"
+        echo -e "  ${DIM}[1]${NC} 添加 Telegram 管理员（superadmin 或 reseller）"
+        echo -e "  ${DIM}[2]${NC} 移除 Telegram 管理员"
         echo -e "  ${DIM}[0]${NC} 返回"
         echo ""
         local choice
         choice=$(read_choice "选项" "0")
         case "$choice" in
             1)
-                echo -en "  ${BOLD}Enter Telegram Chat ID:${NC} "
+                echo -en "  ${BOLD}输入 Telegram 会话 ID：${NC} "
                 local cid; read -r cid
-                echo -en "  ${BOLD}Enter Role (superadmin/reseller):${NC} "
+                echo -en "  ${BOLD}输入角色（superadmin/reseller）：${NC} "
                 local rl; read -r rl; rl="${rl:-reseller}"
                 [ -n "$cid" ] && admin_add "$cid" "$rl"
                 press_any_key
                 ;;
             2)
-                echo -en "  ${BOLD}Enter Telegram Chat ID to remove:${NC} "
+                echo -en "  ${BOLD}输入要移除的 Telegram 会话 ID：${NC} "
                 local cid; read -r cid
                 [ -n "$cid" ] && admin_remove "$cid"
                 press_any_key
@@ -16211,14 +16226,14 @@ show_portal_menu() {
         draw_header "自助状态门户"
         echo ""
         load_settings
-        echo -e "  ${BOLD}状态:${NC} $([ "${PORTAL_ENABLED:-false}" = "true" ] && echo "${GREEN}已启用${NC}" || echo "${YELLOW}已禁用${NC}")"
+        echo -e "  ${BOLD}状态：${NC}$([ "${PORTAL_ENABLED:-false}" = "true" ] && echo "${GREEN}已启用${NC}" || echo "${YELLOW}已禁用${NC}")"
         echo -e "  ${BOLD}端口：${NC}   ${PORTAL_PORT:-8080}"
-        echo -e "  ${BOLD}Directory:${NC} ${PORTAL_DIR}"
+        echo -e "  ${BOLD}目录：${NC}${PORTAL_DIR}"
         echo ""
-        echo -e "  ${DIM}[1]${NC} Toggle Portal Enable/Disable"
-        echo -e "  ${DIM}[2]${NC} Change Portal Port"
-        echo -e "  ${DIM}[3]${NC} Force Regenerate HTML Dashboard & Snapshot Data"
-        echo -e "  ${DIM}[4]${NC} Start/Test Local Portal 服务器 Foreground"
+        echo -e "  ${DIM}[1]${NC} 启用/禁用门户"
+        echo -e "  ${DIM}[2]${NC} 更改门户端口"
+        echo -e "  ${DIM}[3]${NC} 强制重新生成 HTML 仪表板和快照数据"
+        echo -e "  ${DIM}[4]${NC} 在前台启动/测试本地门户服务器"
         echo -e "  ${DIM}[0]${NC} 返回"
         echo ""
         local choice
@@ -16228,32 +16243,32 @@ show_portal_menu() {
                 if [ "${PORTAL_ENABLED:-false}" = "true" ]; then
                     PORTAL_ENABLED="false"
                     save_settings
-                    log_success "Portal disabled"
+                    log_success "门户已禁用"
                 else
                     PORTAL_ENABLED="true"
                     save_settings
                     portal_generate
                     portal_export_data
-                    log_success "Portal enabled"
+                    log_success "门户已启用"
                 fi
                 press_any_key
                 ;;
             2)
-                echo -en "  ${BOLD}Enter new portal port (e.g. 8080):${NC} "
+                echo -en "  ${BOLD}输入新的门户端口（例如 8080）：${NC} "
                 local pt; read -r pt
                 if [[ "$pt" =~ ^[0-9]+$ ]] && [ "$pt" -ge 1 ] && [ "$pt" -le 65535 ]; then
                     PORTAL_PORT="$pt"
                     save_settings
-                    log_success "Portal port changed to $pt"
+                    log_success "门户端口已更改为 $pt"
                 else
-                    log_error "Invalid port"
+                    log_error "端口无效"
                 fi
                 press_any_key
                 ;;
             3)
                 portal_generate
                 portal_export_data
-                log_success "Portal regenerated"
+                log_success "门户已重新生成"
                 press_any_key
                 ;;
             4)
@@ -16271,14 +16286,14 @@ show_scanner_shield_menu() {
         draw_header "自动化恶意扫描器防护"
         echo ""
         load_settings
-        echo -e "  ${BOLD}状态:${NC} $([ "${SCANNER_SHIELD_ENABLED:-false}" = "true" ] && echo "${GREEN}已启用${NC}" || echo "${YELLOW}已禁用${NC}")"
+        echo -e "  ${BOLD}状态：${NC}$([ "${SCANNER_SHIELD_ENABLED:-false}" = "true" ] && echo "${GREEN}已启用${NC}" || echo "${YELLOW}已禁用${NC}")"
         if command -v ipset &>/dev/null && ipset list mtproxymax-scanners &>/dev/null; then
             local _cnt; _cnt=$(ipset list mtproxymax-scanners 2>/dev/null | grep -E '^[0-9]' | wc -l || echo 0)
-            echo -e "  ${BOLD}有效 Blocked Subnets/IP 数：${NC} ${_cnt}"
+            echo -e "  ${BOLD}已封锁的子网/IP 数：${NC}${_cnt}"
         fi
         echo ""
-        echo -e "  ${DIM}[1]${NC} Toggle Scanner Shield On/Off"
-        echo -e "  ${DIM}[2]${NC} Force Update Shodan/Censys Threat Feed Now"
+        echo -e "  ${DIM}[1]${NC} 启用/禁用扫描器防护"
+        echo -e "  ${DIM}[2]${NC} 立即强制更新 Shodan/Censys 威胁源"
         echo -e "  ${DIM}[0]${NC} 返回"
         echo ""
         local choice
@@ -16298,7 +16313,7 @@ show_scanner_shield_menu() {
                 ;;
             2)
                 scanner_shield_update
-                log_success "Shodan/Censys threat feed updated"
+                log_success "Shodan/Censys 威胁源已更新"
                 press_any_key
                 ;;
             0|q|Q|"") return ;;
@@ -16313,7 +16328,7 @@ show_fleet_menu() {
         draw_header "联邦集群遥测面板"
         echo ""
         fleet_status
-        echo -e "  ${BRIGHT_CYAN}[1]${NC} Collect & Publish Node Telemetry Now"
+        echo -e "  ${BRIGHT_CYAN}[1]${NC} 立即收集并发布节点遥测数据"
         echo -e "  ${DIM}[0]${NC} 返回"
         echo ""
         local choice
@@ -16332,20 +16347,20 @@ show_fleet_menu() {
 show_ssl_menu() {
     while true; do
         clear_screen
-        draw_header "AUTOMATED LET'S ENCRYPT / ACME SSL SHIELD"
+        draw_header "自动 LET'S ENCRYPT / ACME SSL 防护"
         echo ""
         ssl_status
-        echo -e "  ${BRIGHT_CYAN}[1]${NC} Issue / Refresh Certificate for Domain"
-        echo -e "  ${BRIGHT_CYAN}[2]${NC} Clear / Reset Certificate Configuration"
+        echo -e "  ${BRIGHT_CYAN}[1]${NC} 为域名签发/刷新证书"
+        echo -e "  ${BRIGHT_CYAN}[2]${NC} 清除/重置证书配置"
         echo -e "  ${DIM}[0]${NC} 返回"
         echo ""
         local choice
         choice=$(read_choice "选项" "0")
         case "$choice" in
             1)
-                echo -en "  ${BOLD}Enter Domain Name (e.g. proxy.example.com):${NC} "
+                echo -en "  ${BOLD}输入域名（例如 proxy.example.com）：${NC} "
                 local dom; read -r dom
-                echo -en "  ${BOLD}Enter Admin Email for ACME alerts:${NC} "
+                echo -en "  ${BOLD}输入接收 ACME 警报的管理员邮箱：${NC} "
                 local em; read -r em
                 ssl_issue "$dom" "$em"
                 press_any_key
@@ -16366,20 +16381,20 @@ show_backup_cloud_menu() {
         draw_header "自动化异地云端与 TELEGRAM 备份"
         echo ""
         backup_cloud_status
-        echo -e "  ${BRIGHT_CYAN}[1]${NC} Configure / Toggle Backup Mode (telegram, rclone, s3, off)"
-        echo -e "  ${BRIGHT_CYAN}[2]${NC} Trigger Immediate Backup & Push Off-Site"
-        echo -e "  ${BRIGHT_CYAN}[3]${NC} Disable Cloud Backups"
+        echo -e "  ${BRIGHT_CYAN}[1]${NC} 配置/切换备份模式（telegram、rclone、s3、off）"
+        echo -e "  ${BRIGHT_CYAN}[2]${NC} 立即创建备份并推送到异地"
+        echo -e "  ${BRIGHT_CYAN}[3]${NC} 禁用云备份"
         echo -e "  ${DIM}[0]${NC} 返回"
         echo ""
         local choice
         choice=$(read_choice "选项" "0")
         case "$choice" in
             1)
-                echo -en "  ${BOLD}Select mode [telegram|rclone|s3|off]:${NC} "
+                echo -en "  ${BOLD}选择模式 [telegram|rclone|s3|off]：${NC} "
                 local bmode; read -r bmode
                 local btarget=""
                 if [ "$bmode" = "rclone" ] || [ "$bmode" = "s3" ]; then
-                    echo -en "  ${BOLD}Enter target path/bucket (e.g. myremote:backups or s3://bucket/path):${NC} "
+                    echo -en "  ${BOLD}输入目标路径/存储桶（例如 myremote:backups 或 s3://bucket/path）：${NC} "
                     read -r btarget
                 fi
                 backup_cloud_toggle "$bmode" "$btarget"
@@ -16413,7 +16428,7 @@ show_enterprise_menu() {
         echo -e "  ${BRIGHT_CYAN}[3]${NC} 自助状态门户管理"
         echo -e "  ${BRIGHT_CYAN}[4]${NC} 自动化恶意扫描器防护"
         echo -e "  ${BRIGHT_CYAN}[5]${NC} 联邦集群遥测面板"
-        echo -e "  ${BRIGHT_CYAN}[6]${NC} 自动化 Let's Encrypt / ACME SSL 防护"
+        echo -e "  ${BRIGHT_CYAN}[6]${NC} 自动 Let's Encrypt / ACME SSL 防护"
         echo -e "  ${BRIGHT_CYAN}[7]${NC} 自动化异地云端与 Telegram 备份"
         echo -e "  ${DIM}[0]${NC} 返回"
         echo ""
@@ -16479,7 +16494,7 @@ show_main_menu() {
         done
 
         draw_box_line "  ${BOLD}引擎：${NC} telemt v${_cached_telemt_ver}  ${BOLD}状态：${NC} ${status_str}" "$w"
-        draw_box_line "  ${BOLD}端口：${NC}   ${PROXY_PORT}            ${BOLD}运行时长:${NC} ${uptime_str}" "$w"
+        draw_box_line "  ${BOLD}端口：${NC}   ${PROXY_PORT}            ${BOLD}运行时长：${NC}${uptime_str}" "$w"
         draw_box_line "  ${BOLD}域名：${NC} ${PROXY_DOMAIN}" "$w"
         draw_box_line "  ${BOLD}流量：${NC} ${SYM_DOWN} $(format_bytes "$traffic_in")  ${SYM_UP} $(format_bytes "$traffic_out")  ${BOLD}连接数：${NC} ${connections}" "$w"
         draw_box_line "  ${BOLD}密钥：${NC} ${active} 个启用 / ${disabled} 个禁用" "$w"
@@ -16540,15 +16555,15 @@ show_proxy_menu() {
         echo ""
         local _pstatus
         docker ps --format '{{.Names}}' 2>/dev/null | grep -q "^${CONTAINER_NAME}$" && _pstatus="running" || _pstatus="stopped"
-        echo -e "  状态: $(draw_status "$_pstatus")"
+        echo -e "  状态：$(draw_status "$_pstatus")"
         echo ""
-        echo -e "  ${DIM}[1]${NC} Start proxy"
-        echo -e "  ${DIM}[2]${NC} Stop proxy"
+        echo -e "  ${DIM}[1]${NC} 启动代理"
+        echo -e "  ${DIM}[2]${NC} 停止代理"
         echo -e "  ${DIM}[3]${NC} 重启代理"
-        echo -e "  ${DIM}[4]${NC} View logs"
-        echo -e "  ${DIM}[5]${NC} Health check"
+        echo -e "  ${DIM}[4]${NC} 查看日志"
+        echo -e "  ${DIM}[5]${NC} 健康检查"
         maintenance_status
-        echo -e "  ${DIM}[m]${NC} Toggle maintenance mode"
+        echo -e "  ${DIM}[m]${NC} 切换维护模式"
         echo -e "  ${DIM}[0]${NC} 返回"
 
         local choice
@@ -16557,7 +16572,7 @@ show_proxy_menu() {
             1) start_proxy_container || true; press_any_key ;;
             2) stop_proxy_container || true; press_any_key ;;
             3) restart_proxy_container || true; press_any_key ;;
-            4) echo -e "  ${DIM}Press Ctrl+C to stop...${NC}"; docker logs -f --tail 30 "$CONTAINER_NAME" 2>&1 || true; press_any_key ;;
+            4) echo -e "  ${DIM}按 Ctrl+C 停止...${NC}"; docker logs -f --tail 30 "$CONTAINER_NAME" 2>&1 || true; press_any_key ;;
             5) health_check || true; press_any_key ;;
             m|M)
                 if [ -f "$MAINTENANCE_FILE" ]; then
@@ -16580,32 +16595,32 @@ show_secrets_menu() {
 
         secret_list
 
-        echo -e "  ${DIM}[1]${NC} Add new secret"
-        echo -e "  ${DIM}[2]${NC} Remove a secret"
+        echo -e "  ${DIM}[1]${NC} 添加新密钥"
+        echo -e "  ${DIM}[2]${NC} 移除密钥"
         echo -e "  ${DIM}[3]${NC} Rotate a secret"
         echo -e "  ${DIM}[4]${NC} Enable/disable a secret"
         echo -e "  ${DIM}[5]${NC} 设置用户限制"
         echo -e "  ${DIM}[6]${NC} Batch 添加密钥"
         echo -e "  ${DIM}[7]${NC} Batch 移除密钥"
-        echo -e "  ${DIM}[8]${NC} Edit note/description"
-        echo -e "  ${DIM}[9]${NC} Rename secret (single or prefix)"
+        echo -e "  ${DIM}[8]${NC} 编辑备注/说明"
+        echo -e "  ${DIM}[9]${NC} 重命名密钥（单个或按前缀）"
         echo -e "  ${DIM}[c]${NC} Clone a secret"
         echo -e "  ${DIM}[x]${NC} Extend a secret's expiry"
-        echo -e "  ${DIM}[e]${NC} Bulk-extend all expiry dates"
-        echo -e "  ${DIM}[d]${NC} Disable or purge expired secrets"
-        echo -e "  ${DIM}[s]${NC} User stats overview"
-        echo -e "  ${DIM}[t]${NC} Sort secrets"
+        echo -e "  ${DIM}[e]${NC} 批量延长所有到期日期"
+        echo -e "  ${DIM}[d]${NC} 禁用或清除过期密钥"
+        echo -e "  ${DIM}[s]${NC} 用户统计概览"
+        echo -e "  ${DIM}[t]${NC} 密钥排序"
         echo -e "  ${DIM}[i]${NC} Export / Import"
-        echo -e "  ${DIM}[f]${NC} Full secret info"
-        echo -e "  ${DIM}[/]${NC} Search secrets"
-        echo -e "  ${DIM}[p]${NC} Top users"
-        echo -e "  ${DIM}[g]${NC} Generate links file"
+        echo -e "  ${DIM}[f]${NC} 完整密钥信息"
+        echo -e "  ${DIM}[/]${NC} 搜索密钥"
+        echo -e "  ${DIM}[p]${NC} 用户排行"
+        echo -e "  ${DIM}[g]${NC} 生成链接文件"
         echo -e "  ${DIM}[a]${NC} Archive / Unarchive"
-        echo -e "  ${DIM}[b]${NC} Set/clear per-secret AdTag"
-        echo -e "  ${DIM}[y]${NC} Tag / Untag / Filter by tag"
-        echo -e "  ${DIM}[l]${NC} View user activity log"
-        echo -e "  ${DIM}[q]${NC} Monthly quota reset"
-        echo -e "  ${DIM}[R]${NC} Rotate ALL secrets"
+        echo -e "  ${DIM}[b]${NC} 设置/清除单个密钥的广告标签"
+        echo -e "  ${DIM}[y]${NC} 设置标签/清除标签/按标签筛选"
+        echo -e "  ${DIM}[l]${NC} 查看用户活动日志"
+        echo -e "  ${DIM}[q]${NC} 月度配额重置"
+        echo -e "  ${DIM}[R]${NC} 轮换所有密钥"
         echo -e "  ${DIM}[k]${NC} Templates (save / apply / list / delete)"
         echo -e "  ${DIM}[0]${NC} 返回"
 
@@ -16620,7 +16635,7 @@ show_secrets_menu() {
                 press_any_key
                 ;;
             2)
-                echo -en "  ${BOLD}标签 or # to remove:${NC} "
+                echo -en "  ${BOLD}要移除的标签或编号：${NC} "
                 local label
                 read -r label
                 if [[ "$label" =~ ^[0-9]+$ ]] && [ "$label" -ge 1 ] && [ "$label" -le "${#SECRETS_LABELS[@]}" ]; then
@@ -16630,7 +16645,7 @@ show_secrets_menu() {
                 press_any_key
                 ;;
             3)
-                echo -en "  ${BOLD}标签 or # to rotate:${NC} "
+                echo -en "  ${BOLD}要轮换的标签或编号：${NC} "
                 local label
                 read -r label
                 if [[ "$label" =~ ^[0-9]+$ ]] && [ "$label" -ge 1 ] && [ "$label" -le "${#SECRETS_LABELS[@]}" ]; then
@@ -16640,7 +16655,7 @@ show_secrets_menu() {
                 press_any_key
                 ;;
             4)
-                echo -en "  ${BOLD}标签 or # to toggle:${NC} "
+                echo -en "  ${BOLD}要切换状态的标签或编号：${NC} "
                 local label
                 read -r label
                 if [[ "$label" =~ ^[0-9]+$ ]] && [ "$label" -ge 1 ] && [ "$label" -le "${#SECRETS_LABELS[@]}" ]; then
@@ -16652,7 +16667,7 @@ show_secrets_menu() {
             5)
                 secret_show_limits
                 echo ""
-                echo -en "  ${BOLD}标签 or # to set limits:${NC} "
+                echo -en "  ${BOLD}要设置限制的标签或编号：${NC} "
                 local label
                 read -r label
                 # If user entered a number, map to the label at that index
@@ -16660,11 +16675,11 @@ show_secrets_menu() {
                     label="${SECRETS_LABELS[$((label - 1))]}"
                 fi
                 if [ -n "$label" ]; then
-                    echo -en "  ${BOLD}Max TCP connections (0=unlimited):${NC} "
+                echo -en "  ${BOLD}最大 TCP 连接数（0=不限）：${NC} "
                     local mc; read -r mc
-                    echo -en "  ${BOLD}Max unique IPs (0=unlimited):${NC} "
+                echo -en "  ${BOLD}最大唯一 IP 数（0=不限）：${NC} "
                     local mi; read -r mi
-                    echo -en "  ${BOLD}Data quota (e.g. 5G, 500M, 0=unlimited):${NC} "
+                echo -en "  ${BOLD}流量配额（例如 5G、500M，0=不限）：${NC} "
                     local dq; read -r dq
                     echo -en "  ${BOLD}到期时间 date (YYYY-MM-DD, 0=never):${NC} "
                     local ex; read -r ex
@@ -16673,7 +16688,7 @@ show_secrets_menu() {
                 press_any_key
                 ;;
             6)
-                echo -e "  ${DIM}Enter labels separated by spaces${NC}"
+                echo -e "  ${DIM}输入以空格分隔的标签${NC}"
                 echo -en "  ${BOLD}标签:${NC} "
                 local batch_labels
                 read -r batch_labels
@@ -16684,8 +16699,8 @@ show_secrets_menu() {
                 press_any_key
                 ;;
             7)
-                echo -e "  ${DIM}Enter labels separated by spaces${NC}"
-                echo -en "  ${BOLD}标签 to remove:${NC} "
+                echo -e "  ${DIM}输入以空格分隔的标签${NC}"
+                echo -en "  ${BOLD}要移除的标签：${NC} "
                 local batch_labels
                 read -r batch_labels
                 if [ -n "$batch_labels" ]; then
@@ -16707,26 +16722,26 @@ show_secrets_menu() {
                 press_any_key
                 ;;
             9)
-                echo -e "  ${DIM}[1] Single rename  [2] Bulk rename by prefix${NC}"
+                echo -e "  ${DIM}[1] 重命名单个密钥  [2] 按前缀批量重命名${NC}"
                 local rc; rc=$(read_choice "选项" "1")
                 case "$rc" in
                     1)
-                        echo -en "  ${BOLD}标签 or # to rename:${NC} "
+                        echo -en "  ${BOLD}要重命名的标签或编号：${NC} "
                         local old_label; read -r old_label
                         if [[ "$old_label" =~ ^[0-9]+$ ]] && [ "$old_label" -ge 1 ] && [ "$old_label" -le "${#SECRETS_LABELS[@]}" ]; then
                             old_label="${SECRETS_LABELS[$((old_label - 1))]}"
                         fi
                         if [ -n "$old_label" ]; then
-                            echo -en "  ${BOLD}New label:${NC} "
+                            echo -en "  ${BOLD}新标签：${NC} "
                             local new_label; read -r new_label
                             [ -n "$new_label" ] && { secret_rename "$old_label" "$new_label" || true; }
                         fi
                         ;;
                     2)
-                        echo -en "  ${BOLD}Old prefix to match:${NC} "
+                        echo -en "  ${BOLD}要匹配的旧前缀：${NC} "
                         local old_p; read -r old_p
                         if [ -n "$old_p" ]; then
-                            echo -en "  ${BOLD}New prefix:${NC} "
+                            echo -en "  ${BOLD}新前缀：${NC} "
                             local new_p; read -r new_p
                             [ -n "$new_p" ] && { secret_rename_prefix "$old_p" "$new_p" || true; }
                         fi
@@ -16735,20 +16750,20 @@ show_secrets_menu() {
                 press_any_key
                 ;;
             c|C)
-                echo -en "  ${BOLD}Source label or #:${NC} "
+                echo -en "  ${BOLD}源标签或编号：${NC} "
                 local src_label; read -r src_label
                 if [[ "$src_label" =~ ^[0-9]+$ ]] && [ "$src_label" -ge 1 ] && [ "$src_label" -le "${#SECRETS_LABELS[@]}" ]; then
                     src_label="${SECRETS_LABELS[$((src_label - 1))]}"
                 fi
                 if [ -n "$src_label" ]; then
-                    echo -en "  ${BOLD}New label:${NC} "
+                    echo -en "  ${BOLD}新标签：${NC} "
                     local clone_label; read -r clone_label
                     [ -n "$clone_label" ] && { secret_clone "$src_label" "$clone_label" || true; }
                 fi
                 press_any_key
                 ;;
             e|E)
-                echo -en "  ${BOLD}Extend all by how many days?${NC} "
+                echo -en "  ${BOLD}全部延长多少天？${NC} "
                 local ext_days; read -r ext_days
                 [ -n "$ext_days" ] && { secret_bulk_extend "$ext_days" || true; }
                 press_any_key
@@ -16760,14 +16775,14 @@ show_secrets_menu() {
                     ext_label="${SECRETS_LABELS[$((ext_label - 1))]}"
                 fi
                 if [ -n "$ext_label" ]; then
-                    echo -en "  ${BOLD}Extend by how many days?${NC} "
+                    echo -en "  ${BOLD}延长多少天？${NC} "
                     local ext_d; read -r ext_d
                     [ -n "$ext_d" ] && { secret_extend "$ext_label" "$ext_d" || true; }
                 fi
                 press_any_key
                 ;;
             d|D)
-                echo -e "  ${DIM}[1] Disable expired  [2] Permanently PURGE disabled/expired${NC}"
+                echo -e "  ${DIM}[1] 禁用过期密钥  [2] 永久清除已禁用/过期密钥${NC}"
                 local dc; dc=$(read_choice "选项" "1")
                 case "$dc" in
                     1) secret_disable_expired ;;
@@ -16777,7 +16792,7 @@ show_secrets_menu() {
                 ;;
             s|S) secret_stats; press_any_key ;;
             t|T)
-                echo -e "  ${DIM}[1] By traffic  [2] By connections  [3] By date  [4] By name${NC}"
+                echo -e "  ${DIM}[1] 按流量  [2] 按连接数  [3] 按日期  [4] 按名称${NC}"
                 local sort_choice; sort_choice=$(read_choice "选项" "1")
                 case "$sort_choice" in
                     1) secret_sort traffic ;;
@@ -16788,17 +16803,17 @@ show_secrets_menu() {
                 press_any_key
                 ;;
             i|I)
-                echo -e "  ${DIM}[1] Export CSV  [2] Import CSV  [3] Export JSON${NC}"
+                echo -e "  ${DIM}[1] 导出 CSV  [2] 导入 CSV  [3] 导出 JSON${NC}"
                 local io_choice; io_choice=$(read_choice "选项" "0")
                 case "$io_choice" in
                     1)
                         local exp_file="$(get_export_dir)/mtproxymax-secrets-$(date +%Y%m%d).csv"
                         secret_export > "$exp_file"
                         chmod 600 "$exp_file" 2>/dev/null || true
-                        log_success "Exported CSV to ${exp_file}"
+                        log_success "CSV 已导出到 ${exp_file}"
                         ;;
                     2)
-                        echo -en "  ${BOLD}File path:${NC} "
+                        echo -en "  ${BOLD}文件路径：${NC} "
                         local imp_file; read -r imp_file
                         [ -n "$imp_file" ] && { secret_import "$imp_file" || true; }
                         ;;
@@ -16806,7 +16821,7 @@ show_secrets_menu() {
                         local exp_file="$(get_export_dir)/mtproxymax-secrets-$(date +%Y%m%d).json"
                         secret_export_json > "$exp_file"
                         chmod 600 "$exp_file" 2>/dev/null || true
-                        log_success "Exported JSON to ${exp_file}"
+                        log_success "JSON 已导出到 ${exp_file}"
                         ;;
                 esac
                 press_any_key
@@ -16821,13 +16836,13 @@ show_secrets_menu() {
                 press_any_key
                 ;;
             /)
-                echo -en "  ${BOLD}Search:${NC} "
+                echo -en "  ${BOLD}搜索：${NC}"
                 local sq; read -r sq
                 [ -n "$sq" ] && { secret_search "$sq" || true; }
                 press_any_key
                 ;;
             p|P)
-                echo -e "  ${DIM}[1] By traffic  [2] By connections${NC}"
+                echo -e "  ${DIM}[1] 按流量  [2] 按连接数${NC}"
                 local tc; tc=$(read_choice "选项" "1")
                 case "$tc" in
                     1) secret_top traffic 5 ;;
@@ -16836,7 +16851,7 @@ show_secrets_menu() {
                 press_any_key
                 ;;
             g|G)
-                echo -e "  ${DIM}[1] Text file  [2] HTML with QR codes${NC}"
+                echo -e "  ${DIM}[1] 文本文件  [2] 带二维码的 HTML${NC}"
                 local gc; gc=$(read_choice "选项" "1")
                 case "$gc" in
                     1) secret_generate_links txt ;;
@@ -16845,11 +16860,11 @@ show_secrets_menu() {
                 press_any_key
                 ;;
             a|A)
-                echo -e "  ${DIM}[1] Archive a secret  [2] Unarchive  [3] List archived${NC}"
+                echo -e "  ${DIM}[1] 归档密钥  [2] 恢复归档  [3] 列出归档${NC}"
                 local ac; ac=$(read_choice "选项" "0")
                 case "$ac" in
                     1)
-                        echo -en "  ${BOLD}标签 or # to archive:${NC} "
+                        echo -en "  ${BOLD}要归档的标签或编号：${NC} "
                         local al; read -r al
                         if [[ "$al" =~ ^[0-9]+$ ]] && [ "$al" -ge 1 ] && [ "$al" -le "${#SECRETS_LABELS[@]}" ]; then
                             al="${SECRETS_LABELS[$((al - 1))]}"
@@ -16858,7 +16873,7 @@ show_secrets_menu() {
                         ;;
                     2)
                         secret_archive_list
-                        echo -en "  ${BOLD}标签 to restore:${NC} "
+                        echo -en "  ${BOLD}要恢复的标签：${NC} "
                         local ul; read -r ul
                         [ -n "$ul" ] && { secret_unarchive "$ul" || true; }
                         ;;
@@ -16867,7 +16882,7 @@ show_secrets_menu() {
                 press_any_key
                 ;;
             y|Y)
-                echo -e "  ${DIM}[1] Set tags  [2] Clear tags  [3] Filter by tag  [4] Show all tags${NC}"
+                echo -e "  ${DIM}[1] 设置标签  [2] 清除标签  [3] 按标签筛选  [4] 显示所有标签${NC}"
                 local tc; tc=$(read_choice "选项" "0")
                 case "$tc" in
                     1)
@@ -16877,7 +16892,7 @@ show_secrets_menu() {
                             tl="${SECRETS_LABELS[$((tl - 1))]}"
                         fi
                         if [ -n "$tl" ]; then
-                            echo -en "  ${BOLD}Tags (comma-separated):${NC} "
+                            echo -en "  ${BOLD}标签（以逗号分隔）：${NC} "
                             local tv; read -r tv
                             [ -n "$tv" ] && { secret_tag "$tl" "$tv" || true; }
                         fi
@@ -16891,21 +16906,21 @@ show_secrets_menu() {
                         [ -n "$tl" ] && { secret_untag "$tl" || true; }
                         ;;
                     3)
-                        echo -en "  ${BOLD}Tag to filter:${NC} "
+                        echo -en "  ${BOLD}用于筛选的标签：${NC} "
                         local tf; read -r tf
                         [ -n "$tf" ] && secret_list_by_tag "$tf"
                         ;;
                     4)
                         if [ -f "$_TAGS_FILE" ] && [ -s "$_TAGS_FILE" ]; then
                             echo ""
-                            echo -e "  ${BOLD}LABEL            TAGS${NC}"
+                            echo -e "  ${BOLD}标签             分类标签${NC}"
                             echo -e "  ${DIM}$(_repeat '─' 50)${NC}"
                             while IFS='|' read -r lbl tgs; do
                                 [ -z "$lbl" ] && continue
                                 printf "  %-16s %s\n" "$lbl" "$tgs"
                             done < "$_TAGS_FILE"
                         else
-                            echo -e "  ${DIM}No tags set${NC}"
+                            echo -e "  ${DIM}尚未设置标签${NC}"
                         fi
                         ;;
                 esac
@@ -16928,15 +16943,15 @@ show_secrets_menu() {
                 fi
                 if [ -n "$ql" ]; then
                     local _cur_day; _cur_day=$(secret_get_quota_reset_day "$ql")
-                    echo -e "  ${DIM}Current: ${_cur_day:-not set}${NC}"
-                    echo -en "  ${BOLD}Day of month (1-31, or 'off'):${NC} "
+                echo -e "  ${DIM}当前值：${_cur_day:-未设置}${NC}"
+                echo -en "  ${BOLD}每月日期（1–31，或 'off'）：${NC} "
                     local qd; read -r qd
                     [ -n "$qd" ] && { secret_set_quota_reset_day "$ql" "$qd" || true; }
                 fi
                 press_any_key
                 ;;
             r|R)
-                echo -e "  ${DIM}[1] Dry run (preview)  [2] Rotate ALL now${NC}"
+                echo -e "  ${DIM}[1] 试运行（预览）  [2] 立即轮换全部密钥${NC}"
                 local rc; rc=$(read_choice "选项" "1")
                 case "$rc" in
                     1) secret_rotate_all "true" ;;
@@ -16946,29 +16961,29 @@ show_secrets_menu() {
                 ;;
             k|K)
                 template_list
-                echo -e "  ${DIM}[1] Save new  [2] Apply to secret  [3] Delete${NC}"
+                echo -e "  ${DIM}[1] 新建并保存  [2] 应用到密钥  [3] 删除${NC}"
                 local tc; tc=$(read_choice "选项" "0")
                 case "$tc" in
                     1)
-                        echo -en "  ${BOLD}Name:${NC} "; local tn; read -r tn
+                        echo -en "  ${BOLD}名称：${NC} "; local tn; read -r tn
                         [ -z "$tn" ] && { press_any_key; continue; }
-                        echo -en "  ${BOLD}Conns (0=unlimited):${NC} "; local tc2; read -r tc2
-                        echo -en "  ${BOLD}IPs (0=unlimited):${NC} "; local ti; read -r ti
-                        echo -en "  ${BOLD}Quota (e.g. 10G, 0=unlimited):${NC} "; local tq; read -r tq
-                        echo -en "  ${BOLD}Expires (YYYY-MM-DD or empty):${NC} "; local te; read -r te
-                        echo -en "  ${BOLD}Notes (optional):${NC} "; local tno; read -r tno
+                        echo -en "  ${BOLD}连接数（0=不限）：${NC} "; local tc2; read -r tc2
+                        echo -en "  ${BOLD}IP 数（0=不限）：${NC} "; local ti; read -r ti
+                        echo -en "  ${BOLD}配额（例如 10G，0=不限）：${NC} "; local tq; read -r tq
+                        echo -en "  ${BOLD}到期日期（YYYY-MM-DD 或留空）：${NC} "; local te; read -r te
+                        echo -en "  ${BOLD}备注（可选）：${NC} "; local tno; read -r tno
                         template_save "$tn" "${tc2:-0}" "${ti:-0}" "${tq:-0}" "${te:-0}" "$tno" || true
                         ;;
                     2)
-                        echo -en "  ${BOLD}Template name:${NC} "; local tn; read -r tn
-                        echo -en "  ${BOLD}标签 or # to apply to:${NC} "; local tl; read -r tl
+                        echo -en "  ${BOLD}模板名称：${NC} "; local tn; read -r tn
+                        echo -en "  ${BOLD}要应用到的标签或编号：${NC} "; local tl; read -r tl
                         if [[ "$tl" =~ ^[0-9]+$ ]] && [ "$tl" -ge 1 ] && [ "$tl" -le "${#SECRETS_LABELS[@]}" ]; then
                             tl="${SECRETS_LABELS[$((tl - 1))]}"
                         fi
                         [ -n "$tn" ] && [ -n "$tl" ] && { template_apply "$tn" "$tl" || true; }
                         ;;
                     3)
-                        echo -en "  ${BOLD}Name to delete:${NC} "; local tn; read -r tn
+                        echo -en "  ${BOLD}要删除的名称：${NC} "; local tn; read -r tn
                         [ -n "$tn" ] && { template_delete "$tn" || true; }
                         ;;
                 esac
@@ -16981,7 +16996,7 @@ show_secrets_menu() {
                     bl="${SECRETS_LABELS[$((bl - 1))]}"
                 fi
                 if [ -n "$bl" ]; then
-                    echo -en "  ${BOLD}AdTag (32 hex chars, or 'clear'):${NC} "
+                echo -en "  ${BOLD}广告标签（32 位十六进制字符，或 'clear'）：${NC} "
                     local bat; read -r bat
                     [ -n "$bat" ] && { secret_set_adtag "$bl" "$bat" || true; }
                 fi
@@ -17017,8 +17032,8 @@ show_links_menu() {
         echo ""
         echo -e "  ${BRIGHT_GREEN}${BOLD}${SECRETS_LABELS[$i]}${NC}"
         echo -e "  ${DIM}$(_repeat '─' 40)${NC}"
-        echo -e "  ${BOLD}TG Link:${NC}  ${CYAN}${tg_link}${NC}"
-        echo -e "  ${BOLD}Web Link:${NC} ${CYAN}${https_link}${NC}"
+    echo -e "  ${BOLD}TG 链接：${NC}${CYAN}${tg_link}${NC}"
+    echo -e "  ${BOLD}网页链接：${NC}${CYAN}${https_link}${NC}"
 
         show_qr "$https_link"
     done
@@ -17026,13 +17041,13 @@ show_links_menu() {
     echo ""
     local sub_b64; sub_b64=$(secret_sub 2>/dev/null)
     if [ -n "$sub_b64" ]; then
-        echo -e "  ${BOLD}Base64 Subscription Feed:${NC}"
+    echo -e "  ${BOLD}Base64 订阅源：${NC}"
         echo -e "  ${CYAN}${sub_b64}${NC}"
     fi
 
     # Offer to send via Telegram
     if [ "$TELEGRAM_ENABLED" = "true" ]; then
-        echo -en "  ${BOLD}Send links via Telegram? [y/N]:${NC} "
+    echo -en "  ${BOLD}是否通过 Telegram 发送链接？[y/N]：${NC} "
         local tg_choice
         read -r tg_choice
         case "$tg_choice" in
@@ -17049,20 +17064,20 @@ show_telegram_menu() {
         draw_header "TELEGRAM 机器人"
         echo ""
         if [ "$TELEGRAM_ENABLED" = "true" ]; then
-            echo -e "  状态: $(draw_status running '已启用')"
-            echo -e "  ${DIM}Interval: every ${TELEGRAM_INTERVAL}h | Alerts: ${TELEGRAM_ALERTS_ENABLED} | 标签: ${TELEGRAM_SERVER_LABEL}${NC}"
+            echo -e "  状态：$(draw_status running '已启用')"
+            echo -e "  ${DIM}间隔：每 ${TELEGRAM_INTERVAL} 小时 | 警报：${TELEGRAM_ALERTS_ENABLED} | 标签：${TELEGRAM_SERVER_LABEL}${NC}"
         else
-            echo -e "  状态: $(draw_status disabled '已禁用')"
+            echo -e "  状态：$(draw_status disabled '已禁用')"
         fi
         echo ""
         echo -e "  ${DIM}[1]${NC} 设置向导"
-        echo -e "  ${DIM}[2]${NC} Send test message"
-        echo -e "  ${DIM}[3]${NC} Send proxy links"
-        echo -e "  ${DIM}[4]${NC} Toggle notifications"
-        echo -e "  ${DIM}[5]${NC} Toggle alerts (${TELEGRAM_ALERTS_ENABLED})"
-        echo -e "  ${DIM}[6]${NC} Send custom notification"
-        echo -e "  ${DIM}[7]${NC} Change report interval (${TELEGRAM_INTERVAL}h)"
-        echo -e "  ${DIM}[8]${NC} Change server label (${TELEGRAM_SERVER_LABEL})"
+        echo -e "  ${DIM}[2]${NC} 发送测试消息"
+        echo -e "  ${DIM}[3]${NC} 发送代理链接"
+        echo -e "  ${DIM}[4]${NC} 切换通知功能"
+        echo -e "  ${DIM}[5]${NC} 切换警报（$([ "$TELEGRAM_ALERTS_ENABLED" = "true" ] && echo "已启用" || echo "已禁用")）"
+        echo -e "  ${DIM}[6]${NC} 发送自定义通知"
+        echo -e "  ${DIM}[7]${NC} 更改报告间隔（${TELEGRAM_INTERVAL} 小时）"
+        echo -e "  ${DIM}[8]${NC} 更改服务器标签（${TELEGRAM_SERVER_LABEL}）"
         echo -e "  ${DIM}[0]${NC} 返回"
 
         local choice
@@ -17070,19 +17085,19 @@ show_telegram_menu() {
         case "$choice" in
             1) telegram_setup_wizard || true ;;
             2) telegram_test_message || true; press_any_key ;;
-            3) { telegram_notify_proxy_started && log_success "Links sent"; } || true; press_any_key ;;
+            3) { telegram_notify_proxy_started && log_success "代理链接已发送"; } || true; press_any_key ;;
             4)
                 if [ "$TELEGRAM_ENABLED" = "true" ]; then
                     TELEGRAM_ENABLED="false"
                     systemctl stop mtproxymax-telegram.service 2>/dev/null || true
-                    log_success "Telegram disabled"
+                    log_success "Telegram 已禁用"
                 else
                     if [ -n "$TELEGRAM_BOT_TOKEN" ] && [ -n "$TELEGRAM_CHAT_ID" ]; then
                         TELEGRAM_ENABLED="true"
                         setup_telegram_service
-                        log_success "Telegram enabled"
+                        log_success "Telegram 已启用"
                     else
-                        log_warn "Run setup wizard first"
+                        log_warn "请先运行设置向导"
                     fi
                 fi
                 save_settings
@@ -17095,7 +17110,7 @@ show_telegram_menu() {
                     TELEGRAM_ALERTS_ENABLED="true"
                 fi
                 save_settings
-                log_success "Alerts: ${TELEGRAM_ALERTS_ENABLED}"
+                log_success "警报状态：$([ "$TELEGRAM_ALERTS_ENABLED" = "true" ] && echo "已启用" || echo "已禁用")"
                 press_any_key
                 ;;
             6)
@@ -17105,32 +17120,32 @@ show_telegram_menu() {
                 press_any_key
                 ;;
             7)
-                echo -en "  ${BOLD}Report interval in hours [${TELEGRAM_INTERVAL}]:${NC} "
+                echo -en "  ${BOLD}报告间隔（小时）[${TELEGRAM_INTERVAL}]：${NC} "
                 local new_interval; read -r new_interval
                 if [[ "$new_interval" =~ ^[0-9]+$ ]] && [ "$new_interval" -ge 1 ] && [ "$new_interval" -le 168 ]; then
                     TELEGRAM_INTERVAL="$new_interval"
                     save_settings
-                    log_success "Report interval set to every ${new_interval}h"
+                    log_success "报告间隔已设为每 ${new_interval} 小时"
                 elif [ -z "$new_interval" ]; then
-                    log_info "Keeping current interval: ${TELEGRAM_INTERVAL}h"
+                    log_info "保留当前间隔：${TELEGRAM_INTERVAL} 小时"
                 else
-                    log_error "Invalid interval — must be 1-168 hours"
+                    log_error "间隔无效，必须为 1–168 小时"
                 fi
                 press_any_key
                 ;;
             8)
-                echo -en "  ${BOLD}服务器 label [${TELEGRAM_SERVER_LABEL}]:${NC} "
+                echo -en "  ${BOLD}服务器标签 [${TELEGRAM_SERVER_LABEL}]：${NC} "
                 local new_label; read -r new_label
                 if [ -n "$new_label" ]; then
                     if [[ "$new_label" =~ ^[a-zA-Z0-9_.\ -]+$ ]] && [ ${#new_label} -le 32 ]; then
                         TELEGRAM_SERVER_LABEL="$new_label"
                         save_settings
-                        log_success "服务器 label set to '${new_label}'"
+                        log_success "服务器标签已设为 '${new_label}'"
                     else
-                        log_error "标签无效 — letters, digits, spaces, dots, hyphens, max 32 chars"
+                        log_error "标签无效，只能包含字母、数字、空格、点和连字符，最多 32 个字符"
                     fi
                 else
-                    log_info "Keeping current label: ${TELEGRAM_SERVER_LABEL}"
+                    log_info "保留当前标签：${TELEGRAM_SERVER_LABEL}"
                 fi
                 press_any_key
                 ;;
@@ -17142,13 +17157,13 @@ show_telegram_menu() {
 
 confirm_settings_change() {
     local description="${1:-this settings change}"
-    echo -en "  ${DIM}Apply ${description}? [y/N]:${NC} "
+    echo -en "  ${DIM}应用 ${description}？[y/N]：${NC}"
     local reply
     read -r reply
     if [[ "$reply" =~ ^[yY] ]]; then
         return 0
     fi
-    log_info "Change cancelled; settings were not modified"
+            log_info "更改已取消，设置未修改"
     return 1
 }
 
@@ -17158,11 +17173,11 @@ confirm_settings_restart() {
         return 0
     fi
 
-    echo -en "  ${DIM}Apply ${description} and restart proxy now? [Y/n]:${NC} "
+    echo -en "  ${DIM}是否应用${description}并立即重启代理？[Y/n]：${NC} "
     local reply
     read -r reply
     if [[ "$reply" =~ ^[nN] ]]; then
-        log_info "Change cancelled; settings were not modified"
+        log_info "更改已取消，设置未修改"
         return 1
     fi
     return 0
@@ -17174,41 +17189,41 @@ show_settings_menu() {
         draw_header "设置"
         echo ""
         echo -e "  ${BOLD}端口：${NC}        ${PROXY_PORT}"
-        echo -e "  ${BOLD}IP:${NC}          ${CUSTOM_IP:-$(get_public_ip) ${DIM}(auto)${NC}}"
+        echo -e "  ${BOLD}IP：${NC}          ${CUSTOM_IP:-$(get_public_ip) ${DIM}（自动）${NC}}"
         echo -e "  ${BOLD}域名：${NC}      ${PROXY_DOMAIN}"
-        echo -e "  ${BOLD}CPU:${NC}         ${PROXY_CPUS:-unlimited}"
-        echo -e "  ${BOLD}Memory:${NC}      ${PROXY_MEMORY:-unlimited}"
-        echo -e "  ${BOLD}Masking:${NC}     ${MASKING_ENABLED}$([ "$MASKING_ENABLED" = "true" ] && echo " → ${MASKING_HOST:-${PROXY_DOMAIN}}:${MASKING_PORT:-443}")"
-        echo -e "  ${BOLD}Ad-tag:${NC}      ${AD_TAG:-${DIM}not set${NC}}"
-        echo -e "  ${BOLD}Auto-update:${NC} ${AUTO_UPDATE_ENABLED}"
-        echo -e "  ${BOLD}PROXY proto:${NC} ${PROXY_PROTOCOL}$([ "$PROXY_PROTOCOL" = "true" ] && [ -n "$PROXY_PROTOCOL_TRUSTED_CIDRS" ] && echo " (trusted: ${PROXY_PROTOCOL_TRUSTED_CIDRS})")"
-        echo -e "  ${BOLD}Engine:${NC}      telemt v$(get_telemt_version)"
+        echo -e "  ${BOLD}CPU：${NC}         ${PROXY_CPUS:-不限}"
+        echo -e "  ${BOLD}内存：${NC}      ${PROXY_MEMORY:-不限}"
+        echo -e "  ${BOLD}流量伪装：${NC}$([ "$MASKING_ENABLED" = "true" ] && echo "已启用 → ${MASKING_HOST:-${PROXY_DOMAIN}}:${MASKING_PORT:-443}" || echo "已禁用")"
+        echo -e "  ${BOLD}广告标签：${NC}      ${AD_TAG:-${DIM}未设置${NC}}"
+        echo -e "  ${BOLD}自动更新：${NC}$([ "$AUTO_UPDATE_ENABLED" = "true" ] && echo "已启用" || echo "已禁用")"
+        echo -e "  ${BOLD}PROXY 协议：${NC}$([ "$PROXY_PROTOCOL" = "true" ] && echo "已启用" || echo "已禁用")$([ "$PROXY_PROTOCOL" = "true" ] && [ -n "$PROXY_PROTOCOL_TRUSTED_CIDRS" ] && echo "（受信任：${PROXY_PROTOCOL_TRUSTED_CIDRS}）")"
+        echo -e "  ${BOLD}引擎：${NC}      telemt v$(get_telemt_version)"
         echo ""
-        echo -e "  ${DIM}[1]${NC} Change port"
-        echo -e "  ${DIM}[2]${NC} Change IP"
-        echo -e "  ${DIM}[3]${NC} Change domain"
-        echo -e "  ${DIM}[4]${NC} Change resources (CPU/RAM)"
-        echo -e "  ${DIM}[5]${NC} Toggle traffic masking"
-        echo -e "  ${DIM}[m]${NC} Set mask backend (host:port for non-proxy traffic)"
-        echo -e "  ${DIM}[b]${NC} Set mask relay byte cap"
-        echo -e "  ${DIM}[6]${NC} Set ad-tag"
-        echo -e "  ${DIM}[7]${NC} Toggle auto-update"
-        echo -e "  ${DIM}[8]${NC} Toggle PROXY protocol"
-        echo -e "  ${DIM}[9]${NC} Engine Management"
-        echo -e "  ${DIM}[v]${NC} View engine config"
-        echo -e "  ${DIM}[k]${NC} Port reachability check"
-        echo -e "  ${DIM}[r]${NC} Config profiles"
-        echo -e "  ${DIM}[u]${NC} Custom Telegram URLs (restricted regions)"
-        echo -e "  ${DIM}[A]${NC} Auto-rotate policy (current: ${SECRET_AUTO_ROTATE_DAYS:-0}d)"
-        echo -e "  ${DIM}[s]${NC} Anti-DPI & Stealth Defenses"
-        echo -e "  ${DIM}[n]${NC} Engine tuning (advanced)"
+        echo -e "  ${DIM}[1]${NC} 更改端口"
+        echo -e "  ${DIM}[2]${NC} 更改 IP"
+        echo -e "  ${DIM}[3]${NC} 更改域名"
+        echo -e "  ${DIM}[4]${NC} 更改资源限制（CPU/内存）"
+        echo -e "  ${DIM}[5]${NC} 切换流量伪装"
+        echo -e "  ${DIM}[m]${NC} 设置伪装后端（非代理流量使用 host:port）"
+        echo -e "  ${DIM}[b]${NC} 设置伪装转发字节上限"
+        echo -e "  ${DIM}[6]${NC} 设置广告标签"
+        echo -e "  ${DIM}[7]${NC} 切换自动更新"
+        echo -e "  ${DIM}[8]${NC} 切换 PROXY 协议"
+        echo -e "  ${DIM}[9]${NC} 引擎管理"
+        echo -e "  ${DIM}[v]${NC} 查看引擎配置"
+        echo -e "  ${DIM}[k]${NC} 检查端口可达性"
+        echo -e "  ${DIM}[r]${NC} 配置方案"
+        echo -e "  ${DIM}[u]${NC} 自定义 Telegram URL（受限地区）"
+        echo -e "  ${DIM}[A]${NC} 自动轮换策略（当前：${SECRET_AUTO_ROTATE_DAYS:-0} 天）"
+        echo -e "  ${DIM}[s]${NC} 抗 DPI 与隐匿防御"
+        echo -e "  ${DIM}[n]${NC} 引擎调优（高级）"
         echo -e "  ${DIM}[0]${NC} 返回"
 
         local choice
         choice=$(read_choice "选项" "0")
         case "$choice" in
             1)
-                echo -en "  ${BOLD}New port:${NC} "
+                echo -en "  ${BOLD}新端口：${NC} "
                 local p; read -r p
                 if validate_port "$p"; then
                     if ! confirm_settings_restart "port change to ${p}"; then
@@ -17219,32 +17234,32 @@ show_settings_menu() {
                     [ -n "$BLOCKLIST_COUNTRIES" ] && { geoblock_remove_all; _remove_default_drop; }
                     PROXY_PORT="$p"
                     save_settings
-                    log_success "Port set to ${p}"
+                    log_success "端口已设为 ${p}"
                     if is_proxy_running; then
                         load_secrets
                         restart_proxy_container || true
                     fi
                 else
-                    log_error "Invalid port (must be 1-65535)"
+                    log_error "端口无效（必须在 1–65535 之间）"
                 fi
                 press_any_key
                 ;;
             2)
                 local _det_ip; _det_ip=$(CUSTOM_IP="" get_public_ip)
-                echo -e "  ${DIM}Detected: ${_det_ip:-unknown}${NC}"
-                echo -en "  ${BOLD}Custom IP [${CUSTOM_IP:-auto}]:${NC} "
+                echo -e "  ${DIM}检测到：${_det_ip:-未知}${NC}"
+                echo -en "  ${BOLD}自定义 IP [${CUSTOM_IP:-自动}]：${NC} "
                 local ip; read -r ip
                 if [ "$ip" = "auto" ] || [ "$ip" = "clear" ]; then
                     CUSTOM_IP=""
                     save_settings
-                    log_success "IP reset to auto-detect (${_det_ip})"
+                    log_success "IP 已恢复为自动检测（${_det_ip}）"
                 elif [ -n "$ip" ]; then
                     if [[ "$ip" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]] || [[ "$ip" =~ ^[0-9a-fA-F:]+$ ]] || [[ "$ip" =~ ^[a-zA-Z0-9]([a-zA-Z0-9._-]*[a-zA-Z0-9])?$ ]]; then
                         CUSTOM_IP="$ip"
                         save_settings
-                        log_success "IP/domain set to ${ip}"
+                        log_success "IP/域名已设为 ${ip}"
                     else
-                        log_error "Invalid IP address or domain"
+                        log_error "IP 地址或域名无效"
                     fi
                 fi
                 press_any_key
@@ -17264,7 +17279,7 @@ show_settings_menu() {
                         if [ -n "$cd" ] && validate_domain "$cd"; then
                             _new_domain="$cd"
                         elif [ -n "$cd" ]; then
-                            log_error "Invalid domain format"; press_any_key; continue
+                    log_error "域名格式无效"; press_any_key; continue
                         else
                             _domain_changed=false
                         fi
@@ -17279,9 +17294,9 @@ show_settings_menu() {
                     PROXY_DOMAIN="$_new_domain"
                     sync_domain_cert_len "true" "false" || true
                     save_settings
-                    log_success "Domain set to ${PROXY_DOMAIN}"
-                    log_warn "Existing proxy links still encode the old domain"
-                    echo -en "  ${BOLD}Rotate all secrets for new domain? [Y/n]:${NC} "
+                log_success "域名已设为 ${PROXY_DOMAIN}"
+                log_warn "现有代理链接仍包含旧域名"
+                echo -en "  ${BOLD}是否为新域名轮换所有密钥？[Y/n]：${NC} "
                     local _rot; read -r _rot
                     if [[ ! "$_rot" =~ ^[nN] ]]; then
                         local _ri
@@ -17289,7 +17304,7 @@ show_settings_menu() {
                             SECRETS_KEYS[$_ri]=$(generate_secret)
                         done
                         save_secrets
-                        log_success "All secrets rotated — share new links with your users"
+                    log_success "所有密钥均已轮换，请向用户分享新链接"
                     fi
                     if is_proxy_running; then
                         load_secrets
@@ -17299,7 +17314,7 @@ show_settings_menu() {
                 press_any_key
                 ;;
             4)
-                echo -en "  ${BOLD}CPU cores [${PROXY_CPUS:-unlimited}]:${NC} "
+                echo -en "  ${BOLD}CPU 核心数 [${PROXY_CPUS:-不限}]：${NC} "
                 local c; read -r c
                 local _res_changed=false
                 local _new_cpus="$PROXY_CPUS"
@@ -17308,17 +17323,17 @@ show_settings_menu() {
                     if [[ "$c" =~ ^[0-9]+(\.[0-9]+)?$ ]] && awk "BEGIN{exit ($c < 0.1)}" 2>/dev/null; then
                         _new_cpus="$c"; _res_changed=true
                     else
-                        log_error "Invalid CPU value (must be a number >= 0.1, e.g. 1, 2, 0.5)"
+                        log_error "CPU 值无效（必须是大于或等于 0.1 的数字，例如 1、2、0.5）"
                     fi
                 fi
-                echo -en "  ${BOLD}Memory, e.g. 256m, 1g [${PROXY_MEMORY:-unlimited}]:${NC} "
+                echo -en "  ${BOLD}内存限制，例如 256m、1g [${PROXY_MEMORY:-不限}]：${NC}"
                 local m; read -r m
                 if [ -n "$m" ]; then
                     if [[ "$m" =~ ^[0-9]+[bBkKmMgG]?$ ]]; then
                         [[ "$m" =~ ^[0-9]+$ ]] && m="${m}m"
                         _new_memory="$m"; _res_changed=true
                     else
-                        log_error "Invalid memory value (e.g. 256m, 1g)"
+                        log_error "内存值无效（例如 256m、1g）"
                     fi
                 fi
                 if $_res_changed; then
@@ -17329,7 +17344,7 @@ show_settings_menu() {
                     PROXY_CPUS="$_new_cpus"
                     PROXY_MEMORY="$_new_memory"
                     save_settings
-                    log_success "Resources updated"
+                log_success "资源限制已更新"
                     if is_proxy_running; then
                         load_secrets
                         restart_proxy_container || true
@@ -17354,19 +17369,19 @@ show_settings_menu() {
                 press_any_key
                 ;;
             6)
-                echo -en "  ${BOLD}Ad-tag (32 hex chars, or 'remove'):${NC} "
+                echo -en "  ${BOLD}广告标签（32 位十六进制字符，或 'remove'）：${NC} "
                 local at; read -r at
                 at=$(echo "$at" | tr -d '[:space:]' | tr '[:upper:]' '[:lower:]')
                 if [[ "$at" =~ ^(remove|clear|off|delete)$ ]] || [ -z "$at" ]; then
                     AD_TAG=""
-                    log_success "Ad-tag removed (promoted channel disabled)"
+                    log_success "广告标签已移除（推广频道已禁用）"
                     save_settings
                 elif [[ "$at" =~ ^[0-9a-f]{32}$ ]]; then
                     AD_TAG="$at"
-                    log_success "Ad-tag set to: ${at}"
+                    log_success "广告标签已设为：${at}"
                     save_settings
                 else
-                    log_error "Invalid ad-tag (must be 32 hex characters)"
+                    log_error "广告标签无效（必须是 32 位十六进制字符）"
                     press_any_key; continue
                 fi
                 load_secrets; reload_proxy_config
@@ -17381,14 +17396,14 @@ show_settings_menu() {
                 fi
                 AUTO_UPDATE_ENABLED="$_new_auto_update"
                 save_settings
-                log_success "Auto-update: ${AUTO_UPDATE_ENABLED}"
+                log_success "自动更新：${AUTO_UPDATE_ENABLED}"
                 press_any_key
                 ;;
             8)
                 local _new_proxy_protocol _new_trusted_cidrs=""
                 [ "$PROXY_PROTOCOL" = "true" ] && _new_proxy_protocol="false" || _new_proxy_protocol="true"
                 if [ "$_new_proxy_protocol" = "true" ]; then
-                    echo -en "  ${BOLD}Trusted CIDRs (comma-separated, e.g. 10.0.0.0/8,172.16.0.0/12, empty=reject all):${NC} "
+                    echo -en "  ${BOLD}可信 CIDR（以逗号分隔，例如 10.0.0.0/8,172.16.0.0/12；留空=全部拒绝）：${NC} "
                     read -r _new_trusted_cidrs
                 fi
                 if ! confirm_settings_restart "PROXY protocol=${_new_proxy_protocol}"; then
@@ -17398,7 +17413,7 @@ show_settings_menu() {
                 PROXY_PROTOCOL="$_new_proxy_protocol"
                 PROXY_PROTOCOL_TRUSTED_CIDRS="$_new_trusted_cidrs"
                 save_settings
-                log_success "PROXY protocol: ${PROXY_PROTOCOL}"
+                log_success "PROXY 协议：${PROXY_PROTOCOL}"
                 if is_proxy_running; then
                     load_secrets
                     restart_proxy_container || true
@@ -17407,8 +17422,8 @@ show_settings_menu() {
                 ;;
             9) show_engine_menu ;;
             m|M)
-                echo -e "  ${DIM}Non-proxy TLS traffic is forwarded to this backend.${NC}"
-                echo -e "  ${DIM}Current: ${MASKING_HOST:-${PROXY_DOMAIN}}:${MASKING_PORT:-443}${NC}"
+                echo -e "  ${DIM}非代理 TLS 流量将转发到此后端。${NC}"
+                echo -e "  ${DIM}当前值：${MASKING_HOST:-${PROXY_DOMAIN}}:${MASKING_PORT:-443}${NC}"
                 echo ""
                 echo -en "  ${BOLD}Host [${MASKING_HOST:-${PROXY_DOMAIN}}]:${NC} "
                 local _mh; read -r _mh
@@ -17424,7 +17439,7 @@ show_settings_menu() {
                     if [[ "$_mp" =~ ^[0-9]+$ ]] && [ "$_mp" -ge 1 ] && [ "$_mp" -le 65535 ]; then
                         _new_mask_port="$_mp"; _changed=true
                     else
-                        log_error "Invalid port"
+                    log_error "端口无效"
                         _changed=false
                     fi
                 fi
@@ -17436,7 +17451,7 @@ show_settings_menu() {
                     MASKING_HOST="$_new_mask_host"
                     MASKING_PORT="$_new_mask_port"
                     save_settings
-                    log_success "Mask backend set to ${MASKING_HOST:-${PROXY_DOMAIN}}:${MASKING_PORT:-443}"
+                log_success "伪装后端已设为 ${MASKING_HOST:-${PROXY_DOMAIN}}:${MASKING_PORT:-443}"
                     if is_proxy_running; then
                         load_secrets
                         restart_proxy_container || true
@@ -17446,9 +17461,9 @@ show_settings_menu() {
                 ;;
             b|B)
                 echo ""
-                echo -e "  ${BOLD}Mask relay byte cap${NC}"
-                echo -e "  ${DIM}Caps bytes relayed per direction on mask fallback paths.${NC}"
-                echo -e "  ${DIM}Empty = engine default (32768). 0 = unlimited (for large mask backends).${NC}"
+                echo -e "  ${BOLD}伪装转发字节上限${NC}"
+                echo -e "  ${DIM}限制伪装回退路径每个方向转发的字节数。${NC}"
+                echo -e "  ${DIM}留空=引擎默认值（32768）；0=不限（适用于大型伪装后端）。${NC}"
                 echo ""
                 local _cur_disp="${MASKING_RELAY_MAX_BYTES:-default}"
                 [ "$_cur_disp" = "0" ] && _cur_disp="0 (unlimited)"
@@ -17464,7 +17479,7 @@ show_settings_menu() {
                         _new_mrb="$_v"
                         _mrb_changed=true
                     else
-                        log_error "Must be a non-negative integer, 'default', or 'clear'"
+                    log_error "必须是非负整数，或使用 'default'、'clear'"
                     fi
                     if $_mrb_changed; then
                         if ! confirm_settings_restart "mask relay byte cap change"; then
@@ -17474,9 +17489,9 @@ show_settings_menu() {
                         MASKING_RELAY_MAX_BYTES="$_new_mrb"
                         save_settings
                         if [ -n "$MASKING_RELAY_MAX_BYTES" ]; then
-                            log_success "mask_relay_max_bytes set to ${MASKING_RELAY_MAX_BYTES}"
+                            log_success "mask_relay_max_bytes 已设为 ${MASKING_RELAY_MAX_BYTES}"
                         else
-                            log_success "mask_relay_max_bytes cleared (using engine default)"
+                    log_success "mask_relay_max_bytes 已清除（使用引擎默认值）"
                         fi
                         if is_proxy_running; then
                             load_secrets
@@ -17489,24 +17504,24 @@ show_settings_menu() {
             v|V) show_config; press_any_key ;;
             k|K) port_check; press_any_key ;;
             r|R)
-                echo -e "  ${DIM}[1] Save current config  [2] Load profile  [3] List  [4] Delete${NC}"
+                echo -e "  ${DIM}[1] 保存当前配置  [2] 加载方案  [3] 列表  [4] 删除${NC}"
                 local pc; pc=$(read_choice "选项" "3")
                 case "$pc" in
                     1)
-                        echo -en "  ${BOLD}Profile name:${NC} "
+                        echo -en "  ${BOLD}方案名称：${NC} "
                         local pn; read -r pn
                         [ -n "$pn" ] && { profile_save "$pn" || true; }
                         ;;
                     2)
                         profile_list
-                        echo -en "  ${BOLD}Profile name to load:${NC} "
+                        echo -en "  ${BOLD}要加载的方案名称：${NC} "
                         local pn; read -r pn
                         [ -n "$pn" ] && { profile_load "$pn" || true; }
                         ;;
                     3) profile_list ;;
                     4)
                         profile_list
-                        echo -en "  ${BOLD}Profile name to delete:${NC} "
+                        echo -en "  ${BOLD}要删除的方案名称：${NC} "
                         local pn; read -r pn
                         [ -n "$pn" ] && { profile_delete "$pn" || true; }
                         ;;
@@ -17515,18 +17530,18 @@ show_settings_menu() {
                 ;;
             u|U)
                 echo ""
-                echo -e "  ${BOLD}Custom Telegram Infrastructure URLs${NC}"
-                echo -e "  ${DIM}Use this if core.telegram.org is blocked in your region.${NC}"
-                echo -e "  ${DIM}Point these to a mirror/proxy that serves the same files.${NC}"
+                echo -e "  ${BOLD}自定义 Telegram 基础设施 URL${NC}"
+                echo -e "  ${DIM}如果所在地区无法访问 core.telegram.org，可使用此功能。${NC}"
+                echo -e "  ${DIM}请将这些地址指向提供相同文件的镜像或代理。${NC}"
                 echo ""
                 echo -e "  proxy_secret_url:    ${PROXY_SECRET_URL:-${DIM}(default)${NC}}"
                 echo -e "  proxy_config_v4_url: ${PROXY_CONFIG_V4_URL:-${DIM}(default)${NC}}"
                 echo -e "  proxy_config_v6_url: ${PROXY_CONFIG_V6_URL:-${DIM}(default)${NC}}"
                 echo ""
-                echo -e "  ${DIM}[1] Set getProxySecret URL${NC}"
-                echo -e "  ${DIM}[2] Set getProxyConfig (v4) URL${NC}"
-                echo -e "  ${DIM}[3] Set getProxyConfigV6 URL${NC}"
-                echo -e "  ${DIM}[4] Clear all (back to defaults)${NC}"
+                echo -e "  ${DIM}[1] 设置 getProxySecret URL${NC}"
+                echo -e "  ${DIM}[2] 设置 getProxyConfig（v4）URL${NC}"
+                echo -e "  ${DIM}[3] 设置 getProxyConfigV6 URL${NC}"
+                echo -e "  ${DIM}[4] 全部清除（恢复默认值）${NC}"
                 echo -e "  ${DIM}[0] 返回${NC}"
                 local uc; uc=$(read_choice "选项" "0")
                 local _url _field=""
@@ -17543,7 +17558,7 @@ show_settings_menu() {
                         PROXY_CONFIG_V4_URL=""
                         PROXY_CONFIG_V6_URL=""
                         save_settings
-                        log_success "Telegram URLs reset to defaults"
+                        log_success "Telegram URL 已恢复默认值"
                         if is_proxy_running; then
                             load_secrets
                             restart_proxy_container || true
@@ -17551,10 +17566,10 @@ show_settings_menu() {
                         ;;
                 esac
                 if [ -n "$_field" ]; then
-                    echo -en "  ${BOLD}URL (empty to clear):${NC} "
+                echo -en "  ${BOLD}URL（留空以清除）：${NC} "
                     read -r _url
                     if [ -n "$_url" ] && [[ ! "$_url" =~ ^https?:// ]]; then
-                        log_error "URL must start with http:// or https://"
+                    log_error "URL 必须以 http:// 或 https:// 开头"
                     elif confirm_settings_restart "${_field} URL change"; then
                         case "$_field" in
                             secret)    PROXY_SECRET_URL="$_url" ;;
@@ -17562,7 +17577,7 @@ show_settings_menu() {
                             config-v6) PROXY_CONFIG_V6_URL="$_url" ;;
                         esac
                         save_settings
-                        [ -n "$_url" ] && log_success "${_field} URL set" || log_success "${_field} URL cleared"
+                [ -n "$_url" ] && log_success "${_field} URL 已设置" || log_success "${_field} URL 已清除"
                         if is_proxy_running; then
                             load_secrets
                             restart_proxy_container || true
@@ -17573,19 +17588,19 @@ show_settings_menu() {
                 ;;
             n|N)
                 tune_list_params
-                echo -e "  ${DIM}[1] Set param  [2] Clear param  [3] Clear all  [0] 返回${NC}"
+                echo -e "  ${DIM}[1] 设置参数  [2] 清除参数  [3] 清除全部  [0] 返回${NC}"
                 local tch; tch=$(read_choice "选项" "0")
                 case "$tch" in
                     1)
-                        echo -en "  ${BOLD}Param name:${NC} "
+                        echo -en "  ${BOLD}参数名称：${NC} "
                         local tp; read -r tp
                         [ -z "$tp" ] && { press_any_key; continue; }
-                        echo -en "  ${BOLD}Value:${NC} "
+                        echo -en "  ${BOLD}值：${NC}"
                         local tv; read -r tv
                         [ -n "$tv" ] && { tune_set "$tp" "$tv" || true; }
                         ;;
                     2)
-                        echo -en "  ${BOLD}Param name to clear:${NC} "
+                        echo -en "  ${BOLD}要清除的参数名称：${NC} "
                         local tp; read -r tp
                         [ -n "$tp" ] && { tune_clear "$tp" || true; }
                         ;;
@@ -17597,12 +17612,12 @@ show_settings_menu() {
                 ;;
             a|A)
                 echo ""
-                echo -e "  ${BOLD}密钥 auto-rotate policy${NC}"
-                echo -e "  ${DIM}Automatically rotate all secrets older than N days.${NC}"
-                echo -e "  ${DIM}Set to 0 to disable. Bot daemon enforces every 5 min.${NC}"
+                echo -e "  ${BOLD}密钥自动轮换策略${NC}"
+                echo -e "  ${DIM}自动轮换所有创建时间超过 N 天的密钥。${NC}"
+                echo -e "  ${DIM}设为 0 可禁用；机器人守护进程每 5 分钟执行一次。${NC}"
                 echo ""
-                echo -e "  Current: ${SECRET_AUTO_ROTATE_DAYS:-0} days"
-                echo -en "  ${BOLD}New value (days, 0=disabled):${NC} "
+                echo -e "  当前值：${SECRET_AUTO_ROTATE_DAYS:-0} 天"
+                echo -en "  ${BOLD}新值（天，0=禁用）：${NC} "
                 local _av; read -r _av
                 if [ -n "$_av" ]; then
                     local _new_auto_rotate
@@ -17611,7 +17626,7 @@ show_settings_menu() {
                     elif [[ "$_av" =~ ^[0-9]+$ ]] && [ "$_av" -ge 1 ] && [ "$_av" -le 3650 ]; then
                         _new_auto_rotate="$_av"
                     else
-                        log_error "Must be a positive integer (days) or 'off'"
+                    log_error "必须是正整数（天数）或 'off'"
                         press_any_key; continue
                     fi
                     if ! confirm_settings_change "secret auto-rotation=${_new_auto_rotate} days"; then
@@ -17620,7 +17635,7 @@ show_settings_menu() {
                     fi
                     SECRET_AUTO_ROTATE_DAYS="$_new_auto_rotate"
                     save_settings
-                    log_success "Auto-rotate policy: ${SECRET_AUTO_ROTATE_DAYS} days"
+                log_success "自动轮换策略：${SECRET_AUTO_ROTATE_DAYS} 天"
                 fi
                 press_any_key
                 ;;
@@ -17636,28 +17651,28 @@ show_engine_menu() {
         clear_screen
         draw_header "引擎管理"
         echo ""
-        echo -e "  ${BOLD}Engine:${NC}    telemt v$(get_telemt_version)"
-        echo -e "  ${BOLD}Pinned to:${NC} commit ${TELEMT_COMMIT}"
+        echo -e "  ${BOLD}引擎：${NC}Telemt v$(get_telemt_version)"
+        echo -e "  ${BOLD}固定版本：${NC}提交 ${TELEMT_COMMIT}"
         echo ""
         local _expected="${TELEMT_MIN_VERSION}-${TELEMT_COMMIT}"
         local _current; _current=$(get_telemt_version)
         if [ "$_current" = "$_expected" ]; then
-            echo -e "  ${GREEN}${SYM_OK} Engine is up to date${NC}"
+            echo -e "  ${GREEN}${SYM_OK} 引擎已是最新版本${NC}"
         elif _version_gte "$_current" "$_expected"; then
-            echo -e "  ${GREEN}${SYM_OK} Engine is up to date (ahead of pinned)${NC}"
+            echo -e "  ${GREEN}${SYM_OK} 引擎已是最新版本（高于固定版本）${NC}"
         else
             echo -e "  ${YELLOW}发现可用更新: v${_current} -> v${_expected}${NC}"
-            echo -e "  ${DIM}Run: mtproxymax update${NC}"
+            echo -e "  ${DIM}请运行：mtproxymax update${NC}"
         fi
         echo ""
-        echo -e "  ${DIM}[1]${NC} Force rebuild engine"
+        echo -e "  ${DIM}[1]${NC} 强制重新构建引擎"
         echo -e "  ${DIM}[0]${NC} 返回"
 
         local choice
         choice=$(read_choice "选项" "0")
         case "$choice" in
             1)
-                echo -en "  ${DIM}Force rebuild from commit ${TELEMT_COMMIT}? [Y/n]:${NC} "
+                echo -en "  ${DIM}是否从提交 ${TELEMT_COMMIT} 强制重新构建？[Y/n]：${NC} "
                 local confirm; read -r confirm
                 if [[ "$confirm" =~ ^[nN] ]]; then
                     press_any_key; continue
@@ -17681,7 +17696,7 @@ show_traffic_menu() {
 
     if ! is_proxy_running; then
         echo ""
-        echo -e "  ${DIM}Proxy is not running${NC}"
+        echo -e "  ${DIM}代理未运行${NC}"
         press_any_key
         return
     fi
@@ -17694,12 +17709,12 @@ show_traffic_menu() {
 
     echo ""
     echo -e "  ${BOLD}总流量${NC}"
-    echo -e "  ${SYM_DOWN} Download: $(format_bytes "$t_in")"
-    echo -e "  ${SYM_UP} Upload:   $(format_bytes "$t_out")"
+    echo -e "  ${SYM_DOWN} 下载：$(format_bytes "$t_in")"
+    echo -e "  ${SYM_UP} 上传：$(format_bytes "$t_out")"
     echo -e "  ${BOLD}有效 连接数:${NC} ${conns}"
     echo ""
 
-    echo -e "  ${BOLD}Per-User Breakdown${NC}"
+    echo -e "  ${BOLD}按用户明细${NC}"
     echo -e "  ${DIM}$(_repeat '─' 60)${NC}"
 
     local i
@@ -17714,23 +17729,23 @@ show_traffic_menu() {
     done
 
     echo ""
-    echo -e "  ${DIM}[1]${NC} Stream live logs"
-    echo -e "  ${DIM}[2]${NC} Connection log"
-    echo -e "  ${DIM}[3]${NC} Engine metrics"
-    echo -e "  ${DIM}[4]${NC} Engine metrics (live)"
+        echo -e "  ${DIM}[1]${NC} 实时流式日志"
+        echo -e "  ${DIM}[2]${NC} 连接日志"
+        echo -e "  ${DIM}[3]${NC} 引擎指标"
+        echo -e "  ${DIM}[4]${NC} 引擎实时指标"
     echo -e "  ${DIM}[5]${NC} 活跃连接数"
     echo -e "  ${DIM}[0]${NC} 返回"
 
     local choice
     choice=$(read_choice "选项" "0")
     case "$choice" in
-        1) echo -e "  ${DIM}Press Ctrl+C to stop...${NC}"; docker logs -f --tail 30 "$CONTAINER_NAME" 2>&1 || true ;;
+            1) echo -e "  ${DIM}按 Ctrl+C 停止...${NC}"; docker logs -f --tail 30 "$CONTAINER_NAME" 2>&1 || true ;;
         2)
             echo ""
             if [ -f "$CONNECTION_LOG" ] && [ -s "$CONNECTION_LOG" ]; then
                 tail -n 50 "$CONNECTION_LOG"
             else
-                echo -e "  ${DIM}Connection log is empty${NC}"
+                    echo -e "  ${DIM}连接日志为空${NC}"
             fi
             press_any_key
             ;;
@@ -17740,7 +17755,7 @@ show_traffic_menu() {
                 while true; do
                     tput clear 2>/dev/null || printf '\033[2J\033[H'
                     show_metrics
-                    echo -e "  ${DIM}[live — refreshing every 5s, Ctrl+C to stop]${NC}"
+                echo -e "  ${DIM}[实时模式：每 5 秒刷新，按 Ctrl+C 停止]${NC}"
                     sleep 5
                 done
             )
@@ -17755,33 +17770,28 @@ show_info_faketls() {
     clear_screen
     draw_header "FAKETLS 混淆"
     echo ""
-    echo -e "  ${BOLD}What is FakeTLS?${NC}"
-    echo -e "  FakeTLS makes your proxy traffic look identical to normal"
-    echo -e "  HTTPS (TLS 1.3) connections. Deep Packet Inspection (DPI)"
-    echo -e "  systems cannot distinguish proxy traffic from regular web"
-    echo -e "  browsing, making your proxy virtually undetectable."
+    echo -e "  ${BOLD}什么是 FakeTLS？${NC}"
+    echo -e "  FakeTLS 让代理流量看起来与普通 HTTPS（TLS 1.3）连接一致。"
+    echo -e "  深度包检测（DPI）系统难以将代理流量与正常网页浏览区分开，"
+    echo -e "  从而使代理几乎无法被识别。"
     echo ""
-    echo -e "  ${BOLD}How it works:${NC}"
-    echo -e "  1. Clients initiate a TLS handshake to a \"cover\" domain"
+    echo -e "  ${BOLD}工作原理：${NC}"
+    echo -e "  1. 客户端向“伪装”域名发起 TLS 握手。"
     echo -e "     （例如 cloudflare.com）——这就是 FakeTLS 域名。"
-    echo -e "  2. The handshake looks exactly like a real TLS 1.3 session"
-    echo -e "     to any network observer or firewall."
-    echo -e "  3. Inside the encrypted tunnel, the actual MTProxy protocol"
-    echo -e "     carries your Telegram data."
-    echo -e "  4. Censors see only \"user connected to cloudflare.com via"
-    echo -e "     HTTPS\" — completely normal traffic."
+    echo -e "  2. 对网络观察者或防火墙而言，该握手与真实 TLS 1.3 会话完全一致。"
+    echo -e "  3. 加密隧道内部由实际的 MTProxy 协议承载 Telegram 数据。"
+    echo -e "  4. 审查系统只能看到“用户通过 HTTPS 连接到 cloudflare.com”，"
+    echo -e "     这属于完全正常的流量。"
     echo ""
-    echo -e "  ${BOLD}Configuration:${NC}"
-    echo -e "  ${DIM}域名：${NC}  Choose a popular, non-blocked site (cloudflare.com,"
-    echo -e "           google.com, microsoft.com). The domain appears in the"
-    echo -e "           TLS handshake SNI field."
-    echo -e "  ${DIM}密钥:${NC}  FakeTLS secrets start with \`ee\` prefix followed by"
-    echo -e "           the raw secret + hex-encoded domain name."
+    echo -e "  ${BOLD}配置：${NC}"
+    echo -e "  ${DIM}域名：${NC}请选择常用且未被屏蔽的网站（如 cloudflare.com、"
+    echo -e "           google.com、microsoft.com）。该域名会出现在 TLS 握手的 SNI 字段中。"
+    echo -e "  ${DIM}密钥：${NC}FakeTLS 密钥以 \`ee\` 开头，后接原始密钥和十六进制编码的域名。"
     echo ""
-    echo -e "  ${BOLD}Best practices:${NC}"
-    echo -e "  ${GREEN}${SYM_CHECK}${NC} Use a domain hosted on the same CDN/IP range as your server"
-    echo -e "  ${GREEN}${SYM_CHECK}${NC} Choose popular sites with high traffic (harder to block)"
-    echo -e "  ${GREEN}${SYM_CHECK}${NC} Enable traffic masking alongside FakeTLS for maximum stealth"
+    echo -e "  ${BOLD}最佳实践：${NC}"
+    echo -e "  ${GREEN}${SYM_CHECK}${NC} 使用与服务器位于同一 CDN/IP 段的域名"
+    echo -e "  ${GREEN}${SYM_CHECK}${NC} 选择流量较大的常用网站（更难被屏蔽）"
+    echo -e "  ${GREEN}${SYM_CHECK}${NC} 同时启用流量伪装与 FakeTLS，以获得最佳隐匿效果"
     echo ""
     press_any_key
 }
@@ -17790,29 +17800,26 @@ show_info_masking() {
     clear_screen
     draw_header "流量伪装"
     echo ""
-    echo -e "  ${BOLD}What is Traffic Masking?${NC}"
-    echo -e "  When enabled, your server responds to non-proxy connections"
-    echo -e "  by forwarding them to a real website. This means if a censor"
-    echo -e "  probes your server, they see a legitimate website — not a proxy."
+    echo -e "  ${BOLD}什么是流量伪装？${NC}"
+    echo -e "  启用后，服务器会把非代理连接转发到真实网站。审查系统探测服务器时，"
+    echo -e "  看到的是正常网站，而不是代理。"
     echo ""
-    echo -e "  ${BOLD}How it works:${NC}"
-    echo -e "  1. A probe connects to your server on port 443."
-    echo -e "  2. The connection doesn't contain a valid proxy secret."
-    echo -e "  3. Instead of dropping the connection (suspicious!), the server"
-    echo -e "     forwards it to the real website (e.g., cloudflare.com)."
-    echo -e "  4. The probe receives a real TLS certificate and web content."
-    echo -e "  5. Your server looks like a normal web server."
+    echo -e "  ${BOLD}工作原理：${NC}"
+    echo -e "  1. 探测程序连接服务器的 443 端口。"
+    echo -e "  2. 连接中不包含有效的代理密钥。"
+    echo -e "  3. 服务器不会直接丢弃连接，而是将其转发到真实网站（如 cloudflare.com）。"
+    echo -e "  4. 探测程序会收到真实的 TLS 证书和网页内容。"
+    echo -e "  5. 服务器看起来就像普通网页服务器。"
     echo ""
-    echo -e "  ${BOLD}Configuration:${NC}"
-    echo -e "  ${DIM}mask = true${NC}       Enable masking in telemt config"
+    echo -e "  ${BOLD}配置：${NC}"
+    echo -e "  ${DIM}mask = true${NC}       在 telemt 配置中启用伪装"
     echo -e "  ${DIM}mask_host${NC}         探测流量的转发域名（默认使用 FakeTLS 域名）"
-    echo -e "  ${DIM}mask_port = 443${NC}   Port on the target website"
+    echo -e "  ${DIM}mask_port = 443${NC}   目标网站端口"
     echo ""
-    echo -e "  ${BOLD}Why it matters:${NC}"
-    echo -e "  Without masking, active probers can detect that your server"
-    echo -e "  only accepts connections with valid secrets and drops others."
-    echo -e "  This behavior is a fingerprint that reveals it's a proxy."
-    echo -e "  Masking eliminates this fingerprint entirely."
+    echo -e "  ${BOLD}为何重要：${NC}"
+    echo -e "  如果没有伪装，主动探测程序会发现服务器只接受带有效密钥的连接，"
+    echo -e "  并丢弃其他连接。这种行为会形成可识别代理的指纹。"
+    echo -e "  流量伪装可以消除这一指纹。"
     echo ""
     press_any_key
 }
@@ -17821,30 +17828,29 @@ show_info_multisecret() {
     clear_screen
     draw_header "多密钥管理"
     echo ""
-    echo -e "  ${BOLD}What are 密钥?${NC}"
-    echo -e "  Each secret is a unique key that grants a user access to your"
-    echo -e "  proxy. Think of it like giving someone a password to connect."
-    echo -e "  MTProxyMax supports multiple secrets simultaneously."
+    echo -e "  ${BOLD}什么是密钥？${NC}"
+    echo -e "  每个密钥都是允许用户访问代理的唯一凭据，可理解为连接密码。"
+    echo -e "  MTProxyMax 支持同时使用多个密钥。"
     echo ""
-    echo -e "  ${BOLD}Use cases:${NC}"
-    echo -e "  ${CYAN}${SYM_ARROW}${NC} Give each family member their own secret"
-    echo -e "  ${CYAN}${SYM_ARROW}${NC} Track traffic per user (each secret = one user)"
-    echo -e "  ${CYAN}${SYM_ARROW}${NC} Revoke one user's access without affecting others"
-    echo -e "  ${CYAN}${SYM_ARROW}${NC} Rotate compromised keys while keeping others active"
+    echo -e "  ${BOLD}使用场景：${NC}"
+    echo -e "  ${CYAN}${SYM_ARROW}${NC} 为每位家庭成员分配独立密钥"
+    echo -e "  ${CYAN}${SYM_ARROW}${NC} 按用户统计流量（每个密钥对应一个用户）"
+    echo -e "  ${CYAN}${SYM_ARROW}${NC} 单独撤销某个用户的权限，不影响其他用户"
+    echo -e "  ${CYAN}${SYM_ARROW}${NC} 轮换已泄露的密钥，同时保持其他密钥有效"
     echo ""
-    echo -e "  ${BOLD}Commands:${NC}"
-    echo -e "  ${GREEN}mtproxymax secret add <label>${NC}      Create a new secret"
-    echo -e "  ${GREEN}mtproxymax secret add-batch <l1> <l2> ...${NC}  Add multiple (single restart)"
-    echo -e "  ${GREEN}mtproxymax secret remove <label>${NC}   Delete a secret"
-    echo -e "  ${GREEN}mtproxymax secret remove-batch <l1> <l2> ...${NC}  Remove multiple (single restart)"
-    echo -e "  ${GREEN}mtproxymax secret rotate <label>${NC}   Replace key, keep label"
-    echo -e "  ${GREEN}mtproxymax secret enable <label>${NC}   Re-enable a disabled secret"
-    echo -e "  ${GREEN}mtproxymax secret disable <label>${NC}  Temporarily disable access"
-    echo -e "  ${GREEN}mtproxymax secret list${NC}             Show all secrets + traffic"
+    echo -e "  ${BOLD}命令：${NC}"
+    echo -e "  ${GREEN}mtproxymax secret add <label>${NC}      创建新密钥"
+    echo -e "  ${GREEN}mtproxymax secret add-batch <l1> <l2> ...${NC}  批量添加（仅重启一次）"
+    echo -e "  ${GREEN}mtproxymax secret remove <label>${NC}   删除密钥"
+    echo -e "  ${GREEN}mtproxymax secret remove-batch <l1> <l2> ...${NC}  批量移除（仅重启一次）"
+    echo -e "  ${GREEN}mtproxymax secret rotate <label>${NC}   更换密钥并保留标签"
+    echo -e "  ${GREEN}mtproxymax secret enable <label>${NC}   重新启用已禁用密钥"
+    echo -e "  ${GREEN}mtproxymax secret disable <label>${NC}  临时禁用访问"
+    echo -e "  ${GREEN}mtproxymax secret list${NC}             显示所有密钥及流量"
     echo ""
     echo -e "  ${BOLD}标签:${NC}"
-    echo -e "  标签 are human-readable names (a-z, 0-9, _, -). They appear"
-    echo -e "  in traffic stats so you can see who is using how much bandwidth."
+    echo -e "  标签是便于识别的名称（a-z、0-9、_、-），会显示在流量统计中，"
+    echo -e "  方便查看每个用户使用的带宽。"
     echo ""
     press_any_key
 }
@@ -17853,28 +17859,25 @@ show_info_adtag() {
     clear_screen
     draw_header "广告标签与推广频道"
     echo ""
-    echo -e "  ${BOLD}What is an Ad-Tag?${NC}"
-    echo -e "  Telegram's official feature that lets proxy operators show a"
-    echo -e "  sponsored channel to users who connect through their proxy."
-    echo -e "  This is how you can earn from running a public proxy."
+    echo -e "  ${BOLD}什么是广告标签？${NC}"
+    echo -e "  这是 Telegram 的官方功能，允许代理运营者向连接代理的用户展示推广频道，"
+    echo -e "  可用于通过公共代理获得收益。"
     echo ""
-    echo -e "  ${BOLD}How to get an ad-tag:${NC}"
-    echo -e "  1. Open Telegram and message @MTProxyBot"
-    echo -e "  2. Register your proxy server"
-    echo -e "  3. Choose a channel to promote"
-    echo -e "  4. You'll receive a 32-character hex ad-tag"
+    echo -e "  ${BOLD}获取广告标签：${NC}"
+    echo -e "  1. 打开 Telegram 并向 @MTProxyBot 发送消息"
+    echo -e "  2. 注册代理服务器"
+    echo -e "  3. 选择要推广的频道"
+    echo -e "  4. 获取 32 位十六进制广告标签"
     echo ""
-    echo -e "  ${BOLD}How to set it:${NC}"
-    echo -e "  ${GREEN}mtproxymax adtag set <hex>${NC}    Set the ad-tag"
-    echo -e "  ${GREEN}mtproxymax adtag remove${NC}       Remove the ad-tag"
+    echo -e "  ${BOLD}设置方法：${NC}"
+    echo -e "  ${GREEN}mtproxymax adtag set <hex>${NC}    设置广告标签"
+    echo -e "  ${GREEN}mtproxymax adtag remove${NC}       移除广告标签"
     echo ""
-    echo -e "  ${BOLD}How it appears:${NC}"
-    echo -e "  Users who connect through your proxy will see the promoted"
-    echo -e "  channel at the top of their chat list. They can dismiss it,"
-    echo -e "  but it reappears periodically."
+    echo -e "  ${BOLD}显示方式：${NC}"
+    echo -e "  通过代理连接的用户会在聊天列表顶部看到推广频道。用户可以暂时关闭，"
+    echo -e "  但它会定期再次出现。"
     echo ""
-    echo -e "  ${DIM}Note: Ad-tags are entirely optional. Your proxy works"
-    echo -e "  perfectly fine without one.${NC}"
+    echo -e "  ${DIM}注意：广告标签完全可选；不设置也不会影响代理正常工作。${NC}"
     echo ""
     press_any_key
 }
@@ -17883,35 +17886,34 @@ show_info_telegram() {
     clear_screen
     draw_header "TELEGRAM 机器人集成"
     echo ""
-    echo -e "  ${BOLD}What does the bot do?${NC}"
-    echo -e "  Control your proxy from your phone via Telegram. The bot runs"
-    echo -e "  as a separate systemd service and responds to commands."
+    echo -e "  ${BOLD}机器人有什么作用？${NC}"
+    echo -e "  可通过手机上的 Telegram 管理代理。机器人作为独立 systemd 服务运行并响应命令。"
     echo ""
-    echo -e "  ${BOLD}Available commands:${NC}"
-    echo -e "  /mp_status         Check proxy status, uptime, traffic"
-    echo -e "  /mp_secrets        List all secrets with per-user stats"
+    echo -e "  ${BOLD}可用命令：${NC}"
+    echo -e "  /mp_status         查看代理状态、运行时间和流量"
+    echo -e "  /mp_secrets        列出所有密钥及每用户统计"
     echo -e "  /mp_link           获取代理链接和二维码 code"
-    echo -e "  /mp_add <label>    Add a new user secret"
-    echo -e "  /mp_remove <label> Remove a secret"
-    echo -e "  /mp_rotate <label> Rotate a secret (new key)"
+    echo -e "  /mp_add <label>    添加用户密钥"
+    echo -e "  /mp_remove <label> 移除密钥"
+    echo -e "  /mp_rotate <label> 轮换密钥（生成新密钥）"
     echo -e "  /mp_enable <label> Enable a secret"
     echo -e "  /mp_disable <label> Disable a secret"
-    echo -e "  /mp_limits         Show per-user limits"
+    echo -e "  /mp_limits         显示每用户限制"
     echo -e "  /mp_setlimit       设置用户限制 (conns, IPs, quota, expiry)"
-    echo -e "  /mp_upstreams      List upstream routes"
-    echo -e "  /mp_traffic        Detailed traffic breakdown"
-    echo -e "  /mp_health         Run health diagnostics"
-    echo -e "  /mp_restart        Restart the proxy"
-    echo -e "  /mp_update         Check for script updates"
-    echo -e "  /mp_help           Show all commands"
+    echo -e "  /mp_upstreams      列出上游路由"
+    echo -e "  /mp_traffic        显示详细流量明细"
+    echo -e "  /mp_health         运行健康诊断"
+    echo -e "  /mp_restart        重启代理"
+    echo -e "  /mp_update         检查脚本更新"
+    echo -e "  /mp_help           显示所有命令"
     echo ""
-    echo -e "  ${BOLD}Automatic notifications:${NC}"
-    echo -e "  ${CYAN}${SYM_ARROW}${NC} Proxy startup — sends links + QR codes"
-    echo -e "  ${CYAN}${SYM_ARROW}${NC} Downtime alerts — notifies when proxy goes down"
-    echo -e "  ${CYAN}${SYM_ARROW}${NC} Auto-recovery — attempts restart and reports result"
-    echo -e "  ${CYAN}${SYM_ARROW}${NC} Periodic reports — traffic summaries at your interval"
+    echo -e "  ${BOLD}自动通知：${NC}"
+    echo -e "  ${CYAN}${SYM_ARROW}${NC} 代理启动：发送链接和二维码"
+    echo -e "  ${CYAN}${SYM_ARROW}${NC} 停机警报：代理停止时发出通知"
+    echo -e "  ${CYAN}${SYM_ARROW}${NC} 自动恢复：尝试重启并报告结果"
+    echo -e "  ${CYAN}${SYM_ARROW}${NC} 定期报告：按设定间隔发送流量摘要"
     echo ""
-    echo -e "  ${BOLD}Setup:${NC} Run ${GREEN}mtproxymax telegram setup${NC}"
+    echo -e "  ${BOLD}设置：${NC}运行 ${GREEN}mtproxymax telegram setup${NC}"
     echo ""
     press_any_key
 }
@@ -17920,28 +17922,26 @@ show_info_qrcode() {
     clear_screen
     draw_header "二维码分享"
     echo ""
-    echo -e "  ${BOLD}What are proxy QR codes?${NC}"
-    echo -e "  QR codes encode your proxy link so users can connect by"
-    echo -e "  simply scanning with their phone's camera in Telegram."
+    echo -e "  ${BOLD}什么是代理二维码？${NC}"
+    echo -e "  二维码包含代理链接，用户只需在 Telegram 中使用手机相机扫描即可连接。"
     echo ""
-    echo -e "  ${BOLD}How to use:${NC}"
-    echo -e "  1. Open Telegram > 设置 > Data and Storage > Proxy"
-    echo -e "  2. Tap \"Add Proxy\" or use the camera to scan"
-    echo -e "  3. The proxy configuration is applied automatically"
+    echo -e "  ${BOLD}使用方法：${NC}"
+    echo -e "  1. 打开 Telegram > 设置 > 数据和存储 > 代理"
+    echo -e "  2. 点击“添加代理”或使用相机扫描"
+    echo -e "  3. 代理配置会自动应用"
     echo ""
-    echo -e "  ${BOLD}QR generation methods (auto-detected):${NC}"
-    echo -e "  ${GREEN}1.${NC} ${BOLD}qrencode${NC} (native) — fastest, renders in terminal"
-    echo -e "     Install: ${DIM}apt install qrencode${NC}"
-    echo -e "  ${GREEN}2.${NC} ${BOLD}Docker${NC} — uses alpine + qrencode container"
-    echo -e "  ${GREEN}3.${NC} ${BOLD}Web API${NC} — qrserver.com (for Telegram photo messages)"
+    echo -e "  ${BOLD}二维码生成方式（自动检测）：${NC}"
+    echo -e "  ${GREEN}1.${NC} ${BOLD}qrencode${NC}（原生）：速度最快，直接在终端显示"
+    echo -e "     安装命令：${DIM}apt install qrencode${NC}"
+    echo -e "  ${GREEN}2.${NC} ${BOLD}Docker${NC}：使用 alpine + qrencode 容器"
+    echo -e "  ${GREEN}3.${NC} ${BOLD}网页 API${NC}：qrserver.com（用于 Telegram 图片消息）"
     echo ""
-    echo -e "  ${BOLD}Commands:${NC}"
-    echo -e "  ${GREEN}mtproxymax secret qr <label>${NC}   Show QR in terminal"
-    echo -e "  ${GREEN}mtproxymax secret link <label>${NC} Show shareable link"
+    echo -e "  ${BOLD}命令：${NC}"
+    echo -e "  ${GREEN}mtproxymax secret qr <label>${NC}   在终端显示二维码"
+    echo -e "  ${GREEN}mtproxymax secret link <label>${NC} 显示可分享链接"
     echo ""
-    echo -e "  ${BOLD}Via Telegram bot:${NC}"
-    echo -e "  Send /mp_link to your bot — it replies with both the link"
-    echo -e "  and a scannable QR code image."
+    echo -e "  ${BOLD}通过 Telegram 机器人：${NC}"
+    echo -e "  向机器人发送 /mp_link，它会回复链接和可扫描的二维码图片。"
     echo ""
     press_any_key
 }
@@ -17950,28 +17950,26 @@ show_info_geoblock() {
     clear_screen
     draw_header "地理位置屏蔽"
     echo ""
-    echo -e "  ${BOLD}What is Geo-Blocking?${NC}"
-    echo -e "  Block connections from specific countries using IP-based"
-    echo -e "  CIDR lists. Useful for limiting who can use your proxy."
+    echo -e "  ${BOLD}什么是地理位置屏蔽？${NC}"
+    echo -e "  使用基于 IP 的 CIDR 列表屏蔽特定国家/地区的连接，用于限制代理使用范围。"
     echo ""
-    echo -e "  ${BOLD}How it works:${NC}"
-    echo -e "  1. Country CIDR lists are downloaded from ipdeny.com"
-    echo -e "  2. IP ranges are added to iptables/nftables rules"
-    echo -e "  3. 连接数 from blocked countries are dropped at the"
-    echo -e "     network level before reaching the proxy"
+    echo -e "  ${BOLD}工作原理：${NC}"
+    echo -e "  1. 从 ipdeny.com 下载国家/地区 CIDR 列表"
+    echo -e "  2. 将 IP 段添加到 iptables/nftables 规则"
+    echo -e "  3. 来自被屏蔽国家/地区的连接会在到达代理前由网络层丢弃"
     echo ""
-    echo -e "  ${BOLD}Commands:${NC}"
-    echo -e "  ${GREEN}mtproxymax geoblock add <CC>${NC}    Block a country (e.g., CN)"
-    echo -e "  ${GREEN}mtproxymax geoblock remove <CC>${NC} Unblock a country"
-    echo -e "  ${GREEN}mtproxymax geoblock list${NC}        Show blocked countries"
+    echo -e "  ${BOLD}命令：${NC}"
+    echo -e "  ${GREEN}mtproxymax geoblock add <CC>${NC}    屏蔽国家/地区（例如 CN）"
+    echo -e "  ${GREEN}mtproxymax geoblock remove <CC>${NC} 解除国家/地区屏蔽"
+    echo -e "  ${GREEN}mtproxymax geoblock list${NC}        显示已屏蔽国家/地区"
     echo ""
-    echo -e "  ${BOLD}Common country codes:${NC}"
-    echo -e "  US (United States)  DE (Germany)    NL (Netherlands)"
+    echo -e "  ${BOLD}常用国家/地区代码：${NC}"
+    echo -e "  US（美国）  DE（德国）  NL（荷兰）"
     echo -e "  CN (China)          RU (Russia)     IR (Iran)"
     echo -e "  FR (France)         GB (UK)         SG (Singapore)"
     echo ""
-    echo -e "  ${DIM}Note: Geo-blocking uses host networking, so iptables"
-    echo -e "  rules are applied on the host, not inside the container.${NC}"
+    echo -e "  ${DIM}注意：地理位置屏蔽使用主机网络，因此 iptables 规则应用于主机，"
+    echo -e "  而不是容器内部。${NC}"
     echo ""
     press_any_key
 }
@@ -17980,27 +17978,26 @@ show_info_autoupdate() {
     clear_screen
     draw_header "自动更新"
     echo ""
-    echo -e "  ${BOLD}How Auto-Update works:${NC}"
-    echo -e "  MTProxyMax checks GitHub for new releases and can update"
-    echo -e "  itself with a single command."
+    echo -e "  ${BOLD}自动更新的工作方式：${NC}"
+    echo -e "  MTProxyMax 会检查 GitHub 上的新版本，并可通过一条命令完成自更新。"
     echo ""
-    echo -e "  ${BOLD}Update process:${NC}"
-    echo -e "  1. Query GitHub API for the latest release version"
-    echo -e "  2. Compare with your installed version"
-    echo -e "  3. If newer, prompt for confirmation"
-    echo -e "  4. Backup current script to ${DIM}/opt/mtproxymax/backups/${NC}"
-    echo -e "  5. Download and validate new version"
-    echo -e "  6. Atomic replace (mv, not copy)"
-    echo -e "  7. Regenerate Telegram service if active"
+    echo -e "  ${BOLD}更新流程：${NC}"
+    echo -e "  1. 通过 GitHub API 查询 main 分支的最新提交"
+    echo -e "  2. 与已安装脚本比较"
+    echo -e "  3. 发现更新时请求确认"
+    echo -e "  4. 将当前脚本备份到 ${DIM}/opt/mtproxymax/backups/${NC}"
+    echo -e "  5. 下载并验证新脚本"
+    echo -e "  6. 原子替换（使用 mv，而非复制）"
+    echo -e "  7. 如已启用 Telegram 服务，则重新生成服务脚本"
     echo ""
-    echo -e "  ${BOLD}Commands:${NC}"
-    echo -e "  ${GREEN}mtproxymax update${NC}   Check and apply updates"
+    echo -e "  ${BOLD}命令：${NC}"
+    echo -e "  ${GREEN}mtproxymax update${NC}   检查并应用更新"
     echo ""
-    echo -e "  ${BOLD}Safety:${NC}"
-    echo -e "  ${GREEN}${SYM_CHECK}${NC} Always backs up before updating"
-    echo -e "  ${GREEN}${SYM_CHECK}${NC} Validates downloaded script (checks #!/bin/bash header)"
-    echo -e "  ${GREEN}${SYM_CHECK}${NC} Rollback possible from ${DIM}backups/${NC} directory"
-    echo -e "  ${GREEN}${SYM_CHECK}${NC} Telegram notification when update is available"
+    echo -e "  ${BOLD}安全机制：${NC}"
+    echo -e "  ${GREEN}${SYM_CHECK}${NC} 更新前始终创建备份"
+    echo -e "  ${GREEN}${SYM_CHECK}${NC} 验证下载脚本的语法、来源和大小"
+    echo -e "  ${GREEN}${SYM_CHECK}${NC} 可使用 ${DIM}backups/${NC} 目录中的备份回滚"
+    echo -e "  ${GREEN}${SYM_CHECK}${NC} 有更新时发送 Telegram 通知"
     echo ""
     press_any_key
 }
@@ -18009,31 +18006,28 @@ show_info_health() {
     clear_screen
     draw_header "健康监控"
     echo ""
-    echo -e "  ${BOLD}What does 健康监控 do?${NC}"
-    echo -e "  Continuously checks that your proxy is running and accessible."
-    echo -e "  If the proxy goes down, it attempts automatic recovery."
+    echo -e "  ${BOLD}健康监控有什么作用？${NC}"
+    echo -e "  持续检查代理是否正在运行并可访问；代理停止时尝试自动恢复。"
     echo ""
-    echo -e "  ${BOLD}Checks performed:${NC}"
-    echo -e "  ${GREEN}${SYM_CHECK}${NC} Docker daemon running"
-    echo -e "  ${GREEN}${SYM_CHECK}${NC} Proxy container status (up/down)"
-    echo -e "  ${GREEN}${SYM_CHECK}${NC} Port listening on configured port"
-    echo -e "  ${GREEN}${SYM_CHECK}${NC} Prometheus metrics endpoint responding"
-    echo -e "  ${GREEN}${SYM_CHECK}${NC} Telegram bot service status"
+    echo -e "  ${BOLD}检查项目：${NC}"
+    echo -e "  ${GREEN}${SYM_CHECK}${NC} Docker 守护进程是否运行"
+    echo -e "  ${GREEN}${SYM_CHECK}${NC} 代理容器状态"
+    echo -e "  ${GREEN}${SYM_CHECK}${NC} 配置端口是否监听"
+    echo -e "  ${GREEN}${SYM_CHECK}${NC} Prometheus 指标端点是否响应"
+    echo -e "  ${GREEN}${SYM_CHECK}${NC} Telegram 机器人服务状态"
     echo ""
-    echo -e "  ${BOLD}Auto-recovery:${NC}"
-    echo -e "  The Telegram bot service checks every 5 minutes. If the proxy"
-    echo -e "  container is down:"
-    echo -e "  1. Sends alert: \"Proxy is down! Attempting auto-restart...\""
-    echo -e "  2. Runs ${GREEN}mtproxymax start${NC}"
-    echo -e "  3. Reports success or failure via Telegram"
+    echo -e "  ${BOLD}自动恢复：${NC}"
+    echo -e "  Telegram 机器人服务每 5 分钟检查一次。代理容器停止时："
+    echo -e "  1. 发送“代理已停止，正在尝试自动重启”警报"
+    echo -e "  2. 运行 ${GREEN}mtproxymax start${NC}"
+    echo -e "  3. 通过 Telegram 报告成功或失败"
     echo ""
-    echo -e "  ${BOLD}Manual check:${NC}"
-    echo -e "  ${GREEN}mtproxymax health${NC}   Run diagnostic checks"
+    echo -e "  ${BOLD}手动检查：${NC}"
+    echo -e "  ${GREEN}mtproxymax health${NC}   运行诊断检查"
     echo ""
-    echo -e "  ${BOLD}Docker auto-restart:${NC}"
-    echo -e "  The container runs with ${DIM}--restart unless-stopped${NC}, so Docker"
-    echo -e "  itself will restart it on crashes. The health monitor is an"
-    echo -e "  additional safety net."
+    echo -e "  ${BOLD}Docker 自动重启：${NC}"
+    echo -e "  容器使用 ${DIM}--restart unless-stopped${NC}，崩溃时 Docker 会自动重启；"
+    echo -e "  健康监控则提供额外保障。"
     echo ""
     press_any_key
 }
@@ -18042,66 +18036,61 @@ show_info_userlimits() {
     clear_screen
     draw_header "用户限制"
     echo ""
-    echo -e "  ${BOLD}${YELLOW}Per-User Connection & Bandwidth Limits${NC}"
+    echo -e "  ${BOLD}${YELLOW}每用户连接与带宽限制${NC}"
     echo ""
-    echo -e "  MTProxyMax lets you set limits per secret (user), so you can"
-    echo -e "  prevent abuse when sharing your proxy with others."
-    echo ""
-    draw_line 60 '─'
-    echo ""
-    echo -e "  ${BOLD}Available limits:${NC}"
-    echo ""
-    echo -e "  ${CYAN}1. Max TCP 连接数${NC}"
-    echo -e "     Limits how many simultaneous connections a user can have."
-    echo -e "     Prevents one user from overloading your server."
-    echo -e "     ${DIM}Recommended: 50-200 for normal use${NC}"
-    echo ""
-    echo -e "  ${CYAN}2. Max Unique IPs${NC}"
-    echo -e "     Limits how many different devices/IPs can use a secret."
-    echo -e "     Great for controlling who shares your link."
-    echo -e "     ${DIM}Recommended: 3-5 for family, 1-2 for personal${NC}"
-    echo ""
-    echo -e "  ${CYAN}3. Data Quota${NC}"
-    echo -e "     Bandwidth cap per user in bytes."
-    echo -e "     Useful for fair-use on limited bandwidth servers."
-    echo -e "     ${DIM}Recommended: 5G-50G depending on your plan${NC}"
-    echo ""
-    echo -e "  ${CYAN}4. Expiration Date${NC}"
-    echo -e "     Auto-disables a secret after the given date."
-    echo -e "     Useful for time-limited access (trials, guests)."
-    echo -e "     ${DIM}Format: YYYY-MM-DD (e.g. 2026-06-30)${NC}"
+    echo -e "  MTProxyMax 可为每个密钥（用户）设置限制，防止共享代理时被滥用。"
     echo ""
     draw_line 60 '─'
     echo ""
-    echo -e "  ${BOLD}How to set limits:${NC}"
+    echo -e "  ${BOLD}可用限制：${NC}"
     echo ""
-    echo -e "  ${GREEN}TUI:${NC}  主菜单 > 密钥 Management > 设置用户限制"
+    echo -e "  ${CYAN}1. 最大 TCP 连接数${NC}"
+    echo -e "     限制用户的并发连接数，避免单个用户导致服务器过载。"
+    echo -e "     ${DIM}普通使用建议：50–200${NC}"
     echo ""
-    echo -e "  ${GREEN}CLI:${NC}"
+    echo -e "  ${CYAN}2. 最大唯一 IP 数${NC}"
+    echo -e "     限制一个密钥可由多少不同设备/IP 使用，便于控制链接共享。"
+    echo -e "     ${DIM}家庭使用建议 3–5，个人使用建议 1–2${NC}"
+    echo ""
+    echo -e "  ${CYAN}3. 流量配额${NC}"
+    echo -e "     按字节限制每个用户的流量，适合带宽有限服务器的公平使用。"
+    echo -e "     ${DIM}可根据套餐设置为 5G–50G${NC}"
+    echo ""
+    echo -e "  ${CYAN}4. 到期日期${NC}"
+    echo -e "     指定日期后自动禁用密钥，适用于试用或访客等限时访问。"
+    echo -e "     ${DIM}格式：YYYY-MM-DD（例如 2026-06-30）${NC}"
+    echo ""
+    draw_line 60 '─'
+    echo ""
+    echo -e "  ${BOLD}设置限制：${NC}"
+    echo ""
+    echo -e "  ${GREEN}TUI：${NC}主菜单 > 密钥管理 > 设置用户限制"
+    echo ""
+    echo -e "  ${GREEN}CLI：${NC}"
     echo -e "    mtproxymax secret setlimit alice conns 100"
     echo -e "    mtproxymax secret setlimit alice ips 5"
     echo -e "    mtproxymax secret setlimit alice quota 10G"
     echo -e "    mtproxymax secret setlimit alice expires 2026-06-30"
     echo ""
-    echo -e "  ${GREEN}Telegram:${NC}"
+    echo -e "  ${GREEN}Telegram：${NC}"
     echo -e "    /mp_setlimit alice 100 5 10G 2026-06-30"
     echo ""
     draw_line 60 '─'
     echo ""
-    echo -e "  ${BOLD}Examples:${NC}"
+    echo -e "  ${BOLD}示例：${NC}"
     echo ""
-    echo -e "  ${CYAN}Family sharing (5 people):${NC}"
-    echo -e "    Give each person their own secret with:"
-    echo -e "    Max IP 数： 3 (phone + tablet + desktop)"
-    echo -e "    Max conns: 100"
-    echo -e "    Data quota: 10G per person"
+    echo -e "  ${CYAN}家庭共享（5 人）：${NC}"
+    echo -e "    为每个人提供独立密钥："
+    echo -e "    最大 IP 数：3（手机 + 平板 + 电脑）"
+    echo -e "    最大连接数：100"
+    echo -e "    每人流量配额：10G"
     echo ""
-    echo -e "  ${CYAN}Public proxy:${NC}"
-    echo -e "    Max IP 数： 1 (one device per key)"
-    echo -e "    Max conns: 50"
-    echo -e "    Data quota: 2G"
+    echo -e "  ${CYAN}公共代理：${NC}"
+    echo -e "    最大 IP 数：1（每个密钥一台设备）"
+    echo -e "    最大连接数：50"
+    echo -e "    流量配额：2G"
     echo ""
-    echo -e "  ${DIM}Set any limit to 0 for unlimited.${NC}"
+    echo -e "  ${DIM}任何限制设为 0 均表示不限。${NC}"
     echo ""
     press_any_key
 }
@@ -18110,57 +18099,55 @@ show_info_proxychaining() {
     clear_screen
     draw_header "代理链"
     echo ""
-    echo -e "  ${BOLD}${YELLOW}Route Traffic Through Intermediate Proxies${NC}"
+    echo -e "  ${BOLD}${YELLOW}通过中间代理转发流量${NC}"
     echo ""
-    echo -e "  Proxy chaining routes your proxy's outbound traffic through"
-    echo -e "  a SOCKS5/SOCKS4 proxy before it reaches Telegram servers."
+    echo -e "  代理链会先通过 SOCKS5/SOCKS4 代理转发出站流量，再连接 Telegram 服务器。"
     echo ""
-    echo -e "  ${BOLD}How it works:${NC}"
+    echo -e "  ${BOLD}工作原理：${NC}"
     echo ""
-    echo -e "    User --> ${CYAN}Your 服务器${NC} --> ${GREEN}SOCKS5 Proxy${NC} --> Telegram"
+    echo -e "    用户 --> ${CYAN}您的服务器${NC} --> ${GREEN}SOCKS5 代理${NC} --> Telegram"
     echo ""
-    echo -e "  ${BOLD}Why Iran users need this:${NC}"
+    echo -e "  ${BOLD}伊朗用户为何可能需要此功能：${NC}"
     echo ""
-    echo -e "  ${CYAN}1.${NC} Your server IP gets blocked by ISPs"
-    echo -e "     ${DIM}Solution: Route through a clean IP via SOCKS5${NC}"
+    echo -e "  ${CYAN}1.${NC} 服务器 IP 被运营商屏蔽"
+    echo -e "     ${DIM}解决方案：通过 SOCKS5 使用未被屏蔽的出口 IP${NC}"
     echo ""
-    echo -e "  ${CYAN}2.${NC} Direct routes to Telegram are throttled"
-    echo -e "     ${DIM}Solution: Route through a different network path${NC}"
+    echo -e "  ${CYAN}2.${NC} 到 Telegram 的直连线路被限速"
+    echo -e "     ${DIM}解决方案：改用其他网络路径${NC}"
     echo ""
-    echo -e "  ${CYAN}3.${NC} IP gets flagged for hosting proxy"
-    echo -e "     ${DIM}Solution: Use Cloudflare WARP or VPN as exit${NC}"
+    echo -e "  ${CYAN}3.${NC} IP 因运行代理而被标记"
+    echo -e "     ${DIM}解决方案：使用 Cloudflare WARP 或 VPN 作为出口${NC}"
     echo ""
     draw_line 60 '─'
     echo ""
-    echo -e "  ${BOLD}Common setups:${NC}"
+    echo -e "  ${BOLD}常用配置：${NC}"
     echo ""
-    echo -e "  ${CYAN}Cloudflare WARP (Free, Easiest):${NC}"
-    echo -e "    Install WARP on your server, it creates a SOCKS5 at 127.0.0.1:40000"
+    echo -e "  ${CYAN}Cloudflare WARP（免费、最简单）：${NC}"
+    echo -e "    在服务器安装 WARP，它会在 127.0.0.1:40000 创建 SOCKS5 代理"
     echo -e "    ${GREEN}curl -fsSL https://pkg.cloudflareclient.com | bash${NC}"
     echo -e "    ${GREEN}warp-cli register && warp-cli set-mode proxy && warp-cli connect${NC}"
-    echo -e "    Then add upstream: socks5 at 127.0.0.1:40000"
+    echo -e "    然后添加上游：位于 127.0.0.1:40000 的 socks5"
     echo ""
-    echo -e "  ${CYAN}SSH Tunnel (Any VPS):${NC}"
-    echo -e "    Create a SOCKS5 tunnel through another server:"
+    echo -e "  ${CYAN}SSH 隧道（任意 VPS）：${NC}"
+    echo -e "    通过另一台服务器创建 SOCKS5 隧道："
     echo -e "    ${GREEN}ssh -D 1080 -N user@backup-vps${NC}"
-    echo -e "    Then add upstream: socks5 at 127.0.0.1:1080"
+    echo -e "    然后添加上游：位于 127.0.0.1:1080 的 socks5"
     echo ""
-    echo -e "  ${CYAN}Secondary VPS:${NC}"
-    echo -e "    Run a SOCKS5 proxy on a second server (e.g., dante, microsocks)"
-    echo -e "    Then add upstream: socks5 at <backup-ip>:1080"
+    echo -e "  ${CYAN}备用 VPS：${NC}"
+    echo -e "    在第二台服务器运行 SOCKS5 代理（例如 dante、microsocks）"
+    echo -e "    然后添加上游：位于 <backup-ip>:1080 的 socks5"
     echo ""
     draw_line 60 '─'
     echo ""
-    echo -e "  ${BOLD}Weight-based load balancing:${NC}"
+    echo -e "  ${BOLD}基于权重的负载均衡：${NC}"
     echo ""
-    echo -e "  When you have multiple upstreams, traffic is distributed by weight."
-    echo -e "  Higher weight = more traffic routed through that upstream."
+    echo -e "  存在多个上游时，流量按权重分配；权重越高，经过该上游的流量越多。"
     echo ""
     echo -e "  示例："
-    echo -e "    direct    weight=10  (33% of traffic)"
-    echo -e "    warp      weight=20  (67% of traffic)"
+    echo -e "    direct    weight=10（33% 流量）"
+    echo -e "    warp      weight=20（67% 流量）"
     echo ""
-    echo -e "  If one upstream fails, traffic automatically shifts to others."
+    echo -e "  某个上游故障时，流量会自动转移到其他上游。"
     echo ""
     press_any_key
 }
@@ -18169,64 +18156,58 @@ show_info_upstreams() {
     clear_screen
     draw_header "上游类型"
     echo ""
-    echo -e "  ${BOLD}${YELLOW}Understanding Upstream Connection Types${NC}"
+    echo -e "  ${BOLD}${YELLOW}了解上游连接类型${NC}"
     echo ""
-    echo -e "  ${CYAN}Direct:${NC}"
-    echo -e "    Connects straight to Telegram servers."
-    echo -e "    Fastest, but your server IP is visible."
-    echo -e "    ${DIM}Best when: your IP isn't blocked${NC}"
+    echo -e "  ${CYAN}直连：${NC}"
+    echo -e "    直接连接 Telegram 服务器，速度最快，但服务器 IP 可见。"
+    echo -e "    ${DIM}适用于：服务器 IP 未被屏蔽${NC}"
     echo ""
     echo -e "  ${CYAN}SOCKS5:${NC}"
-    echo -e "    Routes through a SOCKS5 proxy server."
-    echo -e "    Supports authentication (username/password)."
-    echo -e "    Supports DNS resolution through proxy."
-    echo -e "    ${DIM}Best when: you need to hide your server IP or bypass blocks${NC}"
+    echo -e "    通过 SOCKS5 代理服务器转发，支持用户名/密码认证和代理端 DNS 解析。"
+    echo -e "    ${DIM}适用于：需要隐藏服务器 IP 或绕过屏蔽${NC}"
     echo ""
     echo -e "  ${CYAN}SOCKS4:${NC}"
-    echo -e "    Older protocol, identification via user_id only (no password)."
-    echo -e "    ${DIM}Best when: only SOCKS4 is available${NC}"
+    echo -e "    较旧的协议，仅通过 user_id 标识，不支持密码。"
+    echo -e "    ${DIM}适用于：只有 SOCKS4 可用${NC}"
     echo ""
     draw_line 60 '─'
     echo ""
-    echo -e "  ${BOLD}How weights work:${NC}"
+    echo -e "  ${BOLD}权重的工作方式：${NC}"
     echo ""
-    echo -e "  Each upstream has a weight from 1-100."
-    echo -e "  Traffic is distributed proportionally."
+    echo -e "  每个上游的权重范围为 1–100，流量按比例分配。"
     echo ""
-    echo -e "  ${BOLD}Example with 3 upstreams:${NC}"
+    echo -e "  ${BOLD}三个上游的示例：${NC}"
     echo -e "    direct (w:10) + warp (w:20) + backup (w:5) = 35 total"
-    echo -e "    direct gets 10/35 = 29%"
-    echo -e "    warp gets   20/35 = 57%"
-    echo -e "    backup gets  5/35 = 14%"
+    echo -e "    direct 获得 10/35 = 29%"
+    echo -e "    warp 获得   20/35 = 57%"
+    echo -e "    backup 获得  5/35 = 14%"
     echo ""
     draw_line 60 '─'
     echo ""
-    echo -e "  ${BOLD}Setting up a SOCKS5 proxy:${NC}"
+    echo -e "  ${BOLD}设置 SOCKS5 代理：${NC}"
     echo ""
-    echo -e "  ${CYAN}Option A: Cloudflare WARP${NC} (Free)"
+    echo -e "  ${CYAN}方案 A：Cloudflare WARP${NC}（免费）"
     echo -e "    ${GREEN}curl -fsSL https://pkg.cloudflareclient.com | bash"
     echo -e "    warp-cli register"
     echo -e "    warp-cli set-mode proxy"
     echo -e "    warp-cli connect${NC}"
-    echo -e "    Proxy available at: 127.0.0.1:40000"
+    echo -e "    代理地址：127.0.0.1:40000"
     echo ""
-    echo -e "  ${CYAN}Option B: microsocks${NC} (On another VPS)"
+    echo -e "  ${CYAN}方案 B：microsocks${NC}（在另一台 VPS 上）"
     echo -e "    ${GREEN}git clone https://github.com/rofl0r/microsocks && cd microsocks"
     echo -e "    make && sudo cp microsocks /usr/local/bin/"
     echo -e "    microsocks -p 1080 &${NC}"
     echo ""
-    echo -e "  ${CYAN}Option C: SSH Tunnel${NC}"
+    echo -e "  ${CYAN}方案 C：SSH 隧道${NC}"
     echo -e "    ${GREEN}ssh -D 1080 -f -N user@other-server${NC}"
     echo ""
-    echo -e "  ${BOLD}Bind to interface (advanced):${NC}"
-    echo -e "    When adding an upstream, you can bind outbound traffic"
-    echo -e "    to a specific IP address on your server."
-    echo -e "    Useful if your server has multiple IPs and you want"
-    echo -e "    different upstreams to exit from different addresses."
+    echo -e "  ${BOLD}绑定网络接口（高级）：${NC}"
+    echo -e "    添加上游时，可将出站流量绑定到服务器的指定 IP。"
+    echo -e "    当服务器有多个 IP，且不同上游需要使用不同出口地址时非常有用。"
     echo ""
-    echo -e "  ${BOLD}Testing an upstream:${NC}"
-    echo -e "    TUI: Security & Routing > Proxy Chaining > Test"
-    echo -e "    CLI: ${GREEN}mtproxymax upstream test <name>${NC}"
+    echo -e "  ${BOLD}测试上游：${NC}"
+    echo -e "    TUI：安全与路由 > 代理链 > 测试"
+    echo -e "    CLI：${GREEN}mtproxymax upstream test <name>${NC}"
     echo ""
     press_any_key
 }
@@ -18301,67 +18282,63 @@ show_port_forward_guide() {
     clear_screen
     draw_header "端口转发指南"
     echo ""
-    echo -e "  ${BOLD}${YELLOW}For Home Users 运行中 Behind a Router${NC}"
+    echo -e "  ${BOLD}${YELLOW}适用于路由器后的家庭用户${NC}"
     echo ""
-    echo -e "  If your server is behind a home router (NAT), users on the"
-    echo -e "  internet cannot reach your proxy directly. You need to set up"
-    echo -e "  ${BOLD}port forwarding${NC} on your router."
+    echo -e "  如果服务器位于家庭路由器（NAT）后，互联网用户无法直接访问代理，"
+    echo -e "  需要在路由器上设置${BOLD}端口转发${NC}。"
     echo ""
-    echo -e "  ${BOLD}What port forwarding does:${NC}"
-    echo -e "  Routes incoming connections on your public IP to your server"
-    echo -e "  on the local network."
+    echo -e "  ${BOLD}端口转发的作用：${NC}"
+    echo -e "  将公网 IP 上的入站连接转发到局域网中的服务器。"
     echo ""
-    echo -e "  ${BOLD}  Internet --> [Your Public IP:${PROXY_PORT}] --> Router"
-    echo -e "       --> [Your 服务器 LAN IP:${PROXY_PORT}] --> MTProxyMax${NC}"
+    echo -e "  ${BOLD}  互联网 --> [公网 IP:${PROXY_PORT}] --> 路由器"
+    echo -e "       --> [服务器局域网 IP:${PROXY_PORT}] --> MTProxyMax${NC}"
     echo ""
     draw_line 60 '─'
     echo ""
-    echo -e "  ${BOLD}Step 1: Find your server's local IP${NC}"
-    echo -e "  ${DIM}Run on your server:${NC}"
+    echo -e "  ${BOLD}步骤 1：查找服务器的局域网 IP${NC}"
+    echo -e "  ${DIM}在服务器上运行：${NC}"
     echo -e "  ${GREEN}  ip addr show | grep 'inet ' | grep -v 127.0.0.1${NC}"
-    echo -e "  ${DIM}Look for something like 192.168.1.100 or 10.0.0.50${NC}"
+    echo -e "  ${DIM}查找类似 192.168.1.100 或 10.0.0.50 的地址${NC}"
     echo ""
-    echo -e "  ${BOLD}Step 2: Access your router admin panel${NC}"
-    echo -e "  ${DIM}Open a browser and go to one of:${NC}"
-    echo -e "  ${CYAN}  http://192.168.1.1${NC}  (most common)"
-    echo -e "  ${CYAN}  http://192.168.0.1${NC}  (some ISPs)"
-    echo -e "  ${CYAN}  http://10.0.0.1${NC}     (some networks)"
+    echo -e "  ${BOLD}步骤 2：访问路由器管理面板${NC}"
+    echo -e "  ${DIM}在浏览器中打开以下地址之一：${NC}"
+    echo -e "  ${CYAN}  http://192.168.1.1${NC}（最常见）"
+    echo -e "  ${CYAN}  http://192.168.0.1${NC}（部分运营商）"
+    echo -e "  ${CYAN}  http://10.0.0.1${NC}（部分网络）"
     echo ""
-    echo -e "  ${BOLD}Step 3: Find the port forwarding section${NC}"
-    echo -e "  ${DIM}Common locations by router brand:${NC}"
-    echo -e "  ${CYAN}${SYM_ARROW}${NC} ${BOLD}TP-Link:${NC}    Advanced > NAT Forwarding > Port Forwarding"
-    echo -e "  ${CYAN}${SYM_ARROW}${NC} ${BOLD}Netgear:${NC}    Advanced > Advanced Setup > Port Forwarding"
-    echo -e "  ${CYAN}${SYM_ARROW}${NC} ${BOLD}ASUS:${NC}       WAN > Virtual 服务器 / Port Forwarding"
-    echo -e "  ${CYAN}${SYM_ARROW}${NC} ${BOLD}Linksys:${NC}    Apps & Gaming > Single Port Forwarding"
-    echo -e "  ${CYAN}${SYM_ARROW}${NC} ${BOLD}D-Link:${NC}     Advanced > Port Forwarding"
-    echo -e "  ${CYAN}${SYM_ARROW}${NC} ${BOLD}Xfinity:${NC}    Advanced > Port Forwarding"
+    echo -e "  ${BOLD}步骤 3：找到端口转发设置${NC}"
+    echo -e "  ${DIM}常见路由器品牌中的位置：${NC}"
+    echo -e "  ${CYAN}${SYM_ARROW}${NC} ${BOLD}TP-Link：${NC}高级设置 > NAT 转发 > 端口转发"
+    echo -e "  ${CYAN}${SYM_ARROW}${NC} ${BOLD}Netgear：${NC}高级设置 > 高级设置 > 端口转发"
+    echo -e "  ${CYAN}${SYM_ARROW}${NC} ${BOLD}ASUS：${NC}WAN > 虚拟服务器 / 端口转发"
+    echo -e "  ${CYAN}${SYM_ARROW}${NC} ${BOLD}Linksys：${NC}应用与游戏 > 单端口转发"
+    echo -e "  ${CYAN}${SYM_ARROW}${NC} ${BOLD}D-Link：${NC}高级设置 > 端口转发"
+    echo -e "  ${CYAN}${SYM_ARROW}${NC} ${BOLD}Xfinity：${NC}高级设置 > 端口转发"
     echo ""
-    echo -e "  ${BOLD}Step 4: Create the forwarding rule${NC}"
+    echo -e "  ${BOLD}步骤 4：创建转发规则${NC}"
     echo -e "  ${DIM}+──────────────────────────────────────────+${NC}"
-    echo -e "  ${DIM}|  Service Name:  ${NC}MTProxyMax"
+    echo -e "  ${DIM}|  服务名称：${NC}MTProxyMax"
     echo -e "  ${DIM}|  External 端口： ${NC}${BOLD}${PROXY_PORT}${NC}"
     echo -e "  ${DIM}|  Internal 端口： ${NC}${BOLD}${PROXY_PORT}${NC}"
-    echo -e "  ${DIM}|  Internal IP:   ${NC}${BOLD}<your server LAN IP>${NC}"
-    echo -e "  ${DIM}|  Protocol:      ${NC}${BOLD}TCP${NC}"
+    echo -e "  ${DIM}|  内部 IP：${NC}${BOLD}<服务器局域网 IP>${NC}"
+    echo -e "  ${DIM}|  协议：${NC}${BOLD}TCP${NC}"
     echo -e "  ${DIM}+──────────────────────────────────────────+${NC}"
     echo ""
-    echo -e "  ${BOLD}Step 5: Find your public IP${NC}"
-    echo -e "  ${DIM}This is the IP your users will connect to:${NC}"
+    echo -e "  ${BOLD}步骤 5：查找公网 IP${NC}"
+    echo -e "  ${DIM}用户将连接到此 IP：${NC}"
     echo -e "  ${GREEN}  curl -s https://api.ipify.org${NC}"
     echo ""
-    echo -e "  ${BOLD}Step 6: Test it${NC}"
-    echo -e "  ${DIM}From another device (phone on mobile data, not WiFi):${NC}"
-    echo -e "  Open the proxy link using your public IP and port ${PROXY_PORT}."
+    echo -e "  ${BOLD}步骤 6：测试${NC}"
+    echo -e "  ${DIM}使用另一台设备（手机移动数据，不使用 Wi-Fi）：${NC}"
+    echo -e "  打开使用公网 IP 和端口 ${PROXY_PORT} 的代理链接。"
     echo ""
     draw_line 60 '─'
     echo ""
     echo -e "  ${YELLOW}${SYM_WARN} 重要提示：${NC}"
-    echo -e "  ${DIM}- If your ISP uses CGNAT (shared public IP), port forwarding"
-    echo -e "    won't work. Contact your ISP to request a dedicated IP.${NC}"
-    echo -e "  ${DIM}- Your public IP may change. Consider a DDNS service if"
-    echo -e "    you have a dynamic IP (no-ip.com, duckdns.org).${NC}"
-    echo -e "  ${DIM}- Make sure your server firewall also allows the port"
-    echo -e "    (see Firewall Guide).${NC}"
+    echo -e "  ${DIM}- 如果运营商使用 CGNAT（共享公网 IP），端口转发将无法工作；"
+    echo -e "    请联系运营商申请独立公网 IP。${NC}"
+    echo -e "  ${DIM}- 公网 IP 可能变化；动态 IP 可考虑使用 DDNS（no-ip.com、duckdns.org）。${NC}"
+    echo -e "  ${DIM}- 确保服务器防火墙也已放行该端口（参见防火墙指南）。${NC}"
     echo ""
     press_any_key
 }
@@ -18370,34 +18347,33 @@ show_firewall_guide() {
     clear_screen
     draw_header "防火墙配置"
     echo ""
-    echo -e "  ${BOLD}${YELLOW}必须在防火墙中放行 TCP 端口 ${PROXY_PORT} through your firewall${NC}"
+    echo -e "  ${BOLD}${YELLOW}必须在防火墙中放行 TCP 端口 ${PROXY_PORT}${NC}"
     echo ""
-    echo -e "  If your server has a firewall enabled, incoming connections"
-    echo -e "  to your proxy will be blocked unless you add a rule."
+    echo -e "  如果服务器启用了防火墙，必须添加放行规则，否则代理的入站连接会被阻止。"
     echo ""
     draw_line 60 '─'
     echo ""
     echo -e "  ${BRIGHT_CYAN}${BOLD}UFW (Ubuntu/Debian)${NC}"
-    echo -e "  ${DIM}UFW is the default firewall on Ubuntu.${NC}"
+    echo -e "  ${DIM}UFW 是 Ubuntu 的默认防火墙。${NC}"
     echo ""
-    echo -e "  ${GREEN}  # Allow proxy port${NC}"
+    echo -e "  ${GREEN}  # 放行代理端口${NC}"
     echo -e "  ${WHITE}  sudo ufw allow ${PROXY_PORT}/tcp${NC}"
     echo ""
     echo -e "  ${GREEN}  # Verify${NC}"
     echo -e "  ${WHITE}  sudo ufw status${NC}"
     echo ""
-    echo -e "  ${GREEN}  # If UFW is not enabled yet${NC}"
+    echo -e "  ${GREEN}  # 如果尚未启用 UFW${NC}"
     echo -e "  ${WHITE}  sudo ufw enable${NC}"
     echo ""
     draw_line 60 '─'
     echo ""
     echo -e "  ${BRIGHT_CYAN}${BOLD}firewalld (CentOS/RHEL/Fedora)${NC}"
-    echo -e "  ${DIM}firewalld is the default on Red Hat-based systems.${NC}"
+    echo -e "  ${DIM}firewalld 是 Red Hat 系发行版的默认防火墙。${NC}"
     echo ""
-    echo -e "  ${GREEN}  # Allow proxy port (permanent)${NC}"
+    echo -e "  ${GREEN}  # 永久放行代理端口${NC}"
     echo -e "  ${WHITE}  sudo firewall-cmd --permanent --add-port=${PROXY_PORT}/tcp${NC}"
     echo ""
-    echo -e "  ${GREEN}  # Reload rules${NC}"
+    echo -e "  ${GREEN}  # 重新加载规则${NC}"
     echo -e "  ${WHITE}  sudo firewall-cmd --reload${NC}"
     echo ""
     echo -e "  ${GREEN}  # Verify${NC}"
@@ -18405,41 +18381,41 @@ show_firewall_guide() {
     echo ""
     draw_line 60 '─'
     echo ""
-    echo -e "  ${BRIGHT_CYAN}${BOLD}iptables (Any Linux)${NC}"
-    echo -e "  ${DIM}Low-level firewall available on all Linux distributions.${NC}"
+    echo -e "  ${BRIGHT_CYAN}${BOLD}iptables（任意 Linux）${NC}"
+    echo -e "  ${DIM}适用于所有 Linux 发行版的底层防火墙。${NC}"
     echo ""
-    echo -e "  ${GREEN}  # Allow proxy port${NC}"
+    echo -e "  ${GREEN}  # 放行代理端口${NC}"
     echo -e "  ${WHITE}  sudo iptables -I INPUT -p tcp --dport ${PROXY_PORT} -j ACCEPT${NC}"
     echo ""
-    echo -e "  ${GREEN}  # Save rules (Debian/Ubuntu)${NC}"
+    echo -e "  ${GREEN}  # 保存规则（Debian/Ubuntu）${NC}"
     echo -e "  ${WHITE}  sudo apt install iptables-persistent${NC}"
     echo -e "  ${WHITE}  sudo netfilter-persistent save${NC}"
     echo ""
-    echo -e "  ${GREEN}  # Save rules (CentOS/RHEL)${NC}"
+    echo -e "  ${GREEN}  # 保存规则（CentOS/RHEL）${NC}"
     echo -e "  ${WHITE}  sudo service iptables save${NC}"
     echo ""
     draw_line 60 '─'
     echo ""
-    echo -e "  ${BRIGHT_CYAN}${BOLD}nftables (Modern Linux)${NC}"
-    echo -e "  ${DIM}Newer replacement for iptables on modern kernels.${NC}"
+    echo -e "  ${BRIGHT_CYAN}${BOLD}nftables（现代 Linux）${NC}"
+    echo -e "  ${DIM}现代内核中用于替代 iptables 的新方案。${NC}"
     echo ""
-    echo -e "  ${GREEN}  # Allow proxy port${NC}"
+    echo -e "  ${GREEN}  # 放行代理端口${NC}"
     echo -e "  ${WHITE}  sudo nft add rule inet filter input tcp dport ${PROXY_PORT} accept${NC}"
     echo ""
     draw_line 60 '─'
     echo ""
     echo -e "  ${BRIGHT_CYAN}${BOLD}云服务商防火墙${NC}"
-    echo -e "  ${DIM}If using a VPS, also check the provider's security group:${NC}"
+    echo -e "  ${DIM}如果使用 VPS，还需检查服务商的安全组：${NC}"
     echo ""
-    echo -e "  ${CYAN}${SYM_ARROW}${NC} ${BOLD}AWS:${NC}          EC2 > Security Groups > Inbound Rules > Add TCP ${PROXY_PORT}"
-    echo -e "  ${CYAN}${SYM_ARROW}${NC} ${BOLD}Google Cloud:${NC} VPC > Firewall Rules > Create > TCP ${PROXY_PORT}"
-    echo -e "  ${CYAN}${SYM_ARROW}${NC} ${BOLD}DigitalOcean:${NC} Networking > Firewalls > Inbound TCP ${PROXY_PORT}"
-    echo -e "  ${CYAN}${SYM_ARROW}${NC} ${BOLD}Oracle Cloud:${NC} VCN > Security List > Ingress TCP ${PROXY_PORT}"
-    echo -e "  ${CYAN}${SYM_ARROW}${NC} ${BOLD}Hetzner:${NC}      Firewall > Inbound TCP ${PROXY_PORT}"
+    echo -e "  ${CYAN}${SYM_ARROW}${NC} ${BOLD}AWS：${NC}EC2 > 安全组 > 入站规则 > 添加 TCP ${PROXY_PORT}"
+    echo -e "  ${CYAN}${SYM_ARROW}${NC} ${BOLD}Google Cloud：${NC}VPC > 防火墙规则 > 创建 > TCP ${PROXY_PORT}"
+    echo -e "  ${CYAN}${SYM_ARROW}${NC} ${BOLD}DigitalOcean：${NC}网络 > 防火墙 > 入站 TCP ${PROXY_PORT}"
+    echo -e "  ${CYAN}${SYM_ARROW}${NC} ${BOLD}Oracle Cloud：${NC}VCN > 安全列表 > 入站 TCP ${PROXY_PORT}"
+    echo -e "  ${CYAN}${SYM_ARROW}${NC} ${BOLD}Hetzner：${NC}防火墙 > 入站 TCP ${PROXY_PORT}"
     echo ""
     echo -e "  ${YELLOW}${SYM_WARN} 添加规则后请测试：${NC}"
     echo -e "  ${WHITE}  curl -v telnet://YOUR_SERVER_IP:${PROXY_PORT}${NC}"
-    echo -e "  ${DIM}  (should connect, not timeout)${NC}"
+    echo -e "  ${DIM}  （应成功连接而不是超时）${NC}"
     echo ""
     press_any_key
 }
@@ -18455,31 +18431,31 @@ show_about() {
         draw_box_center "${BRIGHT_GREEN}${BOLD}ABOUT MTPROXYMAX${NC}" "$w"
         draw_box_sep "$w"
         draw_box_empty "$w"
-        draw_box_line "  ${BOLD}Created by:${NC}  Sam" "$w"
-        draw_box_line "  ${BOLD}Publisher:${NC}   SamNet Technologies" "$w"
-        draw_box_line "  ${BOLD}Version:${NC}     v${VERSION}" "$w"
-        draw_box_line "  ${BOLD}Engine:${NC}      telemt v$(get_telemt_version) (Rust)" "$w"
-        draw_box_line "  ${BOLD}License:${NC}     MIT" "$w"
+        draw_box_line "  ${BOLD}作者：${NC}Sam" "$w"
+        draw_box_line "  ${BOLD}发布者：${NC}SamNet Technologies" "$w"
+        draw_box_line "  ${BOLD}版本：${NC}v${VERSION}" "$w"
+        draw_box_line "  ${BOLD}引擎：${NC}Telemt v$(get_telemt_version)（Rust）" "$w"
+        draw_box_line "  ${BOLD}许可证：${NC}MIT" "$w"
         draw_box_line "  ${BOLD}GitHub:${NC}      github.com/${GITHUB_REPO}" "$w"
         draw_box_empty "$w"
         draw_box_sep "$w"
-        draw_box_center "${BOLD}FEATURES${NC}" "$w"
+        draw_box_center "${BOLD}功能${NC}" "$w"
         draw_box_empty "$w"
-        draw_box_line "  ${GREEN}${SYM_CHECK}${NC} FakeTLS obfuscation (deep TLS 1.3 fidelity)" "$w"
+        draw_box_line "  ${GREEN}${SYM_CHECK}${NC} FakeTLS 混淆（高度还原 TLS 1.3）" "$w"
         draw_box_line "  ${GREEN}${SYM_CHECK}${NC} 流量伪装（避免被 DPI 探测识别）" "$w"
-        draw_box_line "  ${GREEN}${SYM_CHECK}${NC} Multi-secret user management with per-user stats" "$w"
-        draw_box_line "  ${GREEN}${SYM_CHECK}${NC} Ad-tag / promoted channel support" "$w"
+        draw_box_line "  ${GREEN}${SYM_CHECK}${NC} 多密钥用户管理与逐用户统计" "$w"
+        draw_box_line "  ${GREEN}${SYM_CHECK}${NC} 广告标签 / 推广频道支持" "$w"
         draw_box_line "  ${GREEN}${SYM_CHECK}${NC} 用于远程管理的 Telegram 机器人" "$w"
-        draw_box_line "  ${GREEN}${SYM_CHECK}${NC} QR code generation (3-tier fallback)" "$w"
-        draw_box_line "  ${GREEN}${SYM_CHECK}${NC} Geo-blocking by country" "$w"
-        draw_box_line "  ${GREEN}${SYM_CHECK}${NC} Proxy chaining (SOCKS5/SOCKS4 upstream routing)" "$w"
-        draw_box_line "  ${GREEN}${SYM_CHECK}${NC} Per-user connection, IP, bandwidth & expiry limits" "$w"
-        draw_box_line "  ${GREEN}${SYM_CHECK}${NC} Per-user traffic analytics (Prometheus)" "$w"
-        draw_box_line "  ${GREEN}${SYM_CHECK}${NC} Auto-update with backup & rollback" "$w"
-        draw_box_line "  ${GREEN}${SYM_CHECK}${NC} Health monitoring & auto-recovery" "$w"
+        draw_box_line "  ${GREEN}${SYM_CHECK}${NC} 二维码生成（三级回退机制）" "$w"
+        draw_box_line "  ${GREEN}${SYM_CHECK}${NC} 按国家/地区进行地理封锁" "$w"
+        draw_box_line "  ${GREEN}${SYM_CHECK}${NC} 代理链（SOCKS5/SOCKS4 上游路由）" "$w"
+        draw_box_line "  ${GREEN}${SYM_CHECK}${NC} 逐用户连接数、IP、带宽与到期限制" "$w"
+        draw_box_line "  ${GREEN}${SYM_CHECK}${NC} 逐用户流量分析（Prometheus）" "$w"
+        draw_box_line "  ${GREEN}${SYM_CHECK}${NC} 支持备份与回滚的自动更新" "$w"
+        draw_box_line "  ${GREEN}${SYM_CHECK}${NC} 健康监控与自动恢复" "$w"
         draw_box_empty "$w"
         draw_box_sep "$w"
-        draw_box_center "${DIM}Made with care by Sam — SamNet Technologies${NC}" "$w"
+        draw_box_center "${DIM}由 Sam 用心打造——SamNet Technologies${NC}" "$w"
         draw_box_bottom "$w"
         echo ""
         echo -e "  ${DIM}[1]${NC} 检查更新"
@@ -18488,8 +18464,8 @@ show_about() {
         echo -e "  ${DIM}[4]${NC} 列出备份"
         echo -e "  ${DIM}[5]${NC} 创建加密备份"
         echo -e "  ${DIM}[6]${NC} 恢复加密备份"
-        echo -e "  ${DIM}[7]${NC} Migrate export (to another server)"
-        echo -e "  ${DIM}[8]${NC} Migrate import (from another server)"
+        echo -e "  ${DIM}[7]${NC} 迁移导出（到另一台服务器）"
+        echo -e "  ${DIM}[8]${NC} 迁移导入（来自另一台服务器）"
         echo -e "  ${DIM}[9]${NC} 自动清理旧备份"
         echo -e "  ${DIM}[0]${NC} 返回"
 
@@ -18499,7 +18475,7 @@ show_about() {
             1)
                 self_update || true
                 if [ "${_SCRIPT_NEEDS_REEXEC:-}" = "true" ]; then
-                    log_info "Restarting with updated script..."
+                    log_info "正在使用更新后的脚本重新启动..."
                     sleep 1
                     exec "${INSTALL_DIR}/mtproxymax" menu
                 fi
@@ -18508,7 +18484,7 @@ show_about() {
             2) create_backup || true; press_any_key ;;
             3)
                 list_backups
-                echo -en "  ${BOLD}Backup file path:${NC} "
+                echo -en "  ${BOLD}备份文件路径：${NC} "
                 local bf; read -r bf
                 [ -n "$bf" ] && restore_backup "$bf" || true
                 press_any_key
@@ -18535,7 +18511,7 @@ show_about() {
                 ;;
             9)
                 echo -e "  ${DIM}live保留期限： ${BACKUP_RETENTION_DAYS:-30} days${NC}"
-                echo -en "  ${BOLD}Delete backups older than N days [${BACKUP_RETENTION_DAYS:-30}]:${NC} "
+                echo -en "  ${BOLD}删除超过多少天的备份 [${BACKUP_RETENTION_DAYS:-30}]：${NC} "
                 local acd; read -r acd
                 acd="${acd:-${BACKUP_RETENTION_DAYS:-30}}"
                 backup_autoclean "$acd" || true
@@ -18543,7 +18519,7 @@ show_about() {
                 if [[ "$acd" =~ ^[0-9]+$ ]] && [ "$acd" != "${BACKUP_RETENTION_DAYS:-30}" ]; then
                     BACKUP_RETENTION_DAYS="$acd"
                     save_settings
-                    log_info "Retention policy updated: ${acd} days"
+                    log_info "保留策略已更新：${acd} 天"
                 fi
                 press_any_key
                 ;;
@@ -18560,8 +18536,8 @@ show_port_hop_menu() {
         draw_header "动态端口范围映射"
         echo ""
         load_settings
-        echo -e "  ${BOLD}有效 Shadow Port Ranges:${NC} ${CYAN}${PORT_HOP_RANGES:-none}${NC}"
-        echo -e "  ${DIM}Redirects arbitrary multi-port blocks directly to your proxy listen port.${NC}"
+        echo -e "  ${BOLD}有效映射端口范围：${NC}${CYAN}${PORT_HOP_RANGES:-无}${NC}"
+        echo -e "  ${DIM}将任意多端口范围直接重定向到代理监听端口。${NC}"
         echo ""
         echo -e "  ${DIM}[1]${NC} 列出live端口范围"
         echo -e "  ${DIM}[2]${NC} 添加端口范围 (e.g., 2000:2050)"
@@ -18603,33 +18579,33 @@ show_performance_menu() {
         draw_header "性能与自愈套件"
         echo ""
         load_settings
-        echo -e "  ${BOLD}1. TCP BBR Booster:${NC}     $([ "${TCP_BOOST_ENABLED:-false}" = "true" ] && echo "${GREEN}已启用${NC}" || echo "${YELLOW}已禁用${NC}")"
-        echo -e "  ${BOLD}2. Dead Socket Reaper:${NC}  $([ "${TCP_CLEAN_ENABLED:-false}" = "true" ] && echo "${GREEN}已启用${NC}" || echo "${YELLOW}已禁用${NC}")"
-        echo -e "  ${BOLD}3. Socket Low-Latency:${NC}  $([ "${SOCKET_BOOST_ENABLED:-false}" = "true" ] && echo "${GREEN}已启用${NC}" || echo "${YELLOW}已禁用${NC}")"
-        echo -e "  ${BOLD}4. FakeTLS Pad Rotation:${NC} $([ "${TLS_PAD_ENABLED:-false}" = "true" ] && echo "${GREEN}已启用${NC}" || echo "${YELLOW}已禁用${NC}")"
-        echo -e "  ${BOLD}5. 有效 Probe Honeypot:${NC} $([ "${HONEYPOT_ENABLED:-false}" = "true" ] && echo "${GREEN}已启用${NC}" || echo "${YELLOW}已禁用${NC}")"
-        echo -e "  ${BOLD}6. TCP Fast-Path Window:${NC} $([ "${TCP_FASTPATH_ENABLED:-false}" = "true" ] && echo "${GREEN}已启用${NC}" || echo "${YELLOW}已禁用${NC}")"
-        echo -e "  ${BOLD}7. Dynamic RAM Auto-Tune:${NC} $([ "${RAM_TUNE_ENABLED:-false}" = "true" ] && echo "${GREEN}已启用${NC}" || echo "${YELLOW}已禁用${NC}")"
-        echo -e "  ${BOLD}8. Port Range Shadowing:${NC} ${CYAN}${PORT_HOP_RANGES:-none}${NC}"
-        echo -e "  ${BOLD}9. Multi-Core IRQ Spread:${NC} $([ "${CPU_TUNE_ENABLED:-false}" = "true" ] && echo "${GREEN}已启用${NC}" || echo "${YELLOW}已禁用${NC}")"
-        echo -e "  ${BOLD}a. BBRv3 & ECN Tuning:${NC}    $([ "${BBR_ECN_ENABLED:-false}" = "true" ] && echo "${GREEN}已启用${NC}" || echo "${YELLOW}已禁用${NC}")"
-        echo -e "  ${BOLD}b. Anti-DPI Shield:${NC}       $([ "${ANTI_DPI_SHIELD_ENABLED:-false}" = "true" ] && echo "${GREEN}已启用${NC}" || echo "${YELLOW}已禁用${NC}")"
-        echo -e "  ${BOLD}c. Cover Probe Shield:${NC}    $([ "${COVER_SHIELD_ENABLED:-false}" = "true" ] && echo "${GREEN}已启用${NC}" || echo "${YELLOW}已禁用${NC}")"
-        echo -e "  ${BOLD}h. Background Auto-Heal:${NC} $([ "${AUTO_HEAL_ENABLED:-false}" = "true" ] && echo "${GREEN}已启用${NC}" || echo "${YELLOW}已禁用${NC}")"
+        echo -e "  ${BOLD}1. TCP BBR 加速：${NC}     $([ "${TCP_BOOST_ENABLED:-false}" = "true" ] && echo "${GREEN}已启用${NC}" || echo "${YELLOW}已禁用${NC}")"
+        echo -e "  ${BOLD}2. 失效套接字清理：${NC}  $([ "${TCP_CLEAN_ENABLED:-false}" = "true" ] && echo "${GREEN}已启用${NC}" || echo "${YELLOW}已禁用${NC}")"
+        echo -e "  ${BOLD}3. 套接字低延迟：${NC}  $([ "${SOCKET_BOOST_ENABLED:-false}" = "true" ] && echo "${GREEN}已启用${NC}" || echo "${YELLOW}已禁用${NC}")"
+        echo -e "  ${BOLD}4. FakeTLS 填充轮换：${NC} $([ "${TLS_PAD_ENABLED:-false}" = "true" ] && echo "${GREEN}已启用${NC}" || echo "${YELLOW}已禁用${NC}")"
+        echo -e "  ${BOLD}5. 主动探测蜜罐：${NC} $([ "${HONEYPOT_ENABLED:-false}" = "true" ] && echo "${GREEN}已启用${NC}" || echo "${YELLOW}已禁用${NC}")"
+        echo -e "  ${BOLD}6. TCP 快速路径窗口：${NC} $([ "${TCP_FASTPATH_ENABLED:-false}" = "true" ] && echo "${GREEN}已启用${NC}" || echo "${YELLOW}已禁用${NC}")"
+        echo -e "  ${BOLD}7. 动态内存自动调优：${NC} $([ "${RAM_TUNE_ENABLED:-false}" = "true" ] && echo "${GREEN}已启用${NC}" || echo "${YELLOW}已禁用${NC}")"
+        echo -e "  ${BOLD}8. 端口范围映射：${NC} ${CYAN}${PORT_HOP_RANGES:-无}${NC}"
+        echo -e "  ${BOLD}9. 多核 IRQ 分流：${NC} $([ "${CPU_TUNE_ENABLED:-false}" = "true" ] && echo "${GREEN}已启用${NC}" || echo "${YELLOW}已禁用${NC}")"
+        echo -e "  ${BOLD}a. BBRv3 与 ECN 调优：${NC} $([ "${BBR_ECN_ENABLED:-false}" = "true" ] && echo "${GREEN}已启用${NC}" || echo "${YELLOW}已禁用${NC}")"
+        echo -e "  ${BOLD}b. 抗 DPI 防护：${NC} $([ "${ANTI_DPI_SHIELD_ENABLED:-false}" = "true" ] && echo "${GREEN}已启用${NC}" || echo "${YELLOW}已禁用${NC}")"
+        echo -e "  ${BOLD}c. 伪装探测防护：${NC} $([ "${COVER_SHIELD_ENABLED:-false}" = "true" ] && echo "${GREEN}已启用${NC}" || echo "${YELLOW}已禁用${NC}")"
+        echo -e "  ${BOLD}h. 后台自动修复：${NC} $([ "${AUTO_HEAL_ENABLED:-false}" = "true" ] && echo "${GREEN}已启用${NC}" || echo "${YELLOW}已禁用${NC}")"
         echo ""
         echo -e "  ${DIM}[1]${NC} 切换 Linux 内核 TCP BBR 与 Fast Open 加速器"
         echo -e "  ${DIM}[2]${NC} 切换失效移动连接清理器（45 秒超时）"
         echo -e "  ${DIM}[3]${NC} 切换超低延迟内核套接字加速器"
         echo -e "  ${DIM}[4]${NC} 切换动态 FakeTLS 记录填充轮换"
-        echo -e "  ${DIM}[5]${NC} Toggle 有效 Probe Honeypot Redirection"
+        echo -e "  ${DIM}[5]${NC} 切换主动探测蜜罐重定向"
         echo -e "  ${DIM}[6]${NC} 切换 TCP 快速路径窗口缩放与 MTU 探测"
         echo -e "  ${DIM}[7]${NC} 切换动态内存自动调优方案"
         echo -e "  ${DIM}[8]${NC} 管理动态多端口范围映射"
         echo -e "  ${DIM}[9]${NC} 切换多核 IRQ 数据包分流（RPS/RFS）"
-        echo -e "  ${DIM}[a]${NC} Toggle Suite 1: BBRv3 Congestion Control & ECN Auto-Tuning"
-        echo -e "  ${DIM}[b]${NC} Toggle Suite 2: Anti-DPI Packet Padding & TLS Fingerprint Shield"
-        echo -e "  ${DIM}[c]${NC} Toggle Suite 3: Reverse-Proxy Cover Shield & 有效 Probe Defense"
-        echo -e "  ${DIM}[h]${NC} Toggle Background RAM & Socket Auto-Healer"
+        echo -e "  ${DIM}[a]${NC} 切换套件 1：BBRv3 拥塞控制与 ECN 自动调优"
+        echo -e "  ${DIM}[b]${NC} 切换套件 2：抗 DPI 数据包填充与 TLS 指纹防护"
+        echo -e "  ${DIM}[c]${NC} 切换套件 3：反向代理伪装与主动探测防御"
+        echo -e "  ${DIM}[h]${NC} 切换后台内存与套接字自动修复"
         echo -e "  ${DIM}[e]${NC} 立即执行紧急一键修复"
         echo -e "  ${DIM}[0]${NC} 返回"
 
@@ -18678,9 +18654,9 @@ show_replication_menu() {
             timer_state="${timer_state:-inactive}"
         fi
 
-        echo -e "  Role:   ${role_color}${REPLICATION_ROLE}${NC}   已启用: $([ "$REPLICATION_ENABLED" = "true" ] && echo "${GREEN}yes${NC}" || echo "${DIM}no${NC}")   Timer: $([ "$timer_state" = "active" ] && echo "${GREEN}active${NC}" || echo "${DIM}${timer_state}${NC}")"
+        echo -e "  角色：${role_color}${REPLICATION_ROLE}${NC}   已启用：$([ "$REPLICATION_ENABLED" = "true" ] && echo "${GREEN}是${NC}" || echo "${DIM}否${NC}")   定时器：$([ "$timer_state" = "active" ] && echo "${GREEN}活动${NC}" || echo "${DIM}${timer_state}${NC}")"
         if [ "${REPLICATION_ROLE}" = "master" ]; then
-            echo -e "  Slaves: ${#REPL_HOSTS[@]} configured   Interval: ${REPLICATION_SYNC_INTERVAL}s"
+        echo -e "  从节点：已配置 ${#REPL_HOSTS[@]} 个   间隔：${REPLICATION_SYNC_INTERVAL} 秒"
         else
             echo -e "  正在接收主节点配置"
         fi
@@ -18734,17 +18710,17 @@ show_replication_menu() {
                     REPLICATION_ENABLED="false"
                     save_settings
                     stop_replication_service
-                    log_success "Replication disabled"
+                    log_success "复制已禁用"
                 else
                     if [ "$REPLICATION_ROLE" != "master" ]; then
-                        log_error "Replication can only be enabled on a master"
-                        log_info "Run setup wizard to configure role"
+                        log_error "只有主节点可以启用复制"
+                        log_info "请运行设置向导配置角色"
                         press_any_key; continue
                     fi
                     REPLICATION_ENABLED="true"
                     save_settings
                     setup_replication_service
-                    log_success "Replication enabled"
+                    log_success "复制已启用"
                 fi
                 press_any_key
                 ;;
@@ -18756,7 +18732,7 @@ show_replication_menu() {
                     REPLICATION_SYNC_INTERVAL="$new_interval"
                     save_settings
                     [ "$REPLICATION_ENABLED" = "true" ] && setup_replication_service
-                    log_success "Interval set to ${new_interval}s"
+                    log_success "间隔已设为 ${new_interval} 秒"
                 else
                     log_error "间隔无效（必须大于或等于 10）"
                 fi
