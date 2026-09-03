@@ -9786,7 +9786,9 @@ self_update() {
     fi
 
     local _script_updated=false
-    local _url="https://raw.githubusercontent.com/${GITHUB_REPO}/main/mtproxymax.sh"
+    # Cache-bust the moving branch URL so an update immediately after a push
+    # cannot be mistaken for "already current" by an intermediary cache.
+    local _url="https://raw.githubusercontent.com/${GITHUB_REPO}/main/mtproxymax.sh?ts=$(date +%s)"
 
     echo ""
     log_info "正在检查脚本更新..."
@@ -11119,14 +11121,16 @@ tg_send_to() {
     local reply_markup="${3:-}"
     local -a send_args=(
         -s --max-time 10 -X POST
-        -K <(printf 'url = "https://api.telegram.org/bot%s/sendMessage"\n' "$TELEGRAM_BOT_TOKEN")
         --data-urlencode "chat_id=${target_cid}"
         --data-urlencode "text=${msg}"
         --data-urlencode "parse_mode=Markdown"
     )
     [ -n "$reply_markup" ] && send_args+=(--data-urlencode "reply_markup=${reply_markup}")
     local response rc=0 description=""
-    response=$(curl "${send_args[@]}" 2>/dev/null) || rc=$?
+    # Create the process substitution as part of the curl invocation. Storing
+    # /dev/fd/N in send_args closes the descriptor before curl reads it (rc 26).
+    response=$(curl -K <(printf 'url = "https://api.telegram.org/bot%s/sendMessage"\n' "$TELEGRAM_BOT_TOKEN") \
+        "${send_args[@]}" 2>/dev/null) || rc=$?
     if [ "$rc" -ne 0 ] || ! printf '%s' "$response" | grep -q '"ok":true'; then
         description=$(printf '%s' "$response" | sed -n 's/.*"description"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)
         [ -z "$description" ] && description="curl 状态码 ${rc}"

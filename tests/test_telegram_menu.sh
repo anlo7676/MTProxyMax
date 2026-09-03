@@ -49,6 +49,35 @@ assert_contains "start payloads open the menu" '/start\ *'
 assert_contains "menu command opens the menu" '/menu|/menu@*'
 assert_contains "bot update is non-interactive" '--setenv=MTPROXYMAX_ASSUME_YES=true'
 
+# Exercise tg_send_to with a curl double that verifies its -K process
+# substitution is still readable when curl actually starts. This reproduces
+# curl rc 26 when /dev/fd/N is incorrectly cached in an argument array.
+awk '/^tg_send_to\(\)/,/^}/' "$BOT_SCRIPT" > "$TEST_TMPDIR/tg-send-to.sh"
+source "$TEST_TMPDIR/tg-send-to.sh"
+TELEGRAM_BOT_TOKEN="123456:test-token"
+curl() {
+    local config_path=""
+    while [ "$#" -gt 0 ]; do
+        if [ "$1" = "-K" ]; then
+            config_path="${2:-}"
+            shift 2
+        else
+            shift
+        fi
+    done
+    [ -n "$config_path" ] && [ -r "$config_path" ] || return 26
+    grep -Fq 'sendMessage' "$config_path" || return 26
+    printf '{"ok":true}'
+}
+TESTS_RUN=$((TESTS_RUN + 1))
+if tg_send_to "123456" "menu test" '{"inline_keyboard":[]}'; then
+    printf '  PASS  menu sender keeps curl config descriptor open\n'
+else
+    TESTS_FAILED=$((TESTS_FAILED + 1))
+    printf '  FAIL  menu sender keeps curl config descriptor open\n'
+fi
+unset -f curl
+
 MAIN_SCRIPT="$(dirname "$0")/../mtproxymax.sh"
 TESTS_RUN=$((TESTS_RUN + 1))
 if grep -Fq 'systemctl stop mtproxymax-telegram.service' "$MAIN_SCRIPT" && \
