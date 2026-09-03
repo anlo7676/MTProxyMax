@@ -10840,7 +10840,7 @@ telegram_notify_proxy_started() {
     if [ -n "$_first_secret" ]; then
         local qr_url
         qr_url=$(generate_qr_url "https://t.me/proxy?server=${server_ip}&port=${PROXY_PORT}&secret=${_first_secret}")
-        telegram_send_photo "$qr_url" "📱 *MTProxy QR Code* — Scan in Telegram to connect"
+        telegram_send_photo "$qr_url" "📱 *MTProxy 二维码* — 在 Telegram 中扫描即可连接"
     fi
 }
 
@@ -10849,19 +10849,19 @@ telegram_setup_wizard() {
     draw_header "TELEGRAM 机器人设置"
 
     echo ""
-    echo -e "  ${BOLD}Step 1: Create a bot${NC}"
-    echo -e "  ${DIM}1. Open Telegram and search for @BotFather${NC}"
-    echo -e "  ${DIM}2. Send /newbot and follow the instructions${NC}"
-    echo -e "  ${DIM}3. Copy the bot token${NC}"
+    echo -e "  ${BOLD}步骤 1：创建机器人${NC}"
+    echo -e "  ${DIM}1. 打开 Telegram 并搜索 @BotFather${NC}"
+    echo -e "  ${DIM}2. 发送 /newbot，然后按照提示操作${NC}"
+    echo -e "  ${DIM}3. 复制机器人令牌${NC}"
     echo ""
 
-    echo -en "  ${BOLD}Paste your bot token:${NC} "
+    echo -en "  ${BOLD}粘贴机器人令牌：${NC} "
     local token
     read -r token
 
     # Validate token format
     if ! [[ "$token" =~ ^[0-9]+:[A-Za-z0-9_-]+$ ]]; then
-        log_error "Invalid token format"
+        log_error "机器人令牌格式无效"
         return 1
     fi
 
@@ -10873,58 +10873,58 @@ telegram_setup_wizard() {
     response=$(curl -s --max-time 10 -K "$_cfg" 2>/dev/null) || true
     rm -f "$_cfg"
     if ! echo "$response" | grep -q '"ok":true'; then
-        log_error "Invalid token — bot 未找到"
+        log_error "机器人令牌无效，未找到对应机器人"
         return 1
     fi
 
     local bot_name
     bot_name=$(echo "$response" | grep -oE '"username"\s*:\s*"[^"]*"' | head -1 | cut -d'"' -f4)
-    log_success "Bot found: @${bot_name}"
+    log_success "已找到机器人：@${bot_name}"
 
     TELEGRAM_BOT_TOKEN="$token"
 
     echo ""
-    echo -e "  ${BOLD}Step 2: Get your Chat ID${NC}"
-    echo -e "  ${DIM}Send /start to your bot (@${bot_name}) in Telegram, then press Enter here.${NC}"
+    echo -e "  ${BOLD}步骤 2：获取会话 ID${NC}"
+    echo -e "  ${DIM}在 Telegram 中向机器人（@${bot_name}）发送 /start，然后在此处按回车键。${NC}"
     echo ""
-    echo -en "  ${DIM}Press Enter when you've sent /start...${NC}"
+    echo -en "  ${DIM}发送 /start 后请按回车键继续...${NC}"
     read -r
 
     sleep 2
 
     if telegram_get_chat_id; then
-        log_success "Chat ID detected: ${TELEGRAM_CHAT_ID}"
+        log_success "已检测到会话 ID：${TELEGRAM_CHAT_ID}"
     else
         echo ""
-        echo -e "  ${YELLOW}无法 auto-detect Chat ID.${NC}"
-        echo -en "  ${BOLD}Enter Chat ID manually:${NC} "
+        echo -e "  ${YELLOW}无法自动检测会话 ID。${NC}"
+        echo -en "  ${BOLD}请手动输入会话 ID：${NC} "
         local manual_id
         read -r manual_id
         if [[ "$manual_id" =~ ^-?[0-9]+$ ]]; then
             TELEGRAM_CHAT_ID="$manual_id"
         else
-            log_error "Invalid Chat ID"
+            log_error "会话 ID 无效"
             return 1
         fi
     fi
 
     echo ""
-    echo -e "  ${BOLD}Step 3: Notification interval${NC}"
-    echo -en "  ${DIM}Send status reports every N hours [6]:${NC} "
+    echo -e "  ${BOLD}步骤 3：通知间隔${NC}"
+    echo -en "  ${DIM}每隔多少小时发送一次状态报告 [6]：${NC} "
     local interval
     read -r interval
     [[ "$interval" =~ ^[0-9]+$ ]] && [ "$interval" -gt 0 ] && TELEGRAM_INTERVAL="$interval"
 
     echo ""
-    echo -e "  ${BOLD}Step 4: 服务器 label${NC}"
-    echo -en "  ${DIM}标签 for this server [MTProxyMax]:${NC} "
+    echo -e "  ${BOLD}步骤 4：服务器标签${NC}"
+    echo -en "  ${DIM}设置此服务器的标签 [MTProxyMax]：${NC} "
     local label
     read -r label
     if [ -n "$label" ]; then
         if [[ "$label" =~ ^[a-zA-Z0-9_.\ -]+$ ]] && [ ${#label} -le 32 ]; then
             TELEGRAM_SERVER_LABEL="$label"
         else
-            log_warn "标签无效 (letters, digits, spaces, dots, hyphens, max 32 chars). Using default."
+            log_warn "标签无效（仅允许字母、数字、空格、点和连字符，最多 32 个字符），将使用默认值。"
         fi
     fi
 
@@ -10933,7 +10933,7 @@ telegram_setup_wizard() {
     save_settings
 
     echo ""
-    log_success "Telegram bot configured!"
+    log_success "Telegram 机器人配置完成！"
 
     # Send test message
     telegram_test_message
