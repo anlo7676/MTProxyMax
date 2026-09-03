@@ -9836,8 +9836,13 @@ self_update() {
             fi
         else
             log_info "发现更新：v${_new_ver:-?}（已安装：v${VERSION}）"
-            echo -en "  ${BOLD}现在更新吗？[y/N]：${NC} "
-            local _confirm; read -r _confirm
+            local _confirm=""
+            if [ "${MTPROXYMAX_ASSUME_YES:-false}" = "true" ]; then
+                _confirm="y"
+            else
+                echo -en "  ${BOLD}现在更新吗？[y/N]：${NC} "
+                read -r _confirm
+            fi
             if [ "$_confirm" != "y" ] && [ "$_confirm" != "Y" ]; then
                 log_info "已跳过更新"
                 rm -f "$_tmp"
@@ -9880,7 +9885,7 @@ self_update() {
             flock -u "$_lfd" 2>/dev/null || true
             exec {_lfd}>&- 2>/dev/null || true
         fi
-        "${INSTALL_DIR}/mtproxymax" update
+        MTPROXYMAX_ASSUME_YES="${MTPROXYMAX_ASSUME_YES:-false}" "${INSTALL_DIR}/mtproxymax" update
         return $?
     fi
 
@@ -11131,6 +11136,50 @@ tg_send_to() {
     return 0
 }
 
+tg_register_commands() {
+    local public_commands admin_commands admin_scope response
+    public_commands='[{"command":"start","description":"打开服务菜单"},{"command":"my_status","description":"查询账户状态"},{"command":"redeem","description":"兑换服务码"},{"command":"support","description":"联系管理员"}]'
+    admin_commands='[{"command":"start","description":"打开管理菜单"},{"command":"mp_status","description":"查看运行状态"},{"command":"mp_traffic","description":"查看流量报告"},{"command":"mp_secrets","description":"管理代理密钥"},{"command":"mp_link","description":"获取代理链接"},{"command":"mp_health","description":"运行健康检查"},{"command":"mp_limits","description":"查看用户限制"},{"command":"mp_upstreams","description":"查看上游代理"},{"command":"mp_lockdown","description":"管理紧急锁定"},{"command":"mp_digest","description":"查看系统摘要"},{"command":"mp_update","description":"更新 MTProxyMax"},{"command":"mp_help","description":"显示命令帮助"}]'
+
+    response=$(curl -s --max-time 10 -X POST \
+        -K <(printf 'url = "https://api.telegram.org/bot%s/setMyCommands"\n' "$TELEGRAM_BOT_TOKEN") \
+        --data-urlencode "commands=${public_commands}" 2>/dev/null) || response=""
+    if ! printf '%s' "$response" | grep -q '"ok":true'; then
+        logger -t mtproxymax-telegram -- "注册 Telegram 公共命令菜单失败" 2>/dev/null || true
+    fi
+
+    if [[ "${TELEGRAM_CHAT_ID:-}" =~ ^-?[0-9]+$ ]]; then
+        admin_scope=$(printf '{"type":"chat","chat_id":%s}' "$TELEGRAM_CHAT_ID")
+        response=$(curl -s --max-time 10 -X POST \
+            -K <(printf 'url = "https://api.telegram.org/bot%s/setMyCommands"\n' "$TELEGRAM_BOT_TOKEN") \
+            --data-urlencode "commands=${admin_commands}" \
+            --data-urlencode "scope=${admin_scope}" 2>/dev/null) || response=""
+        if ! printf '%s' "$response" | grep -q '"ok":true'; then
+            logger -t mtproxymax-telegram -- "注册 Telegram 管理员命令菜单失败（chat_id=${TELEGRAM_CHAT_ID}）" 2>/dev/null || true
+        fi
+    fi
+
+    response=$(curl -s --max-time 10 -X POST \
+        -K <(printf 'url = "https://api.telegram.org/bot%s/setChatMenuButton"\n' "$TELEGRAM_BOT_TOKEN") \
+        --data-urlencode 'menu_button={"type":"commands"}' 2>/dev/null) || response=""
+    if ! printf '%s' "$response" | grep -q '"ok":true'; then
+        logger -t mtproxymax-telegram -- "启用 Telegram 命令菜单按钮失败" 2>/dev/null || true
+    fi
+}
+
+tg_prepare_polling() {
+    local response description=""
+    response=$(curl -s --max-time 10 -X POST \
+        -K <(printf 'url = "https://api.telegram.org/bot%s/deleteWebhook"\n' "$TELEGRAM_BOT_TOKEN") \
+        --data-urlencode "drop_pending_updates=false" 2>/dev/null) || response=""
+    if ! printf '%s' "$response" | grep -q '"ok":true'; then
+        description=$(printf '%s' "$response" | sed -n 's/.*"description"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)
+        logger -t mtproxymax-telegram -- "清理 Telegram webhook 失败：${description:-Telegram API 返回异常}" 2>/dev/null || true
+        return 1
+    fi
+    return 0
+}
+
 tg_public_menu() {
     local cid="$1" msg="${2:-请选择需要的服务：}"
     local kb='{"inline_keyboard":[[{"text":"📊 我的状态","callback_data":"public_status"},{"text":"🎟 兑换码","callback_data":"public_redeem"}],[{"text":"💬 联系支持","callback_data":"public_support"},{"text":"❓ 帮助","callback_data":"menu_help"}]]}'
@@ -11665,7 +11714,7 @@ _process_cmd() {
 
     # Public user or unauthenticated commands
     case "$text" in
-        /start|/start@*)
+        /start|/start\ *|/start@*|/menu|/menu@*)
             if [ "$role" = "none" ]; then
                 tg_public_menu "$chat_id" "🛡️ *欢迎使用 MTProxyMax 自助服务中心 (${VERSION})*\n\n请选择下方按钮，无需记忆命令。"
             else
@@ -11935,13 +11984,17 @@ _process_cmd() {
             ;;
         /mp_update|/mp_update@*)
             [ "$role" != "superadmin" ] && { tg_send "⛔ 权限不足: 需要超级管理员权限。"; return; }
-            tg_send "🔍 正在检查更新..."
-            local update_out
-            update_out=$("${INSTALL_DIR}/mtproxymax" update </dev/null 2>&1 | sed 's/\x1b\[[0-9;]*m//g' | tail -5)
-            if [ -n "$update_out" ]; then
-                tg_send "📋 更新检查：\n\`\`\`\n${update_out}\n\`\`\`"
+            if command -v systemd-run &>/dev/null; then
+                local update_unit="mtproxymax-update-$(date +%s)"
+                if systemd-run --quiet --collect --unit "$update_unit" \
+                    --setenv=MTPROXYMAX_ASSUME_YES=true \
+                    "${INSTALL_DIR}/mtproxymax" update >/dev/null 2>&1; then
+                    tg_send "⬆️ 更新任务已在后台启动。完成后 Telegram 服务会自动重新生成并重启，请稍后重新发送 /start。"
+                else
+                    tg_send "❌ 无法启动后台更新，请在服务器执行：\`sudo mtproxymax update\`"
+                fi
             else
-                tg_send "✅ 脚本已是最新版本"
+                tg_send "❌ 当前系统不支持安全的后台更新，请在服务器执行：\`sudo mtproxymax update\`"
             fi
             ;;
         /mp_limits|/mp_limits@*)
@@ -12081,6 +12134,8 @@ echo "$$" > "$PID_FILE"
 mkdir -p "$(dirname "$OFFSET_FILE")"
 load_tg_settings
 load_traffic
+tg_prepare_polling
+tg_register_commands
 
 _last_report=0
 _report_interval=$(( ${TELEGRAM_INTERVAL:-6} * 3600 ))

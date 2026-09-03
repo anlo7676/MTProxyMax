@@ -19,7 +19,7 @@ TESTS_FAILED=0
 assert_contains() {
     local name="$1" pattern="$2"
     TESTS_RUN=$((TESTS_RUN + 1))
-    if grep -Fq "$pattern" "$BOT_SCRIPT"; then
+    if grep -Fq -- "$pattern" "$BOT_SCRIPT"; then
         printf '  PASS  %s\n' "$name"
     else
         TESTS_FAILED=$((TESTS_FAILED + 1))
@@ -42,6 +42,12 @@ assert_contains "status callback is emitted" '"callback_data":"admin_status"'
 assert_contains "callback queries are parsed" "r.get('callback_query',{})"
 assert_contains "callback clicks are acknowledged" 'answerCallbackQuery'
 assert_contains "callback routes to status handler" 'admin_status) text='
+assert_contains "native command menu is registered" 'setMyCommands'
+assert_contains "native menu button is enabled" 'setChatMenuButton'
+assert_contains "polling removes conflicting webhook" 'deleteWebhook'
+assert_contains "start payloads open the menu" '/start\ *'
+assert_contains "menu command opens the menu" '/menu|/menu@*'
+assert_contains "bot update is non-interactive" '--setenv=MTPROXYMAX_ASSUME_YES=true'
 
 MAIN_SCRIPT="$(dirname "$0")/../mtproxymax.sh"
 TESTS_RUN=$((TESTS_RUN + 1))
