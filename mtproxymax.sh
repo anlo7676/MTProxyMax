@@ -12801,8 +12801,8 @@ replication_promote() {
         log_warn "在 ${REPLICATION_SSH_KEY_PATH} 未找到 SSH 密钥"
         log_info "请运行 'mtproxymax replication setup' 生成密钥并配置从节点"
     fi
-    log_info "添加从节点s:  mtproxymax replication add <host>"
-    log_info "Enable sync: mtproxymax replication enable"
+    log_info "添加从节点：mtproxymax replication add <host>"
+    log_info "启用同步：mtproxymax replication enable"
 }
 
 
@@ -12811,19 +12811,19 @@ replication_promote() {
 run_installer() {
     show_banner
 
-    echo -e "  ${BRIGHT_GREEN}Welcome to MTProxyMax — the ultimate Telegram proxy manager${NC}"
-    echo -e "  ${DIM}by SamNet Technologies${NC}"
+    echo -e "  ${BRIGHT_GREEN}欢迎使用 MTProxyMax——全能 Telegram 代理管理器${NC}"
+    echo -e "  ${DIM}SamNet Technologies 出品${NC}"
     echo ""
 
     check_root "$@"
 
     # Check if already installed
     if [ -f "${INSTALL_DIR}/mtproxymax" ]; then
-        echo -e "  ${YELLOW}MTProxyMax is already installed.${NC}"
+        echo -e "  ${YELLOW}MTProxyMax 已安装。${NC}"
         echo ""
-        echo -e "  ${DIM}[1]${NC} Open management menu"
-        echo -e "  ${DIM}[2]${NC} Reinstall"
-        echo -e "  ${DIM}[3]${NC} Uninstall"
+        echo -e "  ${DIM}[1]${NC} 打开管理菜单"
+        echo -e "  ${DIM}[2]${NC} 重新安装"
+        echo -e "  ${DIM}[3]${NC} 卸载"
         echo -e "  ${DIM}[0]${NC} 退出"
 
         local choice
