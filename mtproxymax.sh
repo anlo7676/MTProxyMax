@@ -45,7 +45,7 @@ REGISTRY_IMAGE="ghcr.io/samnet-dev/mtproxymax-telemt"
 
 # Bash version check
 if [ "${BASH_VERSINFO[0]:-0}" -lt 4 ]; then
-    echo "错误：MTProxyMax 需要 Bash 4.2 或更高版本。live版本：${BASH_VERSION:-未知}" >&2
+    echo "错误：MTProxyMax 需要 Bash 4.2 或更高版本。当前版本：${BASH_VERSION:-未知}" >&2
     exit 1
 fi
 
@@ -985,7 +985,7 @@ load_upstreams() {
             direct|socks5|socks4) ;;
             *) _type="direct" ;;
         esac
-        local _weight="${权重：-10}"
+        local _weight="${weight:-10}"
         [[ "$_weight" =~ ^[0-9]+$ ]] && [ "$_weight" -ge 1 ] && [ "$_weight" -le 100 ] || _weight="10"
         local _enabled="${enabled:-true}"
         [ "$_enabled" != "true" ] && [ "$_enabled" != "false" ] && _enabled="true"
@@ -2455,7 +2455,7 @@ secret_set_adtag() {
 
     # Validate exactly 32 hex chars
     if ! [[ "$ad_tag" =~ ^[0-9a-f]{32}$ ]]; then
-        log_error "Ad-tag must be exactly 32 hexadecimal characters (obtained from @MTProxyBot)"
+        log_error "广告标签必须是恰好 32 位十六进制字符（可从 @MTProxyBot 获取）"
         return 1
     fi
 
@@ -3410,9 +3410,9 @@ secret_generate_links() {
     if [ "$fmt" = "html" ]; then
         [ -z "$outfile" ] && outfile="$(get_export_dir)/mtproxymax-links-$(date +%Y%m%d).html"
         {
-            echo "<html><head><meta charset='utf-8'><title>MTProxyMax Links</title>"
+            echo "<html lang='zh-CN'><head><meta charset='utf-8'><title>MTProxyMax 代理链接</title>"
             echo "<style>body{font-family:monospace;background:#1a1a2e;color:#e0e0e0;padding:20px}a{color:#4fc3f7}.user{margin:20px 0;padding:15px;border:1px solid #333;border-radius:8px}img{margin:10px 0}</style></head><body>"
-            echo "<h1>MTProxyMax Proxy Links</h1><p>Generated: $(date -u '+%Y-%m-%d %H:%M UTC')</p>"
+            echo "<h1>MTProxyMax 代理链接</h1><p>生成时间：$(date -u '+%Y-%m-%d %H:%M UTC')</p>"
             local i
             for i in "${!SECRETS_LABELS[@]}"; do
                 [ "${SECRETS_ENABLED[$i]}" = "true" ] || continue
@@ -3427,7 +3427,7 @@ secret_generate_links() {
     else
         [ -z "$outfile" ] && outfile="$(get_export_dir)/mtproxymax-links-$(date +%Y%m%d).txt"
         {
-            echo "# MTProxyMax Proxy Links — $(date -u '+%Y-%m-%d %H:%M UTC')"
+            echo "# MTProxyMax 代理链接 — $(date -u '+%Y-%m-%d %H:%M UTC')"
             echo ""
             local i
             for i in "${!SECRETS_LABELS[@]}"; do
@@ -4267,10 +4267,10 @@ show_server_info() {
     load_cloud_backup_config 2>/dev/null || true
     [ "${CLOUD_BACKUP_ENABLED:-false}" = "true" ] && cb_st="active (${CLOUD_BACKUP_MODE:-telegram})"
 
-    echo -e "  ${BOLD}Services${NC}"
-    echo -e "    Proxy:        ${proxy_status}"
-    echo -e "    Telegram bot: ${bot_status}"
-    echo -e "    Replication:  ${repl_role}"
+    echo -e "  ${BOLD}服务${NC}"
+    echo -e "    代理：          ${proxy_status}"
+    echo -e "    Telegram 机器人：${bot_status}"
+    echo -e "    复制：          ${repl_role}"
     echo -e "    SSL 防护:   ${ssl_st}"
     echo -e "    QoS shaping:  ${qos_st}"
     echo -e "    Cloud Backup: ${cb_st}"
@@ -4283,9 +4283,9 @@ show_server_info() {
     echo ""
 
     # Security
-    echo -e "  ${BOLD}Security${NC}"
-    echo -e "    Metrics bind: 127.0.0.1:${PROXY_METRICS_PORT:-9090} ${DIM}(localhost only)${NC}"
-    echo -e "    SNI policy:   ${UNKNOWN_SNI_ACTION:-mask}"
+    echo -e "  ${BOLD}安全${NC}"
+    echo -e "    指标监听：127.0.0.1:${PROXY_METRICS_PORT:-9090} ${DIM}（仅限本机）${NC}"
+    echo -e "    SNI 策略：${UNKNOWN_SNI_ACTION:-mask}"
     local geo_count=0
     [ -n "$BLOCKLIST_COUNTRIES" ] && geo_count=$(echo "$BLOCKLIST_COUNTRIES" | tr ',' '\n' | wc -l | tr -d ' ')
     echo -e "    Geo-block:    ${GEOBLOCK_MODE:-blacklist} (${geo_count} countries)"
@@ -4294,9 +4294,9 @@ show_server_info() {
     # Disk
     local disk_usage
     disk_usage=$(df -h "$INSTALL_DIR" 2>/dev/null | awk 'NR==2{print $3"/"$2" ("$5")"}')
-    echo -e "  ${BOLD}Storage${NC}"
-    echo -e "    Install dir:  ${INSTALL_DIR}"
-    echo -e "    Disk used:    ${disk_usage:-—}"
+    echo -e "  ${BOLD}存储${NC}"
+    echo -e "    安装目录：${INSTALL_DIR}"
+    echo -e "    磁盘用量：${disk_usage:-—}"
     echo ""
 }
 
@@ -6108,19 +6108,19 @@ run_ddns() {
             DDNS_CF_ZONE_ID="$zone"
             DDNS_RECORD_NAME="$record"
             save_settings
-            log_success "Cloudflare DDNS configured for record: ${record}"
+            log_success "已为记录 ${record} 配置 Cloudflare DDNS"
             run_ddns run
             ;;
         run|update)
             load_settings
             if [ "${DDNS_ENABLED:-false}" != "true" ] || [ -z "${DDNS_CF_TOKEN:-}" ]; then
-                log_error "DDNS is not enabled or configured. Run: mtproxymax ddns set <token> <zone_id> <record_name>"
+                log_error "DDNS 未启用或未配置。请运行：mtproxymax ddns set <token> <zone_id> <record_name>"
                 return 1
             fi
             local cur_ip
             cur_ip=$(get_public_ip)
-            [ -z "$cur_ip" ] && { log_error "无法 detect public IP"; return 1; }
-            log_info "Checking Cloudflare DNS record '${DDNS_RECORD_NAME}' against IP ${cur_ip}..."
+            [ -z "$cur_ip" ] && { log_error "无法检测公网 IP"; return 1; }
+            log_info "正在核对 Cloudflare DNS 记录 '${DDNS_RECORD_NAME}' 与 IP ${cur_ip}..."
             local rec_json
             rec_json=$(curl -s -X GET "https://api.cloudflare.com/client/v4/zones/${DDNS_CF_ZONE_ID}/dns_records?type=A&name=${DDNS_RECORD_NAME}" \
                 -H "Authorization: Bearer ${DDNS_CF_TOKEN}" \
@@ -6131,15 +6131,15 @@ run_ddns() {
             old_ip=$(echo "$rec_json" | grep -o '"content":"[^"]*' | head -1 | cut -d'"' -f4)
             
             if [ -z "$rec_id" ]; then
-                log_error "DNS record '${DDNS_RECORD_NAME}' 未找到 in zone ${DDNS_CF_ZONE_ID}"
+                log_error "在区域 ${DDNS_CF_ZONE_ID} 中未找到 DNS 记录 '${DDNS_RECORD_NAME}'"
                 return 1
             fi
             if [ "$old_ip" = "$cur_ip" ]; then
-                log_success "DNS record '${DDNS_RECORD_NAME}' is already up to date (${cur_ip})."
+                log_success "DNS 记录 '${DDNS_RECORD_NAME}' 已是最新值（${cur_ip}）"
                 return 0
             fi
             
-            log_info "Updating DNS record from ${old_ip:-unknown} to ${cur_ip}..."
+            log_info "正在将 DNS 记录从 ${old_ip:-未知} 更新为 ${cur_ip}..."
             local update_res
             update_res=$(curl -s -X PUT "https://api.cloudflare.com/client/v4/zones/${DDNS_CF_ZONE_ID}/dns_records/${rec_id}" \
                 -H "Authorization: Bearer ${DDNS_CF_TOKEN}" \
@@ -7318,12 +7318,12 @@ run_evacuate() {
 run_backup_send_tg() {
     load_settings
     if [ "${TELEGRAM_ENABLED:-false}" != "true" ] || [ -z "${TELEGRAM_BOT_TOKEN:-}" ] || [ -z "${TELEGRAM_CHAT_ID:-}" ]; then
-        log_error "Telegram bot is not configured or disabled. Run: mtproxymax telegram setup"
+        log_error "Telegram 机器人未配置或已禁用。请运行：mtproxymax telegram setup"
         return 1
     fi
     local target_file="${1:-}"
     if [ -z "$target_file" ]; then
-        log_info "Creating fresh backup before sending to Telegram..."
+        log_info "发送到 Telegram 前正在创建新备份..."
         create_backup >/dev/null 2>&1
         target_file=$(ls -t "${BACKUP_DIR:-${INSTALL_DIR}/backups}"/mtproxymax-*.tar.gz* 2>/dev/null | head -1)
     fi
@@ -7331,7 +7331,7 @@ run_backup_send_tg() {
         log_error "Backup file 未找到: ${target_file}"
         return 1
     fi
-    log_info "Sending backup archive (${target_file}) to Telegram admin chat..."
+    log_info "正在向 Telegram 管理员会话发送备份归档（${target_file}）..."
     local res
     res=$(curl -s --max-time 60 -F "chat_id=${TELEGRAM_CHAT_ID}" -F "document=@${target_file}" -F "caption=📦 MTProxyMax 服务器 Backup (${SCRIPT_NAME} v${VERSION})" "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendDocument")
     if echo "$res" | grep -q '"ok":true'; then
@@ -7351,17 +7351,17 @@ run_daily_report() {
             DAILY_REPORT_ENABLED="true"
             DAILY_REPORT_TIME="$time_spec"
             save_settings
-            log_success "Automated Daily Morning Executive Briefing enabled at ${time_spec}."
+            log_success "已启用每日自动简报，发送时间为 ${time_spec}"
             ;;
         off|disable)
             check_root
             DAILY_REPORT_ENABLED="false"
             save_settings
-            log_success "Automated Daily Morning Executive Briefing disabled."
+            log_success "已禁用每日自动简报"
             ;;
         run|send)
             if [ "${TELEGRAM_ENABLED:-false}" != "true" ] || [ -z "${TELEGRAM_BOT_TOKEN:-}" ] || [ -z "${TELEGRAM_CHAT_ID:-}" ]; then
-                log_error "Telegram bot not configured."
+                log_error "Telegram 机器人尚未配置"
                 return 1
             fi
             load_secrets
@@ -7374,33 +7374,35 @@ run_daily_report() {
                 fi
             done
             local uptime_str
-            if is_proxy_running; then uptime_str="🟢 Online"; else uptime_str="🔴 Offline"; fi
+            if is_proxy_running; then uptime_str="🟢 在线"; else uptime_str="🔴 离线"; fi
             local score=100
             if [ "${STEALTH_SHIELD:-false}" != "true" ]; then score=$((score - 20)); fi
             if [ "${STEALTH_PRESET:-normal}" != "ultra" ]; then score=$((score - 20)); fi
-            local msg="☀️ *MTProxyMax Daily Briefing*\n\n"
-            msg+="📈 *状态:* ${uptime_str}\n"
-            msg+="👥 *Users:* ${active_users} active (${total_users} total)\n"
-            msg+="🛡️ *Anti-DPI Score:* ${score}/100\n"
-            msg+="🏎️ *QoS Limit:* ${QOS_LIMIT_MBPS:-已禁用} Mbps\n"
-            msg+="🌐 *Multi-Domain Pool:* ${PROXY_DOMAIN:-Default}\n"
+            local qos_brief="已禁用"
+            [ "${QOS_LIMIT_MBPS:-0}" -gt 0 ] 2>/dev/null && qos_brief="${QOS_LIMIT_MBPS} Mbps"
+            local msg="☀️ *MTProxyMax 每日简报*\n\n"
+            msg+="📈 *状态：* ${uptime_str}\n"
+            msg+="👥 *用户：* ${active_users} 个活跃（共 ${total_users} 个）\n"
+            msg+="🛡️ *抗 DPI 评分：* ${score}/100\n"
+            msg+="🏎️ *QoS 限制：* ${qos_brief}\n"
+            msg+="🌐 *多域名池：* ${PROXY_DOMAIN:-默认}\n"
             # v1.4 LTS details
             load_ssl_config 2>/dev/null || true
             local ssl_brief="已禁用"; [ "${SSL_ENABLED:-false}" = "true" ] && ssl_brief="有效 (${SSL_DOMAIN})"
             msg+="🔐 *SSL 防护:* ${ssl_brief}\n"
             load_speed_limits 2>/dev/null || true
-            local sl_brief="None"; [ "${#SPEED_LIMIT_TARGETS[@]}" -gt 0 ] && sl_brief="${#SPEED_LIMIT_TARGETS[@]} 条规则"
+            local sl_brief="无"; [ "${#SPEED_LIMIT_TARGETS[@]}" -gt 0 ] && sl_brief="${#SPEED_LIMIT_TARGETS[@]} 条规则"
             msg+="🚀 *HTB QoS:* ${sl_brief}\n"
             load_cloud_backup_config 2>/dev/null || true
             local cb_brief="已禁用"; [ "${CLOUD_BACKUP_ENABLED:-false}" = "true" ] && cb_brief="有效 (${CLOUD_BACKUP_MODE:-telegram})"
-            msg+="☁️ *Cloud Backup:* ${cb_brief}"
+            msg+="☁️ *云备份：* ${cb_brief}"
             tg_send "$msg"
-            log_success "Daily briefing sent to Telegram."
+            log_success "每日简报已发送到 Telegram"
             ;;
         status|"")
-            echo -e "\n  📰 ${BOLD}Automated Daily Morning Executive Briefing:${NC}"
+            echo -e "\n  📰 ${BOLD}每日自动简报：${NC}"
             if [ "${DAILY_REPORT_ENABLED:-false}" = "true" ]; then
-                echo -e "     状态:    ${GREEN}已启用${NC} (Schedule: ${DAILY_REPORT_TIME:-08:00})"
+                echo -e "     状态：${GREEN}已启用${NC}（发送时间：${DAILY_REPORT_TIME:-08:00}）"
             else
                 echo -e "     状态:    ${YELLOW}已禁用${NC}"
             fi
@@ -7420,7 +7422,7 @@ run_ssh_shield() {
         on|enable)
             check_root
             if ! command -v fail2ban-client >/dev/null 2>&1; then
-                log_info "Installing fail2ban package..."
+                log_info "正在安装 fail2ban 软件包..."
                 if command -v apt-get >/dev/null 2>&1; then apt-get update -qq && apt-get install -y -qq fail2ban;
                 elif command -v dnf >/dev/null 2>&1; then dnf install -y -q fail2ban;
                 elif command -v yum >/dev/null 2>&1; then yum install -y -q fail2ban;
@@ -7528,11 +7530,11 @@ run_onboard_wizard() {
     load_settings
     load_secrets
     local label="$1"
-    echo -e "\n  🧙 ${BOLD}Smart User Onboarding Wizard${NC}\n"
+    echo -e "\n  🧙 ${BOLD}智能用户引导向导${NC}\n"
     if [ -z "$label" ]; then
-        read -rp "  Enter User 标签 (e.g. VIP_Alice): " label
+        read -rp "  输入用户标签（例如 VIP_Alice）：" label
     fi
-    if [ -z "$label" ]; then log_error "User label cannot be empty."; return 1; fi
+    if [ -z "$label" ]; then log_error "用户标签不能为空"; return 1; fi
 
     local dev_choice conns=15
     read -rp "  Device Tier [1=1 phone (9 conns), 2=2 phones (15 conns), 3=Family (30 conns)] (default: 2): " dev_choice
@@ -7755,9 +7757,9 @@ run_heal() {
     if [ "$freed_ram" -lt 0 ]; then freed_ram=0; fi
 
     echo -e "  ┌────────────────────────────────────────────────────────┐"
-    echo -e "  │  Reclaimed RAM Cache:    $(printf "%-26s" "+${freed_ram} MB") │"
-    echo -e "  │  Purged Dead Sockets:    $(printf "%-26s" "${sockets_before} -> ${sockets_after}") │"
-    echo -e "  │  有效 Users Impacted:  $(printf "%-26s" "0 (Zero Disruption)") │"
+    echo -e "  │  已回收内存缓存：        $(printf "%-26s" "+${freed_ram} MB") │"
+    echo -e "  │  已清理失效套接字：      $(printf "%-26s" "${sockets_before} -> ${sockets_after}") │"
+    echo -e "  │  受影响的有效用户：      $(printf "%-26s" "0（服务无中断）") │"
     echo -e "  └────────────────────────────────────────────────────────┘\n"
 }
 
@@ -9783,25 +9785,26 @@ self_update() {
     local _url="https://raw.githubusercontent.com/${GITHUB_REPO}/main/mtproxymax.sh"
 
     echo ""
-    log_info "Checking for script updates..."
+    log_info "正在检查脚本更新..."
 
     local _tmp
-    _tmp=$(_mktemp) || return 1
+    # 候选文件与目标文件放在同一文件系统，最终重命名可以原子完成。
+    _tmp=$(_mktemp "$INSTALL_DIR") || return 1
 
     if curl -fsSL --max-time 60 --max-filesize 5242880 -o "$_tmp" "$_url" 2>/dev/null; then
         # Validate: bash syntax + sanity check
         if ! bash -n "$_tmp" 2>/dev/null; then
-            log_error "Downloaded script has syntax errors — aborting"
+            log_error "下载的脚本存在语法错误，已中止更新"
             rm -f "$_tmp"; return 1
         fi
         if ! grep -q "GITHUB_REPO=\"anlo7676/MTProxyMax\"" "$_tmp" 2>/dev/null; then
-            log_error "Downloaded file doesn't look like MTProxyMax — aborting"
+            log_error "下载的文件不是预期的 MTProxyMax 脚本，已中止更新"
             rm -f "$_tmp"; return 1
         fi
         local _dl_size
         _dl_size=$(wc -c < "$_tmp")
         if [ "$_dl_size" -lt 10000 ]; then
-            log_error "Downloaded file too small (${_dl_size} bytes) — possible truncated download"
+            log_error "下载文件过小（${_dl_size} 字节），文件可能不完整"
             rm -f "$_tmp"; return 1
         fi
 
@@ -9814,7 +9817,7 @@ self_update() {
         _remote_hash=$(sha256sum "$_tmp" | cut -d' ' -f1)
 
         if [ "$_local_hash" = "$_remote_hash" ]; then
-            log_success "Script is already up to date (v${_new_ver:-${VERSION}})"
+            log_success "脚本已是最新版本（v${_new_ver:-${VERSION}}）"
             rm -f "$_tmp" "$_UPDATE_BADGE"
             # Update stored SHA so background check doesn't re-trigger the badge
             local _new_sha
@@ -9824,15 +9827,15 @@ self_update() {
             [ -n "$_new_sha" ] && [ ${#_new_sha} -ge 40 ] && echo "${_new_sha:0:40}" > "$_UPDATE_SHA_FILE" 2>/dev/null || true
             # Detect stale in-memory version (file on disk is newer than running process)
             if [ -n "$_new_ver" ] && [ "$_new_ver" != "$VERSION" ]; then
-                log_warn "运行中 v${VERSION} in memory but disk has v${_new_ver} — restart required"
+                log_warn "内存中运行的是 v${VERSION}，磁盘文件为 v${_new_ver}，需要重新启动脚本"
                 _SCRIPT_NEEDS_REEXEC=true
             fi
         else
-            log_info "Update found: v${_new_ver:-?} (installed: v${VERSION})"
-            echo -en "  ${BOLD}Update now? [y/N]:${NC} "
+            log_info "发现更新：v${_new_ver:-?}（已安装：v${VERSION}）"
+            echo -en "  ${BOLD}现在更新吗？[y/N]：${NC} "
             local _confirm; read -r _confirm
             if [ "$_confirm" != "y" ] && [ "$_confirm" != "Y" ]; then
-                log_info "Skipped"
+                log_info "已跳过更新"
                 rm -f "$_tmp"
             else
                 mkdir -p "$BACKUP_DIR"
@@ -9840,7 +9843,7 @@ self_update() {
                    "${BACKUP_DIR}/mtproxymax.v${VERSION}.$(date +%s)" 2>/dev/null || true
                 chmod +x "$_tmp"
                 mv "$_tmp" "${INSTALL_DIR}/mtproxymax"
-                log_success "Script updated to v${_new_ver:-?}"
+                log_success "脚本已更新到 v${_new_ver:-?}"
                 _script_updated=true
                 _SCRIPT_NEEDS_REEXEC=true
                 rm -f "$_UPDATE_BADGE"
@@ -9860,19 +9863,31 @@ self_update() {
             fi
         fi
     else
-        log_error "Download failed — check your internet connection"
+        log_error "下载失败，请检查网络连接"
         rm -f "$_tmp"
         return 1
+    fi
+
+    # 使用刚安装的新脚本继续更新，避免调用仍驻留内存的旧版函数，
+    # 从而确保守护进程生成器和引擎固定版本也来自新版本。
+    if [ "$_script_updated" = "true" ]; then
+        if [ -n "${_lfd:-}" ]; then
+            trap - RETURN
+            flock -u "$_lfd" 2>/dev/null || true
+            exec {_lfd}>&- 2>/dev/null || true
+        fi
+        "${INSTALL_DIR}/mtproxymax" update
+        return $?
     fi
 
     # Always regenerate and restart Telegram bot service to apply latest daemon code
     if [ "${TELEGRAM_ENABLED:-}" = "true" ]; then
         telegram_generate_service_script
         if command -v systemctl &>/dev/null && [ -f /etc/systemd/system/mtproxymax-telegram.service ]; then
-            log_info "Restarting Telegram bot service..."
+            log_info "正在重启 Telegram 机器人服务..."
             systemctl restart mtproxymax-telegram.service 2>/dev/null \
-                && log_success "Telegram bot service restarted" \
-                || log_warn "Telegram restart failed — run: systemctl restart mtproxymax-telegram.service"
+                && log_success "Telegram 机器人服务已重启" \
+                || log_warn "Telegram 机器人服务重启失败，请运行：systemctl restart mtproxymax-telegram.service"
         fi
     fi
 
@@ -9880,7 +9895,7 @@ self_update() {
     if [ "${REPLICATION_ENABLED:-}" = "true" ]; then
         replication_generate_sync_script
         if command -v systemctl &>/dev/null && [ -f /etc/systemd/system/mtproxymax-sync.service ]; then
-            log_info "Restarting replication sync service..."
+            log_info "正在重启复制同步服务..."
             systemctl restart mtproxymax-sync.service 2>/dev/null || true
         fi
     fi
@@ -9891,11 +9906,11 @@ self_update() {
     local _current_ver
     _current_ver=$(get_telemt_version)
     if [ "$_current_ver" = "$_expected_ver" ]; then
-        log_success "Telemt engine is up to date (v${_current_ver})"
+        log_success "Telemt 引擎已是最新版本（v${_current_ver}）"
     elif _version_gte "$_current_ver" "$_expected_ver"; then
-        log_success "Telemt engine is up to date (v${_current_ver})"
+        log_success "Telemt 引擎已是最新版本（v${_current_ver}）"
     else
-        log_info "Engine update: v${_current_ver} -> v${_expected_ver}"
+        log_info "引擎更新：v${_current_ver} -> v${_expected_ver}"
         build_telemt_image true
         if is_proxy_running; then
             load_secrets
@@ -9907,7 +9922,7 @@ self_update() {
             [ -z "$_old_img" ] && continue
             [[ "$_old_img" == *":${_expected_ver}" ]] && continue
             [[ "$_old_img" == *":latest" ]] && continue
-            docker rmi "$_old_img" 2>/dev/null && log_info "Removed old image: ${_old_img}"
+            docker rmi "$_old_img" 2>/dev/null && log_info "已移除旧镜像：${_old_img}"
         done <<< "$(docker images --format '{{.Repository}}:{{.Tag}}' 2>/dev/null | grep "^${DOCKER_IMAGE_BASE}:")"
         # Also clean registry-prefixed copies
         while IFS= read -r _old_img; do
@@ -10091,7 +10106,7 @@ JSON_EOF
             cat >> "$tmp_json" << USER_JSON_EOF
     "${fs}": {
       "label": "${label}",
-      "status": "$([ "$enabled" = "true" ] && echo "有效" || echo "已禁用")",
+      "status": "$([ "$enabled" = "true" ] && echo "Active" || echo "Disabled")",
       "used_bytes": ${total_b},
       "used_human": "$(format_human_bytes ${total_b})",
       "quota_bytes": ${q_raw},
@@ -10112,10 +10127,10 @@ portal_generate() {
     portal_export_data force
     cat > "${PORTAL_WWW}/index.html" << 'HTML_EOF'
 <!DOCTYPE html>
-<html lang="en">
+<html lang="zh-CN">
 <head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>MTProxy User Portal</title>
+<title>MTProxy 用户门户</title>
 <style>
   :root { --bg: #0d1117; --card: rgba(22, 27, 34, 0.85); --accent: #2f81f7; --text: #e6edf3; --dim: #8b949e; --border: #30363d; }
   body { margin:0; padding:2rem 1rem; font-family: -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; background: var(--bg); color: var(--text); min-height: 90vh; display: flex; justify-content: center; align-items: center; }
@@ -10134,10 +10149,10 @@ portal_generate() {
 </head>
 <body>
 <div class="portal-card">
-  <h1>🛡️ MTProxy User Portal</h1>
-  <div class="subtitle">Check your live quota, status & connection link</div>
-  <input type="text" id="secInput" placeholder="Paste your 密钥 Key (ee...)" autocomplete="off">
-  <button onclick="lookup()">Check 状态</button>
+  <h1>🛡️ MTProxy 用户门户</h1>
+  <div class="subtitle">查询实时配额、状态和连接链接</div>
+  <input type="text" id="secInput" placeholder="粘贴密钥（ee...）" autocomplete="off">
+  <button onclick="lookup()">查询状态</button>
   <div id="result"></div>
 </div>
 <script>
@@ -10152,17 +10167,17 @@ async function lookup() {
     if(!u) {
       for(let k in data.users) { if(data.users[k].label.toLowerCase() === q.toLowerCase()) { u = data.users[k]; break; } }
     }
-    if(!u) { resDiv.style.display='block'; resDiv.innerHTML='<div style="color:#f85149;text-align:center;">❌ 密钥 or user 未找到.</div>'; return; }
+    if(!u) { resDiv.style.display='block'; resDiv.innerHTML='<div style="color:#f85149;text-align:center;">❌ 未找到密钥或用户。</div>'; return; }
     resDiv.style.display='block';
     resDiv.innerHTML = `
-      <div class="stat-row"><span>状态:</span><strong style="color:${u.status==='有效'?'#3fb950':'#f85149'}">${u.status}</strong></div>
-      <div class="stat-row"><span>Account:</span><strong>${u.label}</strong></div>
-      <div class="stat-row"><span>Data Consumed:</span><strong>${u.used_human} / ${u.quota_human}</strong></div>
+      <div class="stat-row"><span>状态：</span><strong style="color:${u.status==='Active'?'#3fb950':'#f85149'}">${u.status==='Active'?'有效':'已禁用'}</strong></div>
+      <div class="stat-row"><span>账户：</span><strong>${u.label}</strong></div>
+      <div class="stat-row"><span>已用流量：</span><strong>${u.used_human} / ${u.quota_human}</strong></div>
       <div class="progress"><div class="progress-fill" style="width:${Math.min(u.usage_percent,100)}%;background:${u.usage_percent>90?'#f85149':'#2f81f7'}"></div></div>
-      <div class="stat-row"><span>Expires:</span><strong>${u.expires}</strong></div>
-      <a class="connect-btn" href="${u.link}">🚀 One-Click 连接</a>
+      <div class="stat-row"><span>到期时间：</span><strong>${u.expires}</strong></div>
+      <a class="connect-btn" href="${u.link}">🚀 一键连接</a>
     `;
-  } catch(e) { resDiv.style.display='block'; resDiv.innerHTML='<div style="color:#f85149;text-align:center;">❌ Error loading data.</div>'; }
+  } catch(e) { resDiv.style.display='block'; resDiv.innerHTML='<div style="color:#f85149;text-align:center;">❌ 数据加载失败。</div>'; }
 }
 </script>
 </body>
