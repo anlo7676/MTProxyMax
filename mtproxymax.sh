@@ -13486,251 +13486,254 @@ list_backups() {
 }
 
 show_cli_help() {
-    echo ""
-    echo -e "  ${BRIGHT_CYAN}${BOLD}MTProxyMax${NC} ${DIM}v${VERSION}${NC} — The Ultimate Telegram Proxy Manager"
-    echo -e "  ${DIM}by SamNet Technologies${NC}"
-    echo ""
-    echo -e "  ${BOLD}用法：${NC} mtproxymax <command> [options]"
-    echo ""
-    echo -e "  ${BOLD}Proxy Management:${NC}"
-    echo -e "    ${GREEN}start${NC}              Start the proxy"
-    echo -e "    ${GREEN}stop${NC}               Stop the proxy"
-    echo -e "    ${GREEN}restart${NC}            Restart the proxy"
-    echo -e "    ${GREEN}status${NC}             Show proxy status"
-    echo ""
-    echo -e "  ${BOLD}密钥 Management:${NC}"
-    echo -e "    ${GREEN}secret add${NC} <label>      Add a new secret"
-    echo -e "    ${GREEN}secret add-batch${NC} <l1> <l2> ...  Add multiple secrets (single restart)"
-    echo -e "    ${GREEN}secret remove${NC} <label>   Remove a secret"
-    echo -e "    ${GREEN}secret remove-batch${NC} <l1> <l2> ...  Remove multiple secrets (single restart)"
-    echo -e "    ${GREEN}secret list${NC}             List all secrets"
-    echo -e "    ${GREEN}secret rotate${NC} <label>   Rotate a secret"
-    echo -e "    ${GREEN}secret link${NC} [label]     Show proxy link"
-    echo -e "    ${GREEN}secret qr${NC} [label]       Show QR code"
-    echo -e "    ${GREEN}secret enable${NC} <label>   Enable a secret"
-    echo -e "    ${GREEN}secret disable${NC} <label>  Disable a secret"
-    echo -e "    ${GREEN}secret limits${NC} [label]   显示用户限制"
-    echo -e "    ${GREEN}secret setlimit${NC} <label> conns|ips|quota|expires <value> [--no-restart]"
-    echo -e "    ${GREEN}secret setlimits${NC} <label> <conns> <ips> <quota> [expires] [--no-restart]"
-    echo -e "    ${GREEN}secret rename${NC} <old> <new>     Rename a secret"
-    echo -e "    ${GREEN}secret clone${NC} <src> <new>      Clone a secret with all its limits"
-    echo -e "    ${GREEN}secret bulk-extend${NC} <days>     Extend all secrets' expiry by N days"
-    echo -e "    ${GREEN}secret export${NC}                 Export secrets to CSV (stdout)"
-    echo -e "    ${GREEN}secret import${NC} <file>          Import secrets from CSV file"
-    echo -e "    ${GREEN}secret disable-expired${NC}        Disable all expired secrets"
-    echo -e "    ${GREEN}secret extend${NC} <label> <days>  Extend expiry by N days"
-    echo -e "    ${GREEN}secret stats${NC}                  Compact per-user stats overview"
-    echo -e "    ${GREEN}secret sort${NC} [traffic|conns|date|name]  Sort secrets list"
-    echo -e "    ${GREEN}secret info${NC} <label>          Full detail view of a secret"
-    echo -e "    ${GREEN}secret search${NC} <query>        Search secrets by label or notes"
-    echo -e "    ${GREEN}secret top${NC} [traffic|conns] [N]  Top N users (default: 5)"
-    echo -e "    ${GREEN}secret generate-links${NC} [txt|html]  Export all links to file"
-    echo -e "    ${GREEN}secret archive${NC} <label>       Soft-delete (restorable)"
-    echo -e "    ${GREEN}secret unarchive${NC} <label>     Restore archived secret"
-    echo -e "    ${GREEN}secret archives${NC}              List archived secrets"
-    echo -e "    ${GREEN}secret tag${NC} <label> <tags>    Tag a secret (comma-separated)"
-    echo -e "    ${GREEN}secret untag${NC} <label>         Remove all tags"
-    echo -e "    ${GREEN}secret tags${NC} [label]          Show tags (all or one secret)"
-    echo -e "    ${GREEN}secret list --tag${NC} <tag>      列出密钥 with a given tag"
-    echo -e "    ${GREEN}secret list --csv${NC}            列出密钥 in CSV format"
-    echo -e "    ${GREEN}secret logs${NC} <label> [lines]  Show activity log for one user"
-    echo -e "    ${GREEN}secret rotate --all${NC}          Rotate ALL secrets (--dry-run to preview)"
-    echo -e "    ${GREEN}secret quota-reset${NC} <label> <day|off>  Monthly quota reset on day N"
-    echo -e "    ${GREEN}secret add --template${NC} <name> <label>  添加密钥 using a template"
-    echo -e "    ${DIM}Tip: add/remove support --no-restart flag for scripting${NC}"
-    echo ""
-    echo -e "  ${BOLD}Upstream Routing:${NC}"
-    echo -e "    ${GREEN}upstream list${NC}                  列出上游代理"
-    echo -e "    ${GREEN}upstream add${NC} <name> <type> <host:port> [user] [pass] [weight] [iface]"
-    echo -e "    ${GREEN}upstream remove${NC} <name>      Remove upstream"
-    echo -e "    ${GREEN}upstream enable${NC} <name>      Enable upstream"
-    echo -e "    ${GREEN}upstream disable${NC} <name>     Disable upstream"
-    echo -e "    ${GREEN}upstream test${NC} <name>        测试连接"
-    echo ""
-    echo -e "  ${BOLD}Configuration:${NC}"
-    echo -e "    ${GREEN}port${NC} [get|<number>]       Show or change proxy port"
-    echo -e "    ${GREEN}bind${NC} [get|<ip4> <ip6>]    Show or change proxy binding addresses"
-    echo -e "    ${GREEN}ip${NC} [get|auto|<address>]   Show, reset, or set custom IP/domain for links"
-    echo -e "    ${GREEN}domain${NC} [get|clear|<host>] 显示、清除或更改 FakeTLS 域名"
-    echo -e "    ${GREEN}domain-pool${NC} [get|<pool>] Configure multi-domain SNI pool (comma-separated)"
-    echo -e "    ${GREEN}syn-shield${NC} [on|off|status] Kernel SYN Shield rate limiter (>15 SYN/5s tarpit)"
-    echo -e "    ${GREEN}stealth${NC} [ultra|normal|status]  Switch stealth defense preset (anti-replay tuning)"
-    echo -e "    ${GREEN}clamp-mss${NC} [on|off|status] Toggle TCP MSS Clamping (--clamp-mss-to-pmtu)"
-    echo -e "    ${GREEN}client-mss${NC} [status|off|tspu]  Configure Telemt client-side MSS (off=normal TCP, tspu=DPI evasion)"
-    echo -e "    ${GREEN}mask-backend${NC} [host:port]  Show or set mask backend for non-proxy traffic"
-    echo -e "    ${GREEN}mask-relay-bytes${NC} [N|0|clear]  Max bytes per direction on mask relay (0=unlimited)"
-    echo -e "    ${GREEN}tg-urls${NC} [get|set <field> <url>|clear]  Custom Telegram infrastructure URLs (restricted regions)"
-    echo -e "    ${GREEN}info${NC}                    Comprehensive server + proxy info"
-    echo -e "    ${GREEN}maintenance${NC} [on|off]    Maintenance mode (reject new connections)"
-    echo -e "    ${GREEN}ban${NC} <ip|cidr>           Ban an IP or CIDR range"
-    echo -e "    ${GREEN}unban${NC} <ip|cidr>         Remove ban"
-    echo -e "    ${GREEN}bans${NC}                    List banned IPs"
-    echo -e "    ${GREEN}migrate export${NC} [file]   Export all state to a tarball"
-    echo -e "    ${GREEN}migrate import${NC} <file>   Import state from a tarball"
-    echo -e "    ${GREEN}changelog${NC}               Show release notes since installed version"
-    echo -e "    ${GREEN}backup --encrypt${NC}        Create AES-256 encrypted backup"
-    echo -e "    ${GREEN}backup autoclean${NC} [days] Delete backups older than N days (default: BACKUP_RETENTION_DAYS)"
-    echo -e "    ${GREEN}auto-rotate${NC} [N|off]     Auto-rotate secrets older than N days"
-    echo -e "    ${GREEN}template${NC} save|list|delete|apply  Manage limit templates"
-    echo -e "    ${GREEN}sweep${NC}                   Run periodic maintenance tasks (quota-reset, auto-rotate, backup cleanup)"
-    echo -e "    ${GREEN}tune${NC} list|get|set|clear Engine tuning (whitelisted params)"
-    echo -e "    ${GREEN}verify${NC}                  End-to-end install verification"
-    echo -e "    ${GREEN}history${NC} [lines]         Show config change audit log"
-    echo -e "    ${GREEN}completion${NC}              Emit bash completion script"
-    echo -e "    ${GREEN}speedtest${NC}               Test outbound bandwidth/latency from server"
-    echo -e "    ${GREEN}adtag${NC} [set <hex>|remove|view] Manage ad-tag"
-    echo -e "    ${GREEN}geoblock${NC} [add|remove|list|clear] Manage geo-blocking"
-    echo -e "    ${GREEN}sni-policy${NC} [mask|drop]       未知 SNI action (mask=permissive, drop=strict)"
-    echo ""
-    echo -e "  ${BOLD}Monitoring:${NC}"
-    echo -e "    ${GREEN}traffic${NC}                 Show traffic stats"
-    echo -e "    ${GREEN}connections${NC}             Show live active connections per user"
-    echo -e "    ${GREEN}metrics${NC}                 Show live engine metrics (connections, upstream, users, ME)"
-    echo -e "    ${GREEN}doctor${NC}                  Comprehensive diagnostics (port, TLS, secrets, disk, bot)"
-    echo -e "    ${GREEN}upload-test${NC}             Audit proxy upload mechanisms, socket write buffers & DC egress"
-    echo -e "    ${GREEN}uptime${NC}                  One-line status (for scripts/monitoring)"
-    echo -e "    ${GREEN}config${NC}                  Show current engine config"
-    echo -e "    ${GREEN}notify${NC} <message>        Send custom Telegram notification"
-    echo -e "    ${GREEN}port-check${NC}              Test if proxy port is reachable from outside"
-    echo -e "    ${GREEN}profile${NC} save|load|list|delete <name>  Config profiles"
-    echo -e "    ${GREEN}metrics live${NC} [seconds]  Auto-refresh metrics dashboard (default: 5s)"
-    echo -e "    ${GREEN}logs${NC}                    Stream container logs"
-    echo -e "    ${GREEN}health${NC}                  Run health diagnostics"
-    echo ""
-    echo -e "  ${BOLD}Anti-DPI & Stealth Defenses:${NC}"
-    echo -e "    ${GREEN}syn-shield${NC} [on|off|status]  Toggle Kernel SYN Shield (>15 SYN/5s tarpit)"
-    echo -e "    ${GREEN}stealth${NC} [ultra|normal|status] Switch Stealth Preset"
-    echo -e "    ${GREEN}clamp-mss${NC} [on|off|status]   Toggle TCP MSS Clamping"
-    echo -e "    ${GREEN}domain-pool${NC} <d1,d2>       Set Multi-Domain SNI Pool"
-    echo -e "    ${GREEN}dpi-inspect${NC}               Run DPI Forensics Analyzer"
-    echo -e "    ${GREEN}cover-watchdog${NC} [test|auto] Test/rotate cover domains"
-    echo -e "    ${GREEN}lockdown${NC} [on|off|status]    Toggle Emergency Lockdown"
-    echo -e "    ${GREEN}port-pool${NC} [add|remove|list] Manage Secondary Port Pool"
-    echo ""
-    echo -e "  ${BOLD}QoS Bandwidth & Quota Intelligence:${NC}"
-    echo -e "    ${GREEN}qos${NC} [set <mbps>|off|status] Manage Per-IP Bandwidth Speed Shaping"
-    echo -e "    ${GREEN}happy-hours${NC} [set <win>|off] Manage Off-Peak Quota Exclusions"
-    echo -e "    ${GREEN}quota-mode${NC} [manager|engine|status] Quota Enforcement Mode (0-disconnect vs strict)"
-    echo -e "    ${GREEN}notify-expiry${NC}             Send Telegram Reminders for Expiring 密钥"
-    echo -e "    ${GREEN}abuse-watch${NC}               Scan Users for Abnormal Bandwidth Usage"
-    echo -e "    ${GREEN}speed-limit${NC} [set|remove|apply|clear|list|status] Hierarchical Token Bucket (HTB) QoS Throttling"
-    echo ""
-    echo -e "  ${BOLD}Enterprise Fleet & Cloud Integration (v1.4 LTS):${NC}"
-    echo -e "    ${GREEN}fleet${NC} [status|collect]         Multi-服务器 Federation Telemetry Dashboard"
-    echo -e "    ${GREEN}ssl${NC} [issue|status|clear]       Automated Let's Encrypt / ACME Certificate Management"
-    echo -e "    ${GREEN}backup-cloud${NC} [toggle|push|status|off] Automated Off-Site Cloud & Telegram Backups"
-    echo ""
-    echo -e "  ${BOLD}Telegram:${NC}"
-    echo -e "    ${GREEN}telegram setup${NC}          Run Telegram bot wizard"
-    echo -e "    ${GREEN}telegram status${NC}         Show Telegram bot status"
-    echo -e "    ${GREEN}telegram test${NC}           Send test message"
-    echo -e "    ${GREEN}broadcast <msg>${NC}         Broadcast announcement via Telegram bot"
-    echo -e "    ${GREEN}telegram disable${NC}        Disable Telegram"
-    echo -e "    ${GREEN}telegram remove${NC}         Remove Telegram bot"
-    echo ""
-    echo -e "  ${BOLD}Replication:${NC}"
-    echo -e "    ${GREEN}replication setup${NC}       Run replication wizard"
-    echo -e "    ${GREEN}replication status${NC}      Show replication status"
-    echo -e "    ${GREEN}replication add${NC} <host> [port] [label]  添加从节点"
-    echo -e "    ${GREEN}replication remove${NC} <label>  移除从节点"
-    echo -e "    ${GREEN}replication list${NC}        列出从节点"
-    echo -e "    ${GREEN}replication enable${NC}      Enable sync"
-    echo -e "    ${GREEN}replication disable${NC}     Disable sync"
-    echo -e "    ${GREEN}replication sync${NC}        立即同步"
-    echo -e "    ${GREEN}replication test${NC} [label] 测试连接"
-    echo -e "    ${GREEN}replication logs${NC}        Show sync log"
-    echo -e "    ${GREEN}replication reset${NC}       Reset to standalone"
-    echo -e "    ${GREEN}replication promote${NC}     Promote slave to master"
-    echo ""
-    echo -e "  ${BOLD}DevOps & Clustering Automation:${NC}"
-    echo -e "    ${GREEN}export-lb${NC} [haproxy|nginx] Export Layer-4 Load Balancer configurations"
-    echo -e "    ${GREEN}ddns${NC} [set|run|status|off] Manage Cloudflare Dynamic DNS Updater"
-    echo -e "    ${GREEN}diag-dump${NC}               Create full diagnostic forensic bundle"
-    echo -e "    ${GREEN}snapshot${NC} [create|restore] Point-in-time configuration snapshots"
-    echo ""
-    echo -e "  ${BOLD}Operational & Analytics Suite:${NC}"
-    echo -e "    ${GREEN}top${NC} [loop|once]           Live ASCII terminal traffic leaderboard & real-time radar"
-    echo -e "    ${GREEN}export-client${NC} [lbl] [fmt]   Export Clash, Sing-Box, Shadowrocket & v2rayN configs"
-    echo -e "    ${GREEN}export-report${NC} [html|csv]  Export standalone HTML dashboard & CSV spreadsheets"
-    echo -e "    ${GREEN}qr-sheet${NC} [output.html]    Generate printable HTML voucher cards & QR grid"
-    echo -e "    ${GREEN}tag${NC} <label> <note|clear>  Attach custom tags (VIP, USDT) & contact organization"
-    echo ""
-    echo -e "  ${BOLD}Commercial & Quota Intelligence Suite:${NC}"
-    echo -e "    ${GREEN}guest${NC} <label> <24h|1gb>   Generate self-destructing burner / disposable links"
-    echo -e "    ${GREEN}pool${NC} [create|add|list]    Create shared family / team quota buckets"
-    echo -e "    ${GREEN}calendar${NC} [wp|hb|status]   Dynamic weekend free pass & holiday bonus scheduler"
-    echo ""
-    echo -e "  ${BOLD}Advanced Network Defense & Anti-DPI Suite:${NC}"
-    echo -e "    ${GREEN}geofence${NC} [allow|block]    Allow-only country whitelist & ASN kernel filtering"
-    echo -e "    ${GREEN}decoy${NC} [setup|status|off]  1-click embedded fake camouflage HTTP website"
-    echo -e "    ${GREEN}auto-sni${NC} [test|apply]     Smart SNI cover domain benchmarker & health rotation"
-    echo -e "    ${GREEN}dc-optimize${NC} [benchmark]   Telegram DC route latency benchmarker & TCP tuner"
-    echo -e "    ${GREEN}ip-score${NC} [check|status]   IP reputation & censorship block probability index"
-    echo ""
-    echo -e "  ${BOLD}Enterprise DevOps & Autonomous Resilience Suite:${NC}"
-    echo -e "    ${GREEN}webhook${NC} [add|remove|list] Discord, Slack & DingTalk real-time event dispatching"
-    echo -e "    ${GREEN}failover${NC} [on|off|status] Automatic upstream failover & DNS health checks"
-    echo -e "    ${GREEN}eco-mode${NC} [on|off|status] CPU & RAM throttling for 256MB micro-server conservation"
-    echo -e "    ${GREEN}chaos-test${NC} [drop|latency]  Sandboxed stress benchmarker & high load resilience testing"
-    echo -e "    ${GREEN}evacuate${NC} [ip] [user]      1-click emergency server migration & data sanitization"
-    echo ""
-    echo -e "  ${BOLD}Operations, Briefings & Onboarding Suite:${NC}"
-    echo -e "    ${GREEN}backup send-tg${NC} [file]     Push server backup archive directly to Telegram bot chat"
-    echo -e "    ${GREEN}daily-report${NC} [on|off|run] Schedule morning executive briefing via Telegram bot"
-    echo -e "    ${GREEN}ssh-shield${NC} [on|off|status] Enable fail2ban SSH brute-force intrusion shield"
-    echo -e "    ${GREEN}net-grade${NC}               Benchmark international routing & assign A+/A/B/C grade"
-    echo -e "    ${GREEN}onboard${NC} [label]           Smart interactive step-by-step user creation wizard"
-    echo ""
-    echo -e "  ${BOLD}Performance, Diagnostics & Self-Healing Suite:${NC}"
-    echo -e "    ${GREEN}tcp-boost${NC} [on|off|status] Activate Linux Kernel TCP BBR & Fast Open booster"
-    echo -e "    ${GREEN}tcp-clean${NC} [on|off|status] Activate aggressive keep-alive dead mobile socket reaper"
-    echo -e "    ${GREEN}socket-boost${NC} [on|off]     Apply ultra-low latency kernel socket queue expansion"
-    echo -e "    ${GREEN}tls-pad${NC} [auto|off|rotate] Dynamic FakeTLS certificate length jitter & randomization"
-    echo -e "    ${GREEN}honeypot${NC} [on|off|status]  Enable active probe decoy redirection & protection"
-    echo -e "    ${GREEN}leak-scan${NC} [thresh]        Detect multi-IP subscription sharing anomalies"
-    echo -e "    ${GREEN}cert-check${NC} [domain]       Inspect cover domain SSL/TLS certificate health"
-    echo -e "    ${GREEN}clone-link${NC}                Export one-line Base64 server replication bundle"
-    echo -e "    ${GREEN}bootstrap${NC} <base64>        Deploy cloned config bundle on a fresh node"
-    echo -e "    ${GREEN}heal${NC}                      Run emergency RAM & dead socket cleanup immediately"
-    echo -e "    ${GREEN}auto-heal${NC} [on|off|status] Enable background automated RAM/socket self-healer"
-    echo -e "    ${GREEN}tcp-fastpath${NC} [on|off]     TCP window scaling, SACK & path MTU probing optimizer"
-    echo -e "    ${GREEN}ram-tune${NC} [auto|off]        Auto-detect RAM & apply optimal TCP memory buffers"
-    echo -e "    ${GREEN}port-hop${NC} [add|remove|list] Dynamic multi-port NAT range redirection"
-    echo -e "    ${GREEN}cpu-tune${NC} [on|off|status]   Multi-core IRQ packet spreading (RPS/RFS)"
-    echo -e "    ${GREEN}bbr${NC} [on|off|status]        Activate TCP BBRv3 Congestion Control & ECN tuning"
-    echo -e "    ${GREEN}shield${NC} [on|off|status]     Activate Anti-DPI Packet Padding & TLS Fingerprint Shield"
-    echo -e "    ${GREEN}cover-shield${NC} [on|off|url]  Activate Reverse-Proxy Cover Shield (有效 Probe Defense)"
-    echo ""
-    echo -e "  ${BOLD}Enterprise Commercial & Shield Suite:${NC}"
-    echo -e "    ${GREEN}voucher create${NC} <cnt> <qta> <dys> Generate batch voucher codes"
-    echo -e "    ${GREEN}voucher list${NC} [active|all]      列出兑换码 and redemption status"
-    echo -e "    ${GREEN}voucher revoke${NC} <code>          Revoke a voucher code"
-    echo -e "    ${GREEN}voucher redeem${NC} <code> [lbl]    兑换兑换码 locally"
-    echo -e "    ${GREEN}admin add${NC} <chat_id> <role>     Add role-based Telegram admin (superadmin/reseller)"
-    echo -e "    ${GREEN}admin remove${NC} <chat_id>         Remove Telegram admin"
-    echo -e "    ${GREEN}admin list${NC}                     List role-based Telegram admins"
-    echo -e "    ${GREEN}portal${NC} [enable|disable|port|generate|serve|status] Manage Self-Service HTML Dashboard"
-    echo -e "    ${GREEN}scanner-shield${NC} [enable|disable|update|status] Automated Shodan/Censys Threat Scanner Shield"
-    echo ""
-    echo -e "  ${BOLD}Info & Help:${NC}"
-    echo -e "    ${GREEN}info${NC}                    Open feature info guide"
-    echo -e "    ${GREEN}firewall${NC}                Show firewall setup guide"
-    echo -e "    ${GREEN}portforward${NC}             Show port forwarding guide"
-    echo ""
-    echo -e "  ${BOLD}Engine:${NC}"
-    echo -e "    ${GREEN}engine status${NC}           Show current engine version"
-    echo -e "    ${GREEN}engine rebuild${NC}          Force rebuild engine image"
-    echo -e "    ${GREEN}rebuild${NC}                 Force rebuild from source"
-    echo ""
-    echo -e "  ${BOLD}System:${NC}"
-    echo -e "    ${GREEN}install${NC}                 Run installation wizard"
-    echo -e "    ${GREEN}menu${NC}                    Open interactive menu"
-    echo -e "    ${GREEN}update${NC}                  检查更新"
-    echo -e "    ${GREEN}uninstall${NC}               Remove MTProxyMax"
-    echo -e "    ${GREEN}version${NC}                 Show version"
-    echo -e "    ${GREEN}help${NC}                    Show this help"
-    echo ""
+    cat <<EOF
+
+  MTProxyMax v${VERSION} — 全能 Telegram 代理管理器
+  SamNet Technologies 出品
+
+  用法：mtproxymax <command> [options]
+
+  代理管理：
+    start              启动代理
+    stop               停止代理
+    restart            重启代理
+    status             查看代理状态
+
+  密钥管理：
+    secret add <label>      添加密钥
+    secret add-batch <l1> <l2> ...  批量添加密钥（仅重启一次）
+    secret remove <label>   移除密钥
+    secret remove-batch <l1> <l2> ...  批量移除密钥（仅重启一次）
+    secret list             列出全部密钥
+    secret rotate <label>   轮换密钥
+    secret link [label]     显示代理链接
+    secret qr [label]       显示二维码
+    secret enable <label>   启用密钥
+    secret disable <label>  禁用密钥
+    secret limits [label]   显示用户限制
+    secret setlimit <label> conns|ips|quota|expires <value> [--no-restart]  设置单项限制
+    secret setlimits <label> <conns> <ips> <quota> [expires] [--no-restart]  同时设置全部限制
+    secret rename <old> <new>     重命名密钥
+    secret clone <src> <new>      克隆密钥及其全部限制
+    secret bulk-extend <days>     将全部密钥的到期时间延长 N 天
+    secret export                 将密钥导出为 CSV（输出到标准输出）
+    secret import <file>          从 CSV 文件导入密钥
+    secret disable-expired        禁用全部过期密钥
+    secret extend <label> <days>  将到期时间延长 N 天
+    secret stats                  显示精简的用户统计概览
+    secret sort [traffic|conns|date|name]  对密钥列表排序
+    secret info <label>           显示密钥完整详情
+    secret search <query>         按标签或备注搜索密钥
+    secret top [traffic|conns] [N]  显示排名前 N 的用户（默认：5）
+    secret generate-links [txt|html]  将全部链接导出到文件
+    secret archive <label>        软删除密钥（可恢复）
+    secret unarchive <label>      恢复已归档密钥
+    secret archives               列出已归档密钥
+    secret tag <label> <tags>     为密钥添加标签（逗号分隔）
+    secret untag <label>          移除全部标签
+    secret tags [label]           显示全部或指定密钥的标签
+    secret list --tag <tag>       列出具有指定标签的密钥
+    secret list --csv             以 CSV 格式列出密钥
+    secret logs <label> [lines]   显示指定用户的活动日志
+    secret rotate --all           轮换全部密钥（使用 --dry-run 预览）
+    secret quota-reset <label> <day|off>  每月第 N 天重置配额
+    secret add --template <name> <label>  使用模板添加密钥
+    提示：add/remove 支持 --no-restart，便于脚本调用
+
+  上游路由：
+    upstream list                  列出上游代理
+    upstream add <name> <type> <host:port> [user] [pass] [weight] [iface]  添加上游代理
+    upstream remove <name>         移除上游代理
+    upstream enable <name>         启用上游代理
+    upstream disable <name>        禁用上游代理
+    upstream test <name>           测试连接
+
+  配置：
+    port [get|<number>]       查看或更改代理端口
+    bind [get|<ip4> <ip6>]    查看或更改代理绑定地址
+    ip [get|auto|<address>]   查看、重置或设置链接使用的自定义 IP/域名
+    domain [get|clear|<host>] 查看、清除或更改 FakeTLS 域名
+    domain-pool [get|<pool>]  配置多域名 SNI 池（逗号分隔）
+    syn-shield [on|off|status] 配置内核 SYN 防护限速（5 秒超过 15 个 SYN 时诱捕）
+    stealth [ultra|normal|status]  切换隐身防护预设（防重放调优）
+    clamp-mss [on|off|status] 切换 TCP MSS 钳制（--clamp-mss-to-pmtu）
+    client-mss [status|off|tspu]  配置 Telemt 客户端 MSS（off=普通 TCP，tspu=DPI 规避）
+    mask-backend [host:port]  查看或设置非代理流量的伪装后端
+    mask-relay-bytes [N|0|clear]  设置伪装中继每个方向的最大字节数（0=不限）
+    tg-urls [get|set <field> <url>|clear]  配置受限地区使用的 Telegram 基础设施地址
+    info                    显示服务器和代理综合信息
+    maintenance [on|off]    控制维护模式（拒绝新连接）
+    ban <ip|cidr>           封禁 IP 或 CIDR 网段
+    unban <ip|cidr>         解除封禁
+    bans                    列出已封禁 IP
+    migrate export [file]   将全部状态导出为归档文件
+    migrate import <file>   从归档文件导入状态
+    changelog               显示安装版本之后的发行说明
+    backup --encrypt        创建 AES-256 加密备份
+    backup autoclean [days] 删除超过 N 天的备份（默认：BACKUP_RETENTION_DAYS）
+    auto-rotate [N|off]     自动轮换超过 N 天的密钥
+    template save|list|delete|apply  管理限制模板
+    sweep                   执行定期维护任务（配额重置、自动轮换、备份清理）
+    tune list|get|set|clear 管理白名单内的引擎调优参数
+    verify                  执行端到端安装验证
+    history [lines]         显示配置变更审计日志
+    completion              输出 Bash 自动补全脚本
+    speedtest               测试服务器出站带宽和延迟
+    adtag [set <hex>|remove|view] 管理广告标签
+    geoblock [add|remove|list|clear] 管理地理位置屏蔽
+    sni-policy [mask|drop]  设置未知 SNI 的处理方式（mask=宽松，drop=严格）
+
+  监控：
+    traffic                 显示流量统计
+    connections             显示各用户的实时活跃连接
+    metrics                 显示实时引擎指标（连接、上游、用户、ME）
+    doctor                  执行综合诊断（端口、TLS、密钥、磁盘、机器人）
+    upload-test             审计代理上传机制、套接字写缓冲区和数据中心出口
+    uptime                  输出单行状态（用于脚本或监控）
+    config                  显示当前引擎配置
+    notify <message>        发送自定义 Telegram 通知
+    port-check              测试代理端口能否从外部访问
+    profile save|load|list|delete <name>  管理配置方案
+    metrics live [seconds]  自动刷新指标面板（默认：5 秒）
+    logs                    实时查看容器日志
+    health                  执行健康诊断
+
+  抗 DPI 与隐身防护：
+    syn-shield [on|off|status]  切换内核 SYN 防护
+    stealth [ultra|normal|status] 切换隐身防护预设
+    clamp-mss [on|off|status]   切换 TCP MSS 钳制
+    domain-pool <d1,d2>         设置多域名 SNI 池
+    dpi-inspect                 运行 DPI 取证分析器
+    cover-watchdog [test|auto]  测试或轮换掩护域名
+    lockdown [on|off|status]    切换紧急锁定
+    port-pool [add|remove|list] 管理辅助端口池
+
+  QoS 带宽与配额管理：
+    qos [set <mbps>|off|status] 管理单 IP 带宽整形
+    happy-hours [set <win>|off] 管理低峰时段免配额规则
+    quota-mode [manager|engine|status] 配额执行模式（断开连接或严格模式）
+    notify-expiry               通过 Telegram 发送密钥到期提醒
+    abuse-watch                 扫描用户异常带宽用量
+    speed-limit [set|remove|apply|clear|list|status] 管理 HTB 分层限速
+
+  企业集群与云集成（v1.4 LTS）：
+    fleet [status|collect]         多服务器联邦遥测面板
+    ssl [issue|status|clear]       自动管理 Let's Encrypt / ACME 证书
+    backup-cloud [toggle|push|status|off] 自动化异地云端与 Telegram 备份
+
+  Telegram：
+    telegram setup          运行 Telegram 机器人向导
+    telegram status         显示 Telegram 机器人状态
+    telegram test           发送测试消息
+    broadcast <msg>         通过 Telegram 机器人广播通知
+    telegram disable        禁用 Telegram 集成
+    telegram remove         移除 Telegram 机器人
+
+  主从复制：
+    replication setup       运行复制向导
+    replication status      显示复制状态
+    replication add <host> [port] [label]  添加从节点
+    replication remove <label>  移除从节点
+    replication list        列出从节点
+    replication enable      启用同步
+    replication disable     禁用同步
+    replication sync        立即同步
+    replication test [label] 测试连接
+    replication logs        显示同步日志
+    replication reset       重置为独立节点
+    replication promote     将从节点提升为主节点
+
+  DevOps 与集群自动化：
+    export-lb [haproxy|nginx] 导出四层负载均衡器配置
+    ddns [set|run|status|off] 管理 Cloudflare 动态 DNS 更新器
+    diag-dump                 创建完整诊断取证包
+    snapshot [create|restore] 创建或恢复时间点配置快照
+
+  运维与分析套件：
+    top [loop|once]           显示实时 ASCII 流量排行榜和雷达
+    export-client [lbl] [fmt] 导出 Clash、Sing-Box、Shadowrocket 和 v2rayN 配置
+    export-report [html|csv]  导出独立 HTML 面板和 CSV 表格
+    qr-sheet [output.html]    生成可打印的 HTML 兑换卡和二维码网格
+    tag <label> <note|clear>  附加自定义标签和联系信息
+
+  商业与配额管理套件：
+    guest <label> <24h|1gb>   生成自动失效的一次性链接
+    pool [create|add|list]    创建家庭或团队共享配额池
+    calendar [wp|hb|status]   管理周末免费流量和节假日奖励计划
+
+  高级网络防护与抗 DPI 套件：
+    geofence [allow|block]    配置仅允许指定国家的白名单和 ASN 内核过滤
+    decoy [setup|status|off]  一键配置嵌入式伪装网站
+    auto-sni [test|apply]     智能测试并轮换 SNI 掩护域名
+    dc-optimize [benchmark]   测试 Telegram 数据中心路由延迟并调优 TCP
+    ip-score [check|status]   检查 IP 信誉及被封锁概率
+
+  企业 DevOps 与自主恢复套件：
+    webhook [add|remove|list] 向 Discord、Slack 和钉钉实时发送事件
+    failover [on|off|status]  自动切换上游并执行 DNS 健康检查
+    eco-mode [on|off|status]  为 256MB 微型服务器限制 CPU 和内存用量
+    chaos-test [drop|latency] 在沙箱中执行压力和高负载恢复测试
+    evacuate [ip] [user]      一键紧急迁移服务器并清理数据
+
+  运维简报与用户开通套件：
+    backup send-tg [file]     将服务器备份直接发送到 Telegram 机器人聊天
+    daily-report [on|off|run] 通过 Telegram 机器人安排每日简报
+    ssh-shield [on|off|status] 启用 fail2ban SSH 暴力破解防护
+    net-grade                 测试国际路由并给出 A+/A/B/C 等级
+    onboard [label]           运行用户创建分步向导
+
+  性能、诊断与自愈套件：
+    tcp-boost [on|off|status] 启用 Linux 内核 TCP BBR 和 Fast Open 加速
+    tcp-clean [on|off|status] 启用失效移动连接清理器
+    socket-boost [on|off]     应用超低延迟内核套接字队列扩展
+    tls-pad [auto|off|rotate] 动态随机调整 FakeTLS 证书长度
+    honeypot [on|off|status]  启用主动探测诱饵重定向与防护
+    leak-scan [thresh]        检测多 IP 共享订阅异常
+    cert-check [domain]       检查掩护域名 SSL/TLS 证书健康状态
+    clone-link                导出单行 Base64 服务器复制包
+    bootstrap <base64>        在新节点部署克隆配置包
+    heal                      立即清理内存和失效套接字
+    auto-heal [on|off|status] 启用后台内存和套接字自动修复
+    tcp-fastpath [on|off]     优化 TCP 窗口缩放、SACK 和路径 MTU 探测
+    ram-tune [auto|off]       自动检测内存并应用最佳 TCP 缓冲区
+    port-hop [add|remove|list] 管理动态多端口 NAT 重定向
+    cpu-tune [on|off|status]  启用多核 IRQ 数据包分流（RPS/RFS）
+    bbr [on|off|status]       启用 TCP BBRv3 拥塞控制与 ECN 调优
+    shield [on|off|status]    启用抗 DPI 数据包填充与 TLS 指纹防护
+    cover-shield [on|off|url] 启用反向代理掩护与主动探测防御
+
+  企业商业与防护套件：
+    voucher create <cnt> <qta> <dys> 批量生成兑换码
+    voucher list [active|all]      列出兑换码及兑换状态
+    voucher revoke <code>          撤销兑换码
+    voucher redeem <code> [lbl]    在本机兑换兑换码
+    admin add <chat_id> <role>     添加基于角色的 Telegram 管理员
+    admin remove <chat_id>         移除 Telegram 管理员
+    admin list                     列出基于角色的 Telegram 管理员
+    portal [enable|disable|port|generate|serve|status] 管理自助 HTML 面板
+    scanner-shield [enable|disable|update|status] 管理 Shodan/Censys 威胁扫描器防护
+
+  信息与帮助：
+    info                    打开功能说明
+    firewall                显示防火墙设置指南
+    portforward             显示端口转发指南
+
+  引擎：
+    engine status           显示当前引擎版本
+    engine rebuild          强制重建引擎镜像
+    rebuild                 强制从源码重新构建
+
+  系统：
+    install                 运行安装向导
+    menu                    打开交互式菜单
+    update                  检查更新
+    uninstall               移除 MTProxyMax
+    version                 显示版本
+    help                    显示此帮助
+
+EOF
 }
+
 
 _json_escape() {
     local s="$1"
