@@ -10785,29 +10785,34 @@ telegram_get_chat_id() {
     response=$(curl -s --max-time 10 -K "$_cfg" 2>/dev/null) || true
     rm -f "$_cfg"
 
-    local chat_id
+    local chat_id update_id
     # Try Python first
     if command -v python3 &>/dev/null; then
-        chat_id=$(echo "$response" | python3 -c "
+        local parsed_update
+        parsed_update=$(echo "$response" | python3 -c "
 import json,sys
 try:
     data=json.load(sys.stdin)
     for r in reversed(data.get('result',[])):
         msg=r.get('message',r.get('my_chat_member',{}))
         if 'chat' in msg:
-            print(msg['chat']['id'])
+            print(str(r.get('update_id',''))+'|'+str(msg['chat']['id']))
             break
 except: pass
 " 2>/dev/null)
+        update_id="${parsed_update%%|*}"
+        chat_id="${parsed_update#*|}"
     fi
 
     # Fallback: grep
     if [ -z "$chat_id" ]; then
-        chat_id=$(echo "$response" | grep -oE '"chat"\s*:\s*\{[^}]*"id"\s*:\s*(-?[0-9]+)' | head -1 | grep -oE -- '-?[0-9]+$')
+        chat_id=$(echo "$response" | grep -oE '"chat"\s*:\s*\{[^}]*"id"\s*:\s*(-?[0-9]+)' | tail -1 | grep -oE -- '-?[0-9]+$')
+        update_id=$(echo "$response" | grep -oE '"update_id"\s*:\s*[0-9]+' | tail -1 | grep -oE '[0-9]+$')
     fi
 
     if [ -n "$chat_id" ]; then
         TELEGRAM_CHAT_ID="$chat_id"
+        TELEGRAM_UPDATE_ID="$update_id"
         return 0
     fi
     return 1
@@ -10896,6 +10901,12 @@ telegram_setup_wizard() {
 
     TELEGRAM_BOT_TOKEN="$token"
 
+    # Only one getUpdates consumer may run per bot. Stop the existing daemon so
+    # it cannot consume /start before the setup wizard reads the chat ID.
+    if command -v systemctl &>/dev/null; then
+        systemctl stop mtproxymax-telegram.service 2>/dev/null || true
+    fi
+
     echo ""
     echo -e "  ${BOLD}步骤 2：获取会话 ID${NC}"
     echo -e "  ${DIM}在 Telegram 中向机器人（@${bot_name}）发送 /start，然后在此处按回车键。${NC}"
@@ -10907,6 +10918,12 @@ telegram_setup_wizard() {
 
     if telegram_get_chat_id; then
         log_success "已检测到会话 ID：${TELEGRAM_CHAT_ID}"
+        # Rebase a stale offset (for example after changing bot token). Keep the
+        # detected /start pending so the freshly generated daemon displays menu.
+        if [[ "${TELEGRAM_UPDATE_ID:-}" =~ ^[0-9]+$ ]]; then
+            mkdir -p "${INSTALL_DIR}/relay_stats"
+            printf '%s\n' "$TELEGRAM_UPDATE_ID" > "${INSTALL_DIR}/relay_stats/tg_offset"
+        fi
     else
         echo ""
         echo -e "  ${YELLOW}无法自动检测会话 ID。${NC}"
@@ -10917,6 +10934,7 @@ telegram_setup_wizard() {
             TELEGRAM_CHAT_ID="$manual_id"
         else
             log_error "会话 ID 无效"
+            command -v systemctl &>/dev/null && systemctl start mtproxymax-telegram.service 2>/dev/null || true
             return 1
         fi
     fi

@@ -43,5 +43,16 @@ assert_contains "callback queries are parsed" "r.get('callback_query',{})"
 assert_contains "callback clicks are acknowledged" 'answerCallbackQuery'
 assert_contains "callback routes to status handler" 'admin_status) text='
 
+MAIN_SCRIPT="$(dirname "$0")/../mtproxymax.sh"
+TESTS_RUN=$((TESTS_RUN + 1))
+if grep -Fq 'systemctl stop mtproxymax-telegram.service' "$MAIN_SCRIPT" && \
+   grep -Fq 'TELEGRAM_UPDATE_ID' "$MAIN_SCRIPT" && \
+   grep -Fq 'relay_stats/tg_offset' "$MAIN_SCRIPT"; then
+    printf '  PASS  setup prevents polling race and rebases offset\n'
+else
+    TESTS_FAILED=$((TESTS_FAILED + 1))
+    printf '  FAIL  setup prevents polling race and rebases offset\n'
+fi
+
 printf '\n%d tests, %d failures\n' "$TESTS_RUN" "$TESTS_FAILED"
 [ "$TESTS_FAILED" -eq 0 ]
