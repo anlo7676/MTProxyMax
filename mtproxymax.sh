@@ -11077,9 +11077,10 @@ tg_send() {
     local label="${TELEGRAM_SERVER_LABEL:-MTProxyMax}"
     local _ip; _ip=$(get_cached_ip)
     [ -n "$_ip" ] && msg="[$(_esc "$label") | ${_ip}] ${msg}" || msg="[$(_esc "$label")] ${msg}"
+    local target_cid="${TG_REPLY_CHAT_ID:-${TELEGRAM_CHAT_ID}}"
     curl -s --max-time 10 -X POST \
         -K <(printf 'url = "https://api.telegram.org/bot%s/sendMessage"\n' "$TELEGRAM_BOT_TOKEN") \
-        --data-urlencode "chat_id=${TELEGRAM_CHAT_ID}" \
+        --data-urlencode "chat_id=${target_cid}" \
         --data-urlencode "text=${msg}" \
         --data-urlencode "parse_mode=Markdown" >/dev/null 2>&1
     webhook_send "$1" 2>/dev/null || true
@@ -11089,11 +11090,67 @@ tg_send_to() {
     local target_cid="$1"
     local msg
     msg=$(printf '%b' "$2")
-    curl -s --max-time 10 -X POST \
-        -K <(printf 'url = "https://api.telegram.org/bot%s/sendMessage"\n' "$TELEGRAM_BOT_TOKEN") \
-        --data-urlencode "chat_id=${target_cid}" \
-        --data-urlencode "text=${msg}" \
-        --data-urlencode "parse_mode=Markdown" >/dev/null 2>&1
+    local reply_markup="${3:-}"
+    local -a send_args=(
+        -s --max-time 10 -X POST
+        -K <(printf 'url = "https://api.telegram.org/bot%s/sendMessage"\n' "$TELEGRAM_BOT_TOKEN")
+        --data-urlencode "chat_id=${target_cid}"
+        --data-urlencode "text=${msg}"
+        --data-urlencode "parse_mode=Markdown"
+    )
+    [ -n "$reply_markup" ] && send_args+=(--data-urlencode "reply_markup=${reply_markup}")
+    curl "${send_args[@]}" >/dev/null 2>&1
+}
+
+tg_public_menu() {
+    local cid="$1" msg="${2:-请选择需要的服务：}"
+    local kb='{"keyboard":[[{"text":"📊 我的状态"},{"text":"🎟 兑换码"}],[{"text":"💬 联系支持"},{"text":"❓ 帮助"}]],"resize_keyboard":true,"is_persistent":true}'
+    tg_send_to "$cid" "$msg" "$kb"
+}
+
+tg_admin_menu() {
+    local cid="$1" msg="${2:-请选择管理操作：}"
+    local kb='{"keyboard":[[{"text":"📊 运行状态"},{"text":"📈 流量报告"}],[{"text":"🔑 密钥管理"},{"text":"🔗 代理链接"}],[{"text":"🩺 健康检查"},{"text":"🛡 安全管理"}],[{"text":"⚙️ 更多功能"},{"text":"❓ 帮助"}]],"resize_keyboard":true,"is_persistent":true}'
+    tg_send_to "$cid" "$msg" "$kb"
+}
+
+tg_secret_menu() {
+    local cid="$1"
+    local kb='{"keyboard":[[{"text":"📋 密钥列表"},{"text":"➕ 添加密钥"}],[{"text":"✅ 启用密钥"},{"text":"⛔ 禁用密钥"}],[{"text":"🔄 轮换密钥"},{"text":"🗑 删除密钥"}],[{"text":"📏 用户限制"},{"text":"✏️ 设置限制"}],[{"text":"⬅️ 返回主菜单"}]],"resize_keyboard":true,"is_persistent":true}'
+    tg_send_to "$cid" "🔑 *密钥管理*\n\n请选择操作，机器人会继续提示所需信息。" "$kb"
+}
+
+tg_security_menu() {
+    local cid="$1"
+    local kb='{"keyboard":[[{"text":"🔒 锁定状态"},{"text":"🚨 启用锁定"}],[{"text":"🔓 关闭锁定"},{"text":"📊 系统摘要"}],[{"text":"⬅️ 返回主菜单"}]],"resize_keyboard":true,"is_persistent":true}'
+    tg_send_to "$cid" "🛡 *安全管理*" "$kb"
+}
+
+tg_more_menu() {
+    local cid="$1"
+    local kb='{"keyboard":[[{"text":"🌐 上游代理"},{"text":"🌍 集群状态"}],[{"text":"🎟 兑换码管理"},{"text":"💬 回复工单"}],[{"text":"📢 广播消息"},{"text":"⬆️ 检查更新"}],[{"text":"🔄 重启代理"},{"text":"⬅️ 返回主菜单"}]],"resize_keyboard":true,"is_persistent":true}'
+    tg_send_to "$cid" "⚙️ *更多功能*" "$kb"
+}
+
+tg_voucher_menu() {
+    local cid="$1"
+    local kb='{"keyboard":[[{"text":"➕ 生成兑换码"},{"text":"📋 有效兑换码"}],[{"text":"⬅️ 返回主菜单"}]],"resize_keyboard":true,"is_persistent":true}'
+    tg_send_to "$cid" "🎟 *兑换码管理*" "$kb"
+}
+
+tg_state_file() { printf '%s/relay_stats/tg_state_%s' "$INSTALL_DIR" "$1"; }
+tg_set_state() { mkdir -p "${INSTALL_DIR}/relay_stats"; printf '%s' "$2" > "$(tg_state_file "$1")"; }
+tg_take_state() {
+    local f; f=$(tg_state_file "$1")
+    [ -f "$f" ] || return 0
+    cat "$f" 2>/dev/null
+    rm -f "$f"
+}
+
+tg_prompt() {
+    local cid="$1" state="$2" msg="$3"
+    tg_set_state "$cid" "$state"
+    tg_send_to "$cid" "$msg" '{"force_reply":true,"selective":true,"input_field_placeholder":"输入内容，或发送“取消”"}'
 }
 
 tg_send_photo() {
@@ -11416,16 +11473,116 @@ _process_cmd() {
 
     local role
     role=$(_check_tg_role "$chat_id")
+    TG_REPLY_CHAT_ID="$chat_id"
 
     mkdir -p "$INSTALL_DIR" 2>/dev/null || true
     if [ -n "$chat_id" ]; then
         grep -q "^${chat_id}$" "${INSTALL_DIR}/bot_users.txt" 2>/dev/null || echo "$chat_id" >> "${INSTALL_DIR}/bot_users.txt" 2>/dev/null || true
     fi
 
+    # Continue button-driven operations that need one line of user input.
+    local pending_state=""
+    pending_state=$(tg_take_state "$chat_id")
+    if [ -n "$pending_state" ]; then
+        case "$text" in
+            取消|❌\ 取消|/cancel)
+                [ "$role" = "none" ] && tg_public_menu "$chat_id" "✅ 操作已取消。" || tg_admin_menu "$chat_id" "✅ 操作已取消。"
+                return
+                ;;
+            /*|📊*|📈*|🔑*|🔗*|🩺*|🛡*|⚙️*|❓*|⬅️*|🎟*|💬*|📋*|➕*|✅*|⛔*|🔄*|🗑*|📏*|✏️*|🔒*|🚨*|🔓*|🌐*|🌍*|📢*|⬆️*)
+                # Explicit commands and navigation buttons supersede stale prompts.
+                ;;
+            *)
+                case "$pending_state" in
+                    my_status) text="/my_status $text" ;;
+                    redeem) text="/redeem $text" ;;
+                    support) text="/support $text" ;;
+                    add) text="/mp_add $text" ;;
+                    remove) text="/mp_remove $text" ;;
+                    rotate) text="/mp_rotate $text" ;;
+                    enable) text="/mp_enable $text" ;;
+                    disable) text="/mp_disable $text" ;;
+                    setlimit) text="/mp_setlimit $text" ;;
+                    broadcast) text="/mp_broadcast $text" ;;
+                    voucher_create) text="/mp_voucher create $text" ;;
+                    reply_ticket) text="/reply $text" ;;
+                esac
+                ;;
+        esac
+    fi
+
+    if [ "$role" = "none" ]; then
+        case "$text" in
+            "📊 运行状态"|"📈 流量报告"|"🔑 密钥管理"|"🔗 代理链接"|"🩺 健康检查"|"🛡 安全管理"|"⚙️ 更多功能"|\
+            "📋 密钥列表"|"➕ 添加密钥"|"✅ 启用密钥"|"⛔ 禁用密钥"|"🔄 轮换密钥"|"🗑 删除密钥"|"📏 用户限制"|"✏️ 设置限制"|\
+            "🔒 锁定状态"|"🚨 启用锁定"|"🔓 关闭锁定"|"📊 系统摘要"|"🌐 上游代理"|"🌍 集群状态"|"🎟 兑换码管理"|\
+            "➕ 生成兑换码"|"📋 有效兑换码"|"💬 回复工单"|"📢 广播消息"|"🔄 重启代理"|"⬆️ 检查更新")
+                tg_public_menu "$chat_id" "⛔ 此操作仅限管理员使用。"
+                return
+                ;;
+        esac
+    fi
+
+    # Human-readable keyboard buttons map to the existing command handlers.
+    case "$text" in
+        "📊 我的状态") tg_prompt "$chat_id" my_status "请输入您的账户标签："; return ;;
+        "🎟 兑换码") tg_prompt "$chat_id" redeem "请输入兑换码；如需自定义标签，可输入：\`兑换码 标签\`"; return ;;
+        "💬 联系支持") tg_prompt "$chat_id" support "请直接输入需要提交给管理员的问题："; return ;;
+        "📊 运行状态") text="/mp_status" ;;
+        "📈 流量报告") text="/mp_traffic" ;;
+        "🔗 代理链接") text="/mp_link" ;;
+        "🩺 健康检查") text="/mp_health" ;;
+        "📋 密钥列表") text="/mp_secrets" ;;
+        "➕ 添加密钥") tg_prompt "$chat_id" add "请输入新密钥标签（仅限字母、数字、下划线和短横线）："; return ;;
+        "✅ 启用密钥") tg_prompt "$chat_id" enable "请输入要启用的密钥标签："; return ;;
+        "⛔ 禁用密钥") tg_prompt "$chat_id" disable "请输入要禁用的密钥标签："; return ;;
+        "🔄 轮换密钥") tg_prompt "$chat_id" rotate "请输入要轮换的密钥标签："; return ;;
+        "🗑 删除密钥") tg_prompt "$chat_id" remove "⚠️ 删除后旧链接将失效。请输入要删除的密钥标签："; return ;;
+        "📏 用户限制") text="/mp_limits" ;;
+        "✏️ 设置限制") tg_prompt "$chat_id" setlimit "依次输入：\`标签 最大连接数 最大IP数 流量配额 到期日\`\n例如：\`alice 100 5 5G 2026-12-31\`\n不限请填 0，到期日可省略。"; return ;;
+        "🔒 锁定状态") text="/mp_lockdown" ;;
+        "🚨 启用锁定") text="/mp_lockdown on" ;;
+        "🔓 关闭锁定") text="/mp_lockdown off" ;;
+        "📊 系统摘要") text="/mp_digest" ;;
+        "🌐 上游代理") text="/mp_upstreams" ;;
+        "🌍 集群状态") text="/mp_fleet" ;;
+        "📢 广播消息") tg_prompt "$chat_id" broadcast "请输入要广播给所有机器人用户的消息："; return ;;
+        "💬 回复工单") tg_prompt "$chat_id" reply_ticket "请输入：\`用户聊天ID 回复内容\`"; return ;;
+        "🔄 重启代理") text="/mp_restart" ;;
+        "⬆️ 检查更新") text="/mp_update" ;;
+        "❓ 帮助")
+            if [ "$role" = "none" ]; then
+                tg_public_menu "$chat_id" "❓ *使用帮助*\n\n点击“我的状态”查询配额，点击“兑换码”开通服务，遇到问题可点击“联系支持”。"
+                return
+            fi
+            text="/mp_help"
+            ;;
+        "⬅️ 返回主菜单")
+            [ "$role" = "none" ] && tg_public_menu "$chat_id" || tg_admin_menu "$chat_id"
+            return
+            ;;
+        "🔑 密钥管理") [ "$role" != "none" ] && tg_secret_menu "$chat_id"; return ;;
+        "🛡 安全管理") [ "$role" != "none" ] && tg_security_menu "$chat_id"; return ;;
+        "⚙️ 更多功能") [ "$role" != "none" ] && tg_more_menu "$chat_id"; return ;;
+        "🎟 兑换码管理")
+            tg_voucher_menu "$chat_id"
+            return
+            ;;
+        "➕ 生成兑换码")
+            tg_prompt "$chat_id" voucher_create "输入：\`数量 配额 有效天数\`\n例如：\`3 10G 30\`"
+            return
+            ;;
+        "📋 有效兑换码") text="/mp_voucher list" ;;
+    esac
+
     # Public user or unauthenticated commands
     case "$text" in
         /start|/start@*)
-            tg_send_to "$chat_id" "🛡️ *欢迎使用 MTProxyMax 自助服务中心 (${VERSION})*\n\n👋 您好！您可以通过此机器人自助查询代理状态、流量限制和连接链接，无需管理员协助。\n\n📱 *可用的公开命令：*\n  /my_status <label> — 查询流量配额和到期时间\n  /redeem <code> [label] — 兑换礼品码或兑换码\n  /voucher <code> [label] — /redeem 的别名\n  /support <message> — 向服务器管理员提交支持请求"
+            if [ "$role" = "none" ]; then
+                tg_public_menu "$chat_id" "🛡️ *欢迎使用 MTProxyMax 自助服务中心 (${VERSION})*\n\n请选择下方按钮，无需记忆命令。"
+            else
+                tg_admin_menu "$chat_id" "🛡️ *MTProxyMax 管理控制台 (${VERSION})*\n\n请选择下方按钮，无需记忆命令。"
+            fi
             return
             ;;
         /my_status\ *|/my_status@*\ *)
@@ -11467,7 +11624,7 @@ _process_cmd() {
         /support\ *|/support@*\ *|/mp_support\ *|/mp_support@*\ *)
             local msg; msg=$(echo "$text" | cut -d' ' -f2-)
             [ -z "$msg" ] || [ "$msg" = "/support" ] || [ "$msg" = "/mp_support" ] && { tg_send_to "$chat_id" "❌ 用法： /support <message>"; return; }
-            tg_send "📩 *新的客户支持工单*\n\n👤 *用户聊天 ID*：\`${chat_id}\`\n💬 *消息*：\n${msg}\n\n👉 *如需回复*，请输入：\`/reply ${chat_id} <message>\`"
+            tg_send_to "$TELEGRAM_CHAT_ID" "📩 *新的客户支持工单*\n\n👤 *用户聊天 ID*：\`${chat_id}\`\n💬 *消息*：\n${msg}\n\n👉 *如需回复*，请输入：\`/reply ${chat_id} <message>\`"
             tg_send_to "$chat_id" "✅ *工单已收到！*\n\n您的消息已转交支持团队，我们会尽快回复。"
             return
             ;;
