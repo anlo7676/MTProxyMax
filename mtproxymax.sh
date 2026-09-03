@@ -1514,7 +1514,7 @@ _fetch_metrics() {
     fi
     if [ -z "$_METRICS_CACHE" ] && [ "${ENGINE_MODE:-docker}" = "docker" ] && command -v docker &>/dev/null; then
         local _cip
-        _cip=$(docker inspect -f '{{range .Network设置.Networks}}{{.IPAddress}}{{end}}' mtproxymax 2>/dev/null | head -1)
+        _cip=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' mtproxymax 2>/dev/null | head -1)
         [ -n "$_cip" ] && _METRICS_CACHE=$(curl -s --noproxy '*' --max-time 2 "http://${_cip}:${mport}/metrics" 2>/dev/null) || true
     fi
     _METRICS_CACHE_AGE=$now
@@ -9042,19 +9042,19 @@ upstream_test() {
 # ── Section 9: Container Management ─────────────────────────
 
 is_proxy_running() {
-    [ "$(docker inspect -f '{{.State.运行中}}' "${CONTAINER_NAME:-mtproxymax}" 2>/dev/null)" = "true" ]
+    [ "$(docker inspect -f '{{.State.Running}}' "${CONTAINER_NAME:-mtproxymax}" 2>/dev/null)" = "true" ]
 }
 
 run_proxy_container() {
     # Build telemt image if not present
     build_telemt_image || {
-        log_error "无法 build telemt image"
+        log_error "无法构建 telemt 镜像"
         return 1
     }
 
     # Ensure we have at least one secret
     if [ ${#SECRETS_LABELS[@]} -eq 0 ]; then
-        log_info "No secrets configured, generating default..."
+        log_info "尚未配置密钥，正在生成默认密钥..."
         secret_add "default"
     fi
 
@@ -9065,9 +9065,9 @@ run_proxy_container() {
     if ! is_port_available "$PROXY_PORT"; then
         # Check if it's our own container
         if is_proxy_running; then
-            log_info "Port ${PROXY_PORT} is in use by MTProxyMax"
+            log_info "端口 ${PROXY_PORT} 正由 MTProxyMax 使用"
         else
-            log_error "Port ${PROXY_PORT} is already in use by another process"
+            log_error "端口 ${PROXY_PORT} 已被其他进程占用"
             return 1
         fi
     fi
@@ -9076,7 +9076,7 @@ run_proxy_container() {
     docker rm -f "$CONTAINER_NAME" 2>/dev/null || true
 
     # Run container
-    log_info "Starting telemt proxy on port ${PROXY_PORT}..."
+    log_info "正在端口 ${PROXY_PORT} 上启动 telemt 代理..."
 
     local _docker_args=(
         --name "$CONTAINER_NAME"
@@ -9093,8 +9093,8 @@ run_proxy_container() {
         --ulimit nofile=65535:65535 \
         -v "${CONFIG_DIR}/config.toml:/etc/telemt.toml:ro" \
         "$(get_docker_image)" /etc/telemt.toml 2>&1) || {
-            if echo "$_run_out" | grep -E -q "(cgroup|消息 recipient disconnected|systemd|dbus|EOF|timeout|system\.slice|runc|OCI runtime create failed)"; then
-                log_warn "Docker cgroup/D-Bus timeout detected on minimal/low-RAM VPS. Attempting auto-recovery..."
+            if echo "$_run_out" | grep -E -q "(cgroup|message recipient disconnected|systemd|dbus|EOF|timeout|system\.slice|runc|OCI runtime create failed)"; then
+                log_warn "检测到精简型或低内存 VPS 上的 Docker cgroup/D-Bus 超时，正在尝试自动恢复..."
                 sync; echo 3 > /proc/sys/vm/drop_caches 2>/dev/null || true
                 if command -v systemctl &>/dev/null; then
                     systemctl daemon-reload 2>/dev/null || true
@@ -9104,7 +9104,7 @@ run_proxy_container() {
                     sleep 2
                 fi
                 docker rm -f "$CONTAINER_NAME" 2>/dev/null || true
-                log_info "Retrying container launch after D-Bus & memory cache recovery..."
+                log_info "D-Bus 和内存缓存恢复后，正在重新启动容器..."
                 _run_out=$(docker run -d "${_docker_args[@]}" \
                     --ulimit nofile=65535:65535 \
                     -v "${CONFIG_DIR}/config.toml:/etc/telemt.toml:ro" \
@@ -9114,13 +9114,13 @@ run_proxy_container() {
                             --cgroupns host \
                             -v "${CONFIG_DIR}/config.toml:/etc/telemt.toml:ro" \
                             "$(get_docker_image)" /etc/telemt.toml 2>&1) || {
-                                log_error "无法 start container after recovery attempts"
+                                log_error "完成恢复尝试后仍无法启动容器"
                                 echo -e "  ${DIM}${_run_out}${NC}"
                                 return 1
                             }
                     }
             else
-                log_error "无法 start container"
+                log_error "无法启动容器"
                 echo -e "  ${DIM}${_run_out}${NC}"
                 return 1
             fi
@@ -9130,7 +9130,7 @@ run_proxy_container() {
     sleep 2
 
     if is_proxy_running; then
-        log_success "Proxy is running on port ${PROXY_PORT}"
+        log_success "代理正在端口 ${PROXY_PORT} 上运行"
         traffic_tracking_setup
         geoblock_reapply_all
         bans_reapply 2>/dev/null
@@ -9158,8 +9158,8 @@ run_proxy_container() {
         telegram_notify_proxy_started &>/dev/null &
         return 0
     else
-        log_error "Container started but is not running — check logs"
-        echo -e "  ${DIM}Run: docker logs ${CONTAINER_NAME}${NC}"
+        log_error "容器已创建但未运行，请检查日志"
+        echo -e "  ${DIM}请运行：docker logs ${CONTAINER_NAME}${NC}"
         return 1
     fi
 }
@@ -9216,7 +9216,7 @@ _start_all_instances() {
             --ulimit nofile=65535:65535 --log-opt max-size=10m --log-opt max-file=3 \
             -v "${inst_config}:/etc/telemt.toml:ro" \
             "$(get_docker_image)" /etc/telemt.toml 2>&1) || {
-                if echo "$_inst_out" | grep -E -q "(cgroup|消息 recipient disconnected|systemd|dbus|EOF|timeout|system\.slice|runc|OCI runtime create failed)"; then
+                if echo "$_inst_out" | grep -E -q "(cgroup|message recipient disconnected|systemd|dbus|EOF|timeout|system\.slice|runc|OCI runtime create failed)"; then
                     sync; echo 3 > /proc/sys/vm/drop_caches 2>/dev/null || true
                     systemctl daemon-reload 2>/dev/null || true
                     systemctl restart dbus docker 2>/dev/null || true
@@ -10988,7 +10988,7 @@ format_duration() {
 }
 
 is_proxy_running() {
-    [ "$(docker inspect -f '{{.State.运行中}}' mtproxymax 2>/dev/null)" = "true" ]
+    [ "$(docker inspect -f '{{.State.Running}}' mtproxymax 2>/dev/null)" = "true" ]
 }
 
 get_container_uptime() {
@@ -12702,7 +12702,7 @@ replication_test() {
         result=$(ssh -i "${REPLICATION_SSH_KEY_PATH}" -p "${port}" \
             -o BatchMode=yes -o ConnectTimeout=10 -o StrictHostKeyChecking=accept-new \
             "${REPLICATION_SSH_USER}@${host}" \
-            "docker ps --filter name=mtproxymax --format '{{.状态}}' 2>/dev/null; echo ssh_ok" 2>&1)
+            "docker ps --filter name=mtproxymax --format '{{.Status}}' 2>/dev/null; echo ssh_ok" 2>&1)
 
         if echo "$result" | grep -q "ssh_ok"; then
             local docker_status
@@ -13317,7 +13317,7 @@ instance_add() {
     _inst_add_out=$(docker run -d "${_docker_args[@]}" \
         -v "${inst_config}:/etc/telemt.toml:ro" \
         "$(get_docker_image)" /etc/telemt.toml 2>&1) || {
-            if echo "$_inst_add_out" | grep -E -q "(cgroup|消息 recipient disconnected|systemd|dbus|EOF|timeout|system\.slice|runc|OCI runtime create failed)"; then
+            if echo "$_inst_add_out" | grep -E -q "(cgroup|message recipient disconnected|systemd|dbus|EOF|timeout|system\.slice|runc|OCI runtime create failed)"; then
                 sync; echo 3 > /proc/sys/vm/drop_caches 2>/dev/null || true
                 systemctl daemon-reload 2>/dev/null || true
                 systemctl restart dbus docker 2>/dev/null || true
