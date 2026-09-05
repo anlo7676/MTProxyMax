@@ -10272,6 +10272,8 @@ scanner_shield_update() {
 
 load_speed_limits() {
     [ -f "$SPEED_LIMITS_FILE" ] || return 0
+    # Isolate read variables from callers (Bash locals are dynamically scoped).
+    local target type down up enabled
     SPEED_LIMIT_TARGETS=()
     SPEED_LIMIT_TYPES=()
     SPEED_LIMIT_DOWN=()
