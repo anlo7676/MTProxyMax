@@ -52,6 +52,7 @@ fi
 # Temp file tracking
 declare -a _TEMP_FILES=()
 _cleanup() {
+    local f
     for f in "${_TEMP_FILES[@]}"; do
         rm -f "$f" 2>/dev/null
     done
@@ -570,6 +571,7 @@ parse_human_bytes() {
 
 # Validate a domain name or comma-separated domain pool
 validate_domain() {
+    local -a parts=()
     local d="$1"
     [ -z "$d" ] && return 1
     local part
@@ -751,6 +753,7 @@ SETTINGS_EOF
 }
 
 load_settings() {
+    local line
     [ -f "$SETTINGS_FILE" ] || return 0
 
     # Safe whitelist-based parsing (no source/eval)
@@ -860,6 +863,7 @@ declare -a SECRETS_AD_TAGS=()
 
 # Load secrets database
 load_secrets() {
+    local label secret created enabled max_conns max_ips quota expires notes ad_tag
     SECRETS_LABELS=()
     SECRETS_KEYS=()
     SECRETS_CREATED=()
@@ -946,6 +950,7 @@ save_upstreams() {
 
 # Load upstreams database
 load_upstreams() {
+    local name type addr user pass weight iface enabled
     UPSTREAM_NAMES=()
     UPSTREAM_TYPES=()
     UPSTREAM_ADDRS=()
@@ -1219,6 +1224,8 @@ build_faketls_secret() {
 
 # Generate telemt config.toml
 generate_telemt_config() {
+    local -a _dparts=()
+    local _tp _tv
     mkdir -p "$CONFIG_DIR"
     chmod 700 "$CONFIG_DIR"
 
@@ -1648,6 +1655,7 @@ get_user_stats() {
 # Populates: _batch_cum_in[label], _batch_cum_out[label], _batch_cum_conns[label]
 declare -A _batch_cum_in _batch_cum_out _batch_cum_conns
 _load_all_cumulative_user_stats() {
+    local _l _i _o _li _lo _lc
     _batch_cum_in=(); _batch_cum_out=(); _batch_cum_conns=()
     local _stats_dir="${INSTALL_DIR}/relay_stats"
     local _ut_file="${_stats_dir}/user_traffic"
@@ -1729,6 +1737,7 @@ _load_all_cumulative_user_stats() {
 # One-shot flush of traffic counters to disk (for use before stop/restart)
 # Works standalone — loads cumulative from disk, computes delta from live metrics, saves back
 flush_traffic_to_disk() {
+    local _l _i _o label secret created enabled _mc _mi _q _ex _notes _adtag
     local _stats_dir="${INSTALL_DIR}/relay_stats"
     local _tf="${_stats_dir}/cumulative_traffic"
     local _utf="${_stats_dir}/user_traffic"
@@ -2033,6 +2042,7 @@ secret_remove() {
 
 # Batch add multiple secrets (single restart)
 secret_add_batch() {
+    local label
     local no_restart="false"
     if [ "$1" = "true" ] || [ "$1" = "false" ]; then
         no_restart="$1"; shift
@@ -2535,6 +2545,7 @@ secret_reenable() {
 
 # Reset traffic counters for a secret (or all)
 secret_reset_traffic() {
+    local f
     local label="${1:-}"
     local no_reload="${2:-}"
     [ -z "$label" ] && { log_error "用法： mtproxymax secret reset-traffic <label|all>"; return 1; }
@@ -2816,6 +2827,7 @@ secret_export() {
 
 # Import secrets from CSV file
 secret_import() {
+    local label key col3 col4 col5 col6 col7 col8 col9 col10 col_rest
     local file="$1"
     [ -z "$file" ] && { log_error "用法： mtproxymax secret import <file>"; return 1; }
     [ -f "$file" ] || { log_error "File 未找到: ${file}"; return 1; }
@@ -2880,6 +2892,7 @@ secret_import() {
 
 # Show live active connections per user
 show_connections() {
+    local uname ucur utot uips urx utx
     local m
     if ! m=$(_fetch_metrics 2>/dev/null); then
         log_error "指标端点不可用，请确认代理是否正在运行"
@@ -3088,6 +3101,7 @@ secret_stats() {
 
 # Sort secrets by field
 secret_sort() {
+    local idx
     local field="${1:-traffic}"
     _load_all_cumulative_user_stats 2>/dev/null
 
@@ -3506,6 +3520,7 @@ secret_archive() {
 
 # Unarchive (restore) a secret
 secret_unarchive() {
+    local _l key created enabled mc mi q ex notes ad_tag
     local label="$1"
     [ -z "$label" ] && { log_error "用法： mtproxymax secret unarchive <label>"; return 1; }
 
@@ -3547,6 +3562,7 @@ secret_unarchive() {
 
 # List archived secrets
 secret_archive_list() {
+    local label key created enabled _mc _mi _q _ex notes
     local archive_file="${INSTALL_DIR}/secrets_archive.conf"
     if [ ! -f "$archive_file" ] || [ ! -s "$archive_file" ]; then
         log_info "没有已归档的密钥"
@@ -3565,6 +3581,7 @@ secret_archive_list() {
 
 # Top N users by traffic or connections
 secret_top() {
+    local uname conns rx tx total
     local field="${1:-traffic}" count="${2:-5}"
     local m; m=$(_fetch_metrics 2>/dev/null) || { log_error "指标不可用"; return 1; }
 
@@ -3773,6 +3790,7 @@ port_check() {
 PROFILES_DIR="${INSTALL_DIR}/profiles"
 
 profile_save() {
+    local f
     local name="$1"
     [ -z "$name" ] && { log_error "用法： mtproxymax profile save <name>"; return 1; }
     [[ "$name" =~ ^[a-zA-Z0-9_-]+$ ]] || { log_error "配置方案名称只能包含字母、数字、下划线和连字符"; return 1; }
@@ -3787,6 +3805,7 @@ profile_save() {
 }
 
 profile_load() {
+    local f
     local name="$1"
     [ -z "$name" ] && { log_error "用法： mtproxymax profile load <name>"; return 1; }
 
@@ -3812,6 +3831,7 @@ profile_load() {
 }
 
 profile_list() {
+    local name
     [ ! -d "$PROFILES_DIR" ] && { log_info "没有已保存的配置方案"; return; }
     local dirs; dirs=$(ls -1 "$PROFILES_DIR" 2>/dev/null)
     [ -z "$dirs" ] && { log_info "没有已保存的配置方案"; return; }
@@ -3889,6 +3909,7 @@ secret_untag() {
 }
 
 secret_list_by_tag() {
+    local label tags
     local tag="$1"
     [ -z "$tag" ] && { log_error "用法： mtproxymax secret list --tag <tag>"; return 1; }
     [ -f "$_TAGS_FILE" ] || { log_info "没有带标签的密钥"; return 0; }
@@ -4010,6 +4031,7 @@ unban_ip() {
 }
 
 bans_list() {
+    local ip
     echo ""
     draw_header "已封禁的 IP"
     echo ""
@@ -4030,6 +4052,7 @@ bans_list() {
 
 # Restore bans from file (called on startup / after reboot)
 bans_reapply() {
+    local ip
     [ -f "$BANLIST_FILE" ] || return 0
     while read -r ip; do
         [ -z "$ip" ] && continue
@@ -4068,6 +4091,7 @@ secret_logs() {
 MIGRATION_FILES=("$SETTINGS_FILE" "$SECRETS_FILE" "$UPSTREAMS_FILE" "$INSTANCES_FILE" "$_TAGS_FILE" "${INSTALL_DIR}/secrets_archive.conf" "$BANLIST_FILE" "$SPEED_LIMITS_FILE" "$FLEET_FILE" "$SSL_CONF_FILE" "$CLOUD_BACKUP_FILE" "${INSTALL_DIR}/pools.conf" "${INSTALL_DIR}/calendar.conf" "${INSTALL_DIR}/webhooks.conf" "${INSTALL_DIR}/geofence.conf" "${INSTALL_DIR}/decoy.conf" "${INSTALL_DIR}/failover.conf" "${INSTALL_DIR}/eco_mode.conf" "$VOUCHERS_FILE" "$ADMINS_FILE")
 
 migrate_export() {
+    local f
     local out="${1:-$(get_export_dir)/mtproxymax-migrate-$(date +%Y%m%d-%H%M%S).tar.gz}"
     local tmp; tmp=$(mktemp -d) || { log_error "无法创建临时目录"; return 1; }
     _TEMP_FILES+=("$tmp")
@@ -4349,6 +4373,7 @@ secret_set_quota_reset_day() {
 
 # Check quota resets (called from bot loop)
 secret_check_quota_resets() {
+    local label day
     [ -f "$_QUOTA_RESET_FILE" ] || return 0
     local today_day today_month last_day
     today_day=$(date +%d | sed 's/^0//')
@@ -4462,6 +4487,7 @@ template_save() {
 }
 
 template_list() {
+    local name conns ips quota expires notes
     if [ ! -f "$_TEMPLATES_FILE" ] || [ ! -s "$_TEMPLATES_FILE" ]; then
         log_info "尚未保存模板"
         return
@@ -4494,6 +4520,7 @@ template_delete() {
 
 # Apply a template to an existing secret
 template_apply() {
+    local _tn tconns tips tquota texpires tnotes
     check_root
     local name="$1" label="$2"
     [ -z "$name" ] || [ -z "$label" ] && { log_error "用法： mtproxymax template apply <name> <label>"; return 1; }
@@ -4694,6 +4721,7 @@ tune_clear() {
 }
 
 tune_get() {
+    local p v
     local param="$1"
     if [ -z "$param" ]; then
         if [ ! -f "$_TUNE_FILE" ] || [ ! -s "$_TUNE_FILE" ]; then
@@ -4973,6 +5001,7 @@ run_speedtest() {
 }
 
 run_digest() {
+    local i
     echo ""
     draw_header "系统摘要"
     echo ""
@@ -5153,6 +5182,7 @@ run_upload_test() {
 
 # Apply or clean up kernel firewall anti-DPI rules
 apply_firewall_rules() {
+    local _chain
     [ -z "${PROXY_PORT:-}" ] && return 0
     local -a _all_ports=("${PROXY_PORT}")
     load_instances 2>/dev/null || true
@@ -5233,6 +5263,8 @@ apply_firewall_rules() {
 }
 
 apply_port_pool_rules() {
+    local -a _plist=()
+    local _p
     [ -z "${PROXY_PORT:-}" ] && return 0
     if command -v iptables >/dev/null 2>&1; then
         if [ -n "${PORT_POOL_PORTS:-}" ]; then
@@ -5261,6 +5293,8 @@ apply_port_pool_rules() {
 }
 
 apply_port_hop_rules() {
+    local _r
+    local -a _rlist=()
     [ -z "${PROXY_PORT:-}" ] && return 0
     if [ -n "${PORT_HOP_RANGES:-}" ]; then
         IFS=',' read -ra _rlist <<< "${PORT_HOP_RANGES}"
@@ -5567,6 +5601,8 @@ run_dpi_inspect() {
 
 # ── Cover Domain Watchdog & Auto-Rotator ──
 run_cover_watchdog() {
+    local -a _parts=() _candidates=()
+    local _d _cand _rem
     local action="${1:-test}"
     case "$action" in
         test)
@@ -5683,6 +5719,8 @@ run_lockdown() {
 
 # ── Multi-Port Pool Listener ──
 run_port_pool() {
+    local -a _plist=()
+    local _p
     local action="${1:-list}"
     case "$action" in
         add)
@@ -5959,6 +5997,7 @@ The following user secrets are expiring soon:
 }
 
 run_abuse_watch() {
+    local _lbl _in _out
     load_settings
     load_secrets
     echo -e "\n  📈 ${BOLD}带宽激增与滥用监控${NC}\n"
@@ -5999,6 +6038,7 @@ run_abuse_watch() {
 }
 
 run_broadcast() {
+    local uid
     local msg="$1"
     [ -z "$msg" ] && { log_error "用法： mtproxymax broadcast <message>"; return 1; }
     load_settings
@@ -6221,6 +6261,7 @@ run_diag_dump() {
 }
 
 run_snapshot() {
+    local _f
     local action="${1:-create}"
     local snap_dir="${INSTALL_DIR}/snapshots"
     mkdir -p "$snap_dir" 2>/dev/null && chmod 700 "$snap_dir" 2>/dev/null || true
@@ -6276,6 +6317,7 @@ run_snapshot() {
 # ── Suite 1: Operational & Analytics Suite ─────────────────────────────────────
 
 run_top() {
+    local i f e
     local mode="${1:-loop}"
     [ ! -t 0 ] && mode="once"
     [ "$mode" = "once" ] || echo -e "  ${DIM}正在启动实时终端监控（按 Ctrl+C 退出）...${NC}"
@@ -6341,6 +6383,7 @@ run_top() {
 }
 
 run_tag() {
+    local i
     local label="${1:-}"
     local tag_str="${2:-}"
     if [ -z "$label" ]; then
@@ -6370,6 +6413,7 @@ run_tag() {
 }
 
 run_export_client() {
+    local i
     local target="${1:-all}"
     local format="${2:-clash}"
     load_settings
@@ -6421,6 +6465,7 @@ run_export_client() {
 }
 
 run_export_report() {
+    local i
     local format="${1:-html}"
     local outfile="${2:-}"
     load_settings
@@ -6491,6 +6536,7 @@ EOF
 }
 
 run_qr_sheet() {
+    local i
     local outfile="${1:-$(get_export_dir)/mtproxymax_vouchers.html}"
     mkdir -p "$(dirname "$outfile")" 2>/dev/null || true
     load_settings
@@ -6549,6 +6595,7 @@ EOF
 # ── Suite 2: Commercial & Quota Intelligence Suite ─────────────────────────────
 
 run_traffic_reset_global() {
+    local confirm
     local force="${1:-}"
     check_root
     load_settings
@@ -6644,6 +6691,8 @@ run_guest() {
 }
 
 run_pool() {
+    local -a mem_arr=() nm_arr=()
+    local p_name p_limit p_members p_notes _pn _pl _pm _pno mem nm f e
     local action="${1:-list}"
     local pool_file="${INSTALL_DIR}/pools.conf"
     touch "$pool_file" 2>/dev/null && chmod 600 "$pool_file" 2>/dev/null || true
@@ -6891,6 +6940,7 @@ run_decoy_web() {
 }
 
 run_auto_sni() {
+    local dom
     local action="${1:-test}"
     case "${action,,}" in
         test|benchmark|"")
@@ -6958,6 +7008,7 @@ run_auto_sni() {
 }
 
 run_dc_optimize() {
+    local dc_entry dc_id dc_loc dc_ip
     local action="${1:-benchmark}"
     case "${action,,}" in
         benchmark|test|"")
@@ -7064,6 +7115,7 @@ run_ip_score() {
 # ── Suite 4: Enterprise DevOps & Autonomous Resilience Suite ───────────────────
 
 webhook_send() {
+    local url
     local msg="$1"
     local wh_file="${INSTALL_DIR}/webhooks.conf"
     [ ! -f "$wh_file" ] || [ ! -s "$wh_file" ] && return 0
@@ -7281,6 +7333,7 @@ run_chaos_test() {
 }
 
 run_evacuate() {
+    local f
     echo -e "\n  ── 🚑 ${BOLD}一键紧急服务器迁移与数据清理${NC} ──\n"
     local target_ip="${1:-}" target_user="${2:-root}"
     local conf_files=()
@@ -7687,6 +7740,7 @@ run_cert_check() {
 }
 
 run_clone_link() {
+    local f
     check_root
     load_settings
     echo -e "\n  📋 ${BOLD}一行命令完成 VPS 服务器克隆与复制${NC}\n"
@@ -8246,6 +8300,7 @@ SYSCTL
 
 # ── Dynamic Port Range Shadowing ──
 run_port_hop() {
+    local -a _parts=()
     load_settings
     local action="${1:-list}"
     case "$action" in
@@ -9527,6 +9582,7 @@ _ensure_default_drop() {
 
 # Reapply all saved geoblock rules (called on proxy start)
 geoblock_reapply_all() {
+    local -a codes=()
     [ -z "$BLOCKLIST_COUNTRIES" ] && return 0
     command -v ipset &>/dev/null || return 0
 
@@ -9561,6 +9617,7 @@ geoblock_reapply_all() {
 
 # Remove ALL mtproxymax geoblock rules (called on uninstall)
 geoblock_remove_all() {
+    local rule setname
     # Remove all tagged iptables rules (both geoblock and geoblock-default)
     if command -v iptables &>/dev/null; then
         iptables-save 2>/dev/null | grep -E -- "--comment ${GEOBLOCK_COMMENT}(-default)?" | \
@@ -9580,6 +9637,7 @@ geoblock_remove_all() {
 
 
 show_geoblock_menu() {
+    local -a codes=()
     while true; do
         clear_screen
         draw_header "地理位置屏蔽"
@@ -9977,6 +10035,7 @@ voucher_create() {
 }
 
 voucher_list() {
+    local code quota days conns ips tier status created_at redeemed_by redeemed_at
     load_vouchers
     if [ ! -f "$VOUCHERS_FILE" ] || [ ! -s "$VOUCHERS_FILE" ]; then
         echo -e "  ${DIM}未找到兑换码。请运行 'mtproxymax voucher create' 生成兑换码。${NC}"
@@ -10008,6 +10067,7 @@ voucher_revoke() {
 }
 
 voucher_redeem() {
+    local code quota days conns ips tier status created_at redeemed_by redeemed_at
     local target="$1" label="${2:-}"
     [ -z "$target" ] && { log_error "用法： voucher redeem <code> [label]"; return 1; }
     load_vouchers
@@ -10068,6 +10128,7 @@ admin_remove() {
 }
 
 admin_list() {
+    local id role label added
     load_admins
     echo -e "  ${BOLD}已配置的根超级管理员：${NC}${TELEGRAM_CHAT_ID:-无}"
     if [ ! -f "$ADMINS_FILE" ] || [ ! -s "$ADMINS_FILE" ]; then
@@ -10087,6 +10148,7 @@ admin_list() {
 
 # ── Section 13e: Decoupled Self-Service Web Portal ──────────
 portal_export_data() {
+    local label secret created enabled _mc _mi _q _ex _notes _adtag
     load_settings
     if [ "${1:-}" != "force" ] && [ "${PORTAL_ENABLED:-false}" != "true" ]; then return 0; fi
     mkdir -p "$PORTAL_WWW" 2>/dev/null || true
@@ -10253,6 +10315,7 @@ scanner_shield_off() {
 }
 
 scanner_shield_update() {
+    local sub
     [ "${SCANNER_SHIELD_ENABLED:-false}" != "true" ] && return 0
     local subnets=("162.142.125.0/24" "167.94.138.0/24" "167.94.145.0/24" "167.94.146.0/24" "71.6.135.0/24" "80.82.77.0/24" "185.181.102.0/24")
     if command -v ipset &>/dev/null && ipset create "$SCANNER_SHIELD_SET" hash:net maxelem 65536 2>/dev/null; then
@@ -10291,6 +10354,7 @@ load_speed_limits() {
 }
 
 save_speed_limits() {
+    local i
     local tmp; tmp=$(_mktemp) || return 1
     for i in "${!SPEED_LIMIT_TARGETS[@]}"; do
         echo "${SPEED_LIMIT_TARGETS[$i]}|${SPEED_LIMIT_TYPES[$i]}|${SPEED_LIMIT_DOWN[$i]}|${SPEED_LIMIT_UP[$i]}|${SPEED_LIMIT_ENABLED[$i]}" >> "$tmp"
@@ -10316,6 +10380,7 @@ speed_limit_clear() {
 }
 
 speed_limit_apply() {
+    local i
     speed_limit_clear
     load_speed_limits
     [ "${#SPEED_LIMIT_TARGETS[@]}" -eq 0 ] && return 0
@@ -10370,6 +10435,7 @@ speed_limit_apply() {
 }
 
 speed_limit_set() {
+    local i
     local target="$1" down="$2" up="${3:-$2}"
     [ -z "$target" ] || [ -z "$down" ] && { log_error "用法： mtproxymax speed-limit set <global|port_number> <down_kbps> [up_kbps]"; return 1; }
     [[ "$down" =~ ^[0-9]+$ ]] || { log_error "下载速率必须是数字（kbps）"; return 1; }
@@ -10408,6 +10474,7 @@ speed_limit_set() {
 }
 
 speed_limit_remove() {
+    local i
     local target="$1"
     [ -z "$target" ] && { log_error "用法： mtproxymax speed-limit remove <global|port_number>"; return 1; }
     load_speed_limits
@@ -10435,6 +10502,7 @@ speed_limit_remove() {
 }
 
 speed_limit_list() {
+    local i
     load_speed_limits
     echo -e "\n  🚀 ${BOLD}生效的 QoS 限速（分层令牌桶）：${NC}\n"
     if [ "${#SPEED_LIMIT_TARGETS[@]}" -eq 0 ]; then
@@ -10497,6 +10565,7 @@ FLEET_JSON
 }
 
 fleet_status() {
+    local j
     fleet_collect_slave_metrics
     echo -e "\n  🌐 ${BOLD}全局联邦与集群仪表板（多服务器遥测）：${NC}\n"
     if [ ! -d "$FLEET_DATA_DIR" ] || [ -z "$(ls -A "$FLEET_DATA_DIR"/*.json 2>/dev/null)" ]; then
@@ -11060,6 +11129,7 @@ get_active_connections() {
 
 # Load settings (inline minimal version)
 load_tg_settings() {
+    local line
     [ -f "$SETTINGS_FILE" ] || return
     while IFS= read -r line; do
         [[ "$line" =~ ^[[:space:]]*# ]] && continue
@@ -11381,6 +11451,7 @@ apply_pending_traffic_resets() {
 }
 
 load_traffic() {
+    local _ul _ui _uo
     if [ -f "$TRAFFIC_FILE" ]; then
         IFS='|' read -r _cum_in _cum_out < "$TRAFFIC_FILE"
     fi
@@ -11422,6 +11493,7 @@ load_traffic() {
 }
 
 save_traffic() {
+    local _ul
     local _tdir="${INSTALL_DIR}/relay_stats"
     mkdir -p "$_tdir" 2>/dev/null
     # Acquire lock to prevent race with flush_traffic_to_disk
@@ -11454,6 +11526,7 @@ save_traffic() {
 }
 
 update_traffic() {
+    local _pu _pi _po label secret created enabled _mc _mi _q _ex _notes _adtag
     # Fetch metrics once for both global and per-user stats
     local _metrics
     _metrics=$(curl -s --max-time 2 "http://127.0.0.1:${PROXY_METRICS_PORT:-9090}/metrics" 2>/dev/null) || true
@@ -11574,6 +11647,7 @@ _check_tg_role() {
 }
 
 _process_cmd() {
+    local _l _s _c _en _mc _mi _q _ex _notes _adtag _pu _pc label secret created enabled max_conns max_ips quota expires name type addr user pass weight iface
     local update_id="$1" chat_id="$2" text="$3" callback_id="${4:-}"
     echo "$((update_id + 1))" > "$OFFSET_FILE"
     tg_answer_callback "$callback_id"
@@ -12356,6 +12430,7 @@ save_replication() {
 
 # Load replication.conf
 load_replication() {
+    local _rl_h _rl_p _rl_l _rl_e _rl_ls _rl_st
     REPL_HOSTS=()
     REPL_PORTS=()
     REPL_LABELS=()
@@ -12544,6 +12619,7 @@ REPLICATION_RESTART_ON_CHANGE="true"
 REPLICATION_LOG="/var/log/mtproxymax-sync.log"
 
 load_sync_settings() {
+    local line
     [ -f "$SETTINGS_FILE" ] || return
     while IFS= read -r line; do
         [[ "$line" =~ ^[[:space:]]*# ]] && continue
@@ -12571,6 +12647,7 @@ declare -a REPL_LAST_SYNC=()
 declare -a REPL_STATUS=()
 
 load_sync_replication() {
+    local host port label enabled last_sync status
     REPL_HOSTS=(); REPL_PORTS=(); REPL_LABELS=()
     REPL_ENABLED=(); REPL_LAST_SYNC=(); REPL_STATUS=()
     [ -f "$REPLICATION_FILE" ] || return
@@ -12609,6 +12686,7 @@ log_sync() {
 }
 
 do_sync() {
+    local -a _excludes=()
     local host="$1" port="$2" label="$3"
     # Verify dependencies at runtime (may be absent on minimal images)
     if ! command -v rsync &>/dev/null; then
@@ -12775,6 +12853,7 @@ remove_replication_service() {
 
 # Interactive setup wizard
 replication_setup_wizard() {
+    local -a _ex=()
     load_settings
     # Verify required dependencies are present
     local _missing_deps=()
@@ -13564,6 +13643,7 @@ declare -a INSTANCE_ENABLED=()
 declare -a INSTANCE_LABELS=()
 
 load_instances() {
+    local port mport enabled label
     INSTANCE_PORTS=()
     INSTANCE_METRICS_PORTS=()
     INSTANCE_ENABLED=()
@@ -13591,6 +13671,7 @@ save_instances() {
 }
 
 _next_free_metrics_port() {
+    local mp
     local p=9091
     while [ "${p:-0}" -lt 9200 ]; do
         local used=false
@@ -13739,6 +13820,7 @@ instance_list() {
 # ── Backup / Restore ────────────────────────────────────────
 
 create_backup() {
+    local mf
     mkdir -p "$BACKUP_DIR"
     local ts; ts=$(date '+%Y%m%d-%H%M%S')
     local backup_file="${BACKUP_DIR}/mtproxymax-${ts}.tar.gz"
@@ -14131,6 +14213,7 @@ show_status_json() {
 }
 
 show_metrics() {
+    local bk bn ok fail pct uname ucur utot urx utx uips
     local m
     if ! m=$(_fetch_metrics 2>/dev/null); then
     log_error "指标端点不可用，请确认代理是否正在运行"
@@ -14304,6 +14387,8 @@ show_status() {
 }
 
 cli_main() {
+    local -a mem_arr=() codes=()
+    local _a i u idx mem p_name p_limit p_members p_notes
     local cmd="${1:-}"
     shift 2>/dev/null || true
 
@@ -16756,6 +16841,7 @@ show_enterprise_menu() {
 }
 
 show_main_menu() {
+    local i
     local _cached_telemt_ver _cached_start_epoch=""
     _cached_telemt_ver=$(get_telemt_version)
 
@@ -16895,6 +16981,7 @@ show_proxy_menu() {
 }
 
 show_secrets_menu() {
+    local lbl tgs
     while true; do
         clear_screen
         draw_header "密钥管理"
@@ -18837,6 +18924,7 @@ show_about() {
 
 
 show_port_hop_menu() {
+    local r_add r_rm
     while true; do
         clear_screen
         draw_header "动态端口范围映射"
@@ -18940,6 +19028,7 @@ show_performance_menu() {
 
 
 show_replication_menu() {
+    local _h _p _l _t
     while true; do
         clear_screen
         draw_header "主从复制"
