@@ -47,7 +47,7 @@ assert_eq "out-of-the-box default CLIENT_MSS is empty" "" "$CLIENT_MSS"
 CLIENT_MSS=""
 generate_telemt_config
 cfg=$(cat "$CONFIG_DIR/config.toml")
-if echo "$cfg" | grep -q 'client_mss'; then
+if grep -q 'client_mss' <<< "$cfg"; then
     assert_eq "client_mss omitted when off" "absent" "present"
 else
     assert_eq "client_mss omitted when off" "absent" "absent"
@@ -57,7 +57,7 @@ fi
 CLIENT_MSS="tspu"
 generate_telemt_config
 cfg=$(cat "$CONFIG_DIR/config.toml")
-if echo "$cfg" | grep -q 'client_mss = "tspu"'; then
+if grep -q 'client_mss = "tspu"' <<< "$cfg"; then
     assert_eq "client_mss emitted when set to tspu" "present" "present"
 else
     assert_eq "client_mss emitted when set to tspu" "present" "absent"
@@ -66,7 +66,8 @@ fi
 # 4. run_client_mss status output
 CLIENT_MSS=""
 status_out=$(run_client_mss status)
-if echo "$status_out" | grep -q '关闭 / 已禁用'; then
+# Avoid echo receiving SIGPIPE when grep -q exits early under pipefail.
+if grep -q '关闭 / 已禁用' <<< "$status_out"; then
     assert_eq "status reports off mode" "present" "present"
 else
     assert_eq "status reports off mode" "present" "absent"
