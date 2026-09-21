@@ -11,7 +11,7 @@ set -eo pipefail
 export LC_NUMERIC=C
 
 # ── Section 1: Initialization ────────────────────────────────
-VERSION="1.4.0-LTS"
+VERSION="1.4.1-LTS"
 SCRIPT_NAME="mtproxymax"
 INSTALL_DIR="${INSTALL_DIR:-/opt/mtproxymax}"
 CONFIG_DIR="${CONFIG_DIR:-${INSTALL_DIR}/mtproxy}"
@@ -35,11 +35,14 @@ FLEET_DATA_DIR="${FLEET_DATA_DIR:-${INSTALL_DIR}/fleet_data}"
 SSL_CONF_FILE="${SSL_CONF_FILE:-${INSTALL_DIR}/ssl.conf}"
 SSL_DIR="${SSL_DIR:-${INSTALL_DIR}/ssl}"
 CLOUD_BACKUP_FILE="${CLOUD_BACKUP_FILE:-${INSTALL_DIR}/cloud_backup.conf}"
+SYSTEMD_DIR="${SYSTEMD_DIR:-/etc/systemd/system}"
+INITD_DIR="${INITD_DIR:-/etc/init.d}"
+RUNLEVELS_DIR="${RUNLEVELS_DIR:-/etc/runlevels}"
 SCANNER_SHIELD_SET="mtp_scanners"
 CONTAINER_NAME="mtproxymax"
 DOCKER_IMAGE_BASE="mtproxymax-telemt"
-TELEMT_MIN_VERSION="3.5.2"
-TELEMT_COMMIT="b6b9a18"  # Pinned: v3.5.2 — Fix Windows WEB carrier empty-cookie compatibility
+TELEMT_MIN_VERSION="3.5.7"
+TELEMT_COMMIT="4ca7418"  # Pinned: v3.5.7 — Wirtschaftsvertreter: TCP probe validation & websocket recovery
 GITHUB_REPO="anlo7676/MTProxyMax"
 REGISTRY_IMAGE="ghcr.io/samnet-dev/mtproxymax-telemt"
 
@@ -521,6 +524,29 @@ detect_os() {
     else
         echo "unknown"
     fi
+}
+
+# Detect the host init system: systemd | openrc | none
+detect_init_system() {
+    if command -v systemctl &>/dev/null; then
+        echo "systemd"
+    elif [ -x /sbin/openrc-run ] || command -v rc-service &>/dev/null; then
+        echo "openrc"
+    else
+        echo "none"
+    fi
+}
+
+# Register an OpenRC service in a runlevel, returning 0 only if it really landed
+# there. `rc-update add` is not trusted on its own: its exit status is swallowed
+# and, more importantly, a failure must never be reported to the user as success.
+# Tested with -e rather than -L: rc-update creates a symlink to the init script we
+# just wrote, so -e is true exactly when the service is genuinely runnable, and it
+# stays verifiable on hosts that cannot create symlinks.
+openrc_enable_service() {
+    local svc="$1" runlevel="${2:-default}"
+    rc-update add "$svc" "$runlevel" 2>/dev/null || true
+    [ -e "${RUNLEVELS_DIR}/${runlevel}/${svc}" ]
 }
 
 # Check dependencies
@@ -1222,10 +1248,13 @@ build_faketls_secret() {
     fi
 }
 
-# Generate telemt config.toml
+# Generate telemt config. Optional arg is the destination file (defaults to the
+# primary config.toml). Instance configs are written straight to their own file
+# instead of being routed through config.toml, which the running engine watches.
 generate_telemt_config() {
     local -a _dparts=()
     local _tp _tv
+    local dest="${1:-${CONFIG_DIR}/config.toml}"
     mkdir -p "$CONFIG_DIR"
     chmod 700 "$CONFIG_DIR"
 
@@ -1233,25 +1262,39 @@ generate_telemt_config() {
     local domain="${raw_domain%%,*}"
     domain="${domain// /}"
     local mask_enabled="${MASKING_ENABLED:-true}"
-    local mask_host="${MASKING_HOST:-$domain}"
+    local mask_host="${MASKING_HOST:-}"
     local mask_port="${MASKING_PORT:-443}"
-    if [ "${COVER_SHIELD_ENABLED:-false}" = "true" ] && [ -n "${COVER_FALLBACK_TARGET:-}" ]; then
-        local _t="${COVER_FALLBACK_TARGET#*://}" # strip https:// or http://
-        _t="${_t%%/*}"                           # strip path
-        if [[ "$_t" == *":"* ]]; then
-            mask_host="${_t%%:*}"
-            mask_port="${_t#*:}"
-        else
-            mask_host="$_t"
-            mask_port="443"
-        fi
+    if [ "${COVER_SHIELD_ENABLED:-false}" = "true" ]; then
         mask_enabled="true"
         UNKNOWN_SNI_ACTION="mask"
+        # Fallback to COVER_FALLBACK_TARGET only if no explicit MASKING_HOST is set
+        if [ -z "$mask_host" ] && [ -n "${COVER_FALLBACK_TARGET:-}" ]; then
+            local _t="${COVER_FALLBACK_TARGET#*://}" # strip https:// or http://
+            _t="${_t%%/*}"                           # strip path
+            if [[ "$_t" == *":"* ]]; then
+                mask_host="${_t%%:*}"
+                mask_port="${_t#*:}"
+            else
+                mask_host="$_t"
+                mask_port="443"
+            fi
+        fi
     fi
+    mask_host="${mask_host:-$domain}"
     local ad_tag="${AD_TAG:-}"
     ad_tag=$(echo "$ad_tag" | tr -d '[:space:]' | tr '[:upper:]' '[:lower:]')
     [[ "$ad_tag" =~ ^[0-9a-f]{32}$ ]] || ad_tag=""
     local port="${PROXY_PORT:-443}"
+
+    # Warn if mask backend points back to proxy's own listen port (routing loop)
+    if [ "$mask_enabled" = "true" ] && [ -n "$mask_host" ]; then
+        if [ "${mask_port:-443}" -eq "${port:-443}" ] 2>/dev/null; then
+            if [ "$mask_host" = "127.0.0.1" ] || [ "$mask_host" = "localhost" ] || [ "$mask_host" = "::1" ] || \
+               ([ -n "${CUSTOM_IP:-}" ] && [ "$mask_host" = "$CUSTOM_IP" ]); then
+                log_warn "伪装后端（${mask_host}:${mask_port}）与代理监听端口（${port}）相同，非代理 TLS 探测可能形成循环！"
+            fi
+        fi
+    fi
     local metrics_port="${PROXY_METRICS_PORT:-9090}"
     local stats_port=$((metrics_port + 1))
 
@@ -1479,7 +1522,16 @@ TOML_EOF
     fi
 
     chmod 644 "$tmp"
-    cp "$tmp" "${CONFIG_DIR}/config.toml" && rm -f "$tmp"
+    # Write in place. `cp` onto a file that is itself the source of a bind mount
+    # (i.e. the file is a mount point) unlinks and recreates it instead of
+    # truncating it, so the inode changes and every container mounting that file
+    # keeps reading the unlinked original -- each reload then silently does
+    # nothing until the container is recreated. A shell redirect can only
+    # truncate. The guard stops a failed generation from clobbering a good
+    # config with an empty file, and the mode is set explicitly because `>`
+    # creates with the umask when the destination does not exist yet.
+    [ -f "$tmp" ] || { log_error "配置生成未产生输出"; return 1; }
+    cat "$tmp" > "$dest" && chmod 644 "$dest" && rm -f "$tmp"
 }
 
 # Get comma-separated quoted list of enabled labels for config
@@ -4854,12 +4906,13 @@ _mtproxymax_completion() {
 
     # Top-level commands
     if [ "$COMP_CWORD" -eq 1 ]; then
-        local cmds="start stop restart status menu install uninstall secret upstream port ip domain mask-backend mask-relay-bytes tg-urls adtag traffic connections metrics logs health doctor info maintenance ban unban bans migrate changelog backup restore backups config uptime notify port-check profile auto-rotate template sweep tune verify history completion speedtest telegram replication rebuild update engine geoblock sni-policy digest ping-dc shield stealth clamp-mss domain-pool dpi-inspect cover-watchdog lockdown port-pool qos happy-hours notify-expiry abuse-watch broadcast export-lb ddns diag-dump snapshot daily-report ssh-shield net-grade onboard tcp-boost leak-scan cert-check clone-link bootstrap heal auto-heal tcp-clean socket-boost tls-pad honeypot tcp-fastpath ram-tune port-hop cpu-tune top export-client export-report qr-sheet tag guest pool calendar geofence decoy auto-sni dc-optimize ip-score webhook failover eco-mode chaos-test evacuate speed-limit fleet ssl backup-cloud upload-test"
+        local cmds="start stop restart status menu install uninstall secret upstream port ip domain mask-backend mask-relay-bytes tg-urls adtag traffic connections metrics logs health doctor info maintenance ban unban bans migrate changelog backup restore backups config uptime notify port-check profile auto-rotate template sweep tune verify history completion speedtest telegram replication rebuild update engine geoblock sni-policy digest ping-dc shield stealth clamp-mss domain-pool dpi-inspect cover-watchdog lockdown port-pool qos happy-hours notify-expiry abuse-watch broadcast export-lb ddns diag-dump snapshot daily-report ssh-shield net-grade onboard tcp-boost leak-scan cert-check clone-link bootstrap heal auto-heal tcp-clean socket-boost tls-pad honeypot tcp-fastpath ram-tune port-hop cpu-tune top export-client export-report qr-sheet tag guest pool calendar geofence decoy auto-sni dc-optimize ip-score webhook failover eco-mode chaos-test evacuate speed-limit fleet ssl backup-cloud upload-test resources"
         COMPREPLY=( $(compgen -W "${cmds}" -- "${cur}") )
         return 0
     fi
 
     # Subcommands
+    [ "$cmd" = "resources" ] && [ "$COMP_CWORD" -eq 2 ] && COMPREPLY=( $(compgen -W "status clear set" -- "${cur}") )
     case "$cmd" in
         secret)
             if [ "$COMP_CWORD" -eq 2 ]; then
@@ -7791,11 +7844,17 @@ run_heal() {
     local ram_before sockets_before
     ram_before=$(free -m 2>/dev/null | awk '/^Mem:/{print $4}' | head -1 | tr -cd '0-9' || echo "0")
     [ -z "$ram_before" ] && ram_before=0
-    sockets_before=$(netstat -an 2>/dev/null | grep -c 'TIME_WAIT' || ss -an 2>/dev/null | grep -c 'TIME-WAIT' || echo "0")
-    [ -z "$sockets_before" ] && sockets_before=0
+
+    local s_cnt_before=0
+    if command -v ss &>/dev/null; then
+        s_cnt_before=$(ss -ant 2>/dev/null | grep -c 'TIME-WAIT' || true)
+    elif command -v netstat &>/dev/null; then
+        s_cnt_before=$(netstat -ant 2>/dev/null | grep -c 'TIME_WAIT' || true)
+    fi
+    sockets_before="${s_cnt_before:-0}"
 
     log_info "正在回收操作系统页面缓存与未分配的缓冲内存..."
-    sync; echo 3 > /proc/sys/vm/drop_caches 2>/dev/null || true
+    [ -w /proc/sys/vm/drop_caches ] && { sync; echo 3 > /proc/sys/vm/drop_caches 2>/dev/null || true; }
 
     log_info "正在回收孤立的 TIME_WAIT TCP 套接字..."
     sysctl -w net.ipv4.tcp_tw_reuse=1 >/dev/null 2>&1 || true
@@ -7809,8 +7868,15 @@ run_heal() {
     local ram_after sockets_after freed_ram
     ram_after=$(free -m 2>/dev/null | awk '/^Mem:/{print $4}' | head -1 | tr -cd '0-9' || echo "0")
     [ -z "$ram_after" ] && ram_after=0
-    sockets_after=$(netstat -an 2>/dev/null | grep -c 'TIME_WAIT' || ss -an 2>/dev/null | grep -c 'TIME-WAIT' || echo "0")
-    [ -z "$sockets_after" ] && sockets_after=0
+
+    local s_cnt_after=0
+    if command -v ss &>/dev/null; then
+        s_cnt_after=$(ss -ant 2>/dev/null | grep -c 'TIME-WAIT' || true)
+    elif command -v netstat &>/dev/null; then
+        s_cnt_after=$(netstat -ant 2>/dev/null | grep -c 'TIME_WAIT' || true)
+    fi
+    sockets_after="${s_cnt_after:-0}"
+
     freed_ram=$((ram_after - ram_before))
     if [ "$freed_ram" -lt 0 ]; then freed_ram=0; fi
 
@@ -7819,6 +7885,12 @@ run_heal() {
     echo -e "  │  已清理失效套接字：      $(printf "%-26s" "${sockets_before} -> ${sockets_after}") │"
     echo -e "  │  受影响的有效用户：      $(printf "%-26s" "0（服务无中断）") │"
     echo -e "  └────────────────────────────────────────────────────────┘\n"
+
+    if ! is_proxy_running; then
+        log_warn "代理容器未运行，正在尝试恢复启动..."
+        docker rm -f "$CONTAINER_NAME" 2>/dev/null || true
+        start_proxy_container 2>/dev/null || true
+    fi
 }
 
 run_auto_heal() {
@@ -8154,57 +8226,113 @@ SYSCTL
 
 # ── Dynamic RAM Auto-Tuning ──
 detect_system_ram_mb() {
-    local host_mb=0
-    host_mb=$(free -m 2>/dev/null | awk '/^Mem:/{print $2}')
-    if [ -z "$host_mb" ] || [ "$host_mb" -le 0 ] 2>/dev/null; then
-        if [ -f /proc/meminfo ]; then
-            local total_kb
-            total_kb=$(awk '/^MemTotal:/{print $2}' /proc/meminfo 2>/dev/null || echo 0)
-            host_mb=$(( total_kb / 1024 ))
+    local -a _candidates=()
+
+    # 1. LXCFS virtualized /proc/meminfo (Proxmox LXC, Kubernetes, Docker)
+    if [ -f /var/lib/lxcfs/proc/meminfo ]; then
+        local lxcfs_kb
+        lxcfs_kb=$(awk '/^MemTotal:/{print $2}' /var/lib/lxcfs/proc/meminfo 2>/dev/null || echo 0)
+        if [[ "$lxcfs_kb" =~ ^[0-9]+$ ]] && [ "$lxcfs_kb" -gt 0 ] 2>/dev/null; then
+            _candidates+=( $(( lxcfs_kb / 1024 )) )
         fi
     fi
-    [ -z "$host_mb" ] || [ "$host_mb" -le 0 ] 2>/dev/null && host_mb=0
 
-    local cg_mb=0
-    if [ -f /sys/fs/cgroup/memory.max ]; then
-        local cg_max
-        cg_max=$(cat /sys/fs/cgroup/memory.max 2>/dev/null || echo "max")
-        if [[ "$cg_max" =~ ^[0-9]+$ ]] && [ "$cg_max" -gt 0 ] 2>/dev/null; then
-            cg_mb=$(( cg_max / 1048576 ))
+    if [ -f /proc/meminfo ]; then
+        local total_kb
+        total_kb=$(awk '/^MemTotal:/{print $2}' /proc/meminfo 2>/dev/null || echo 0)
+        if [[ "$total_kb" =~ ^[0-9]+$ ]] && [ "$total_kb" -gt 0 ] 2>/dev/null; then
+            _candidates+=( $(( total_kb / 1024 )) )
         fi
-    elif [ -f /sys/fs/cgroup/memory/memory.limit_in_bytes ]; then
+    fi
+
+    # 2. Cgroups v2 hierarchical walk (/proc/self/cgroup)
+    local cg_rel=""
+    if [ -f /proc/self/cgroup ]; then
+        cg_rel=$(awk -F: '$1 == "0" {print $3}' /proc/self/cgroup 2>/dev/null | head -1)
+    fi
+
+    local cur_cg="$cg_rel"
+    while [ -n "$cur_cg" ] && [ "$cur_cg" != "/" ]; do
+        if [ -f "/sys/fs/cgroup${cur_cg}/memory.max" ]; then
+            local cg_val
+            cg_val=$(cat "/sys/fs/cgroup${cur_cg}/memory.max" 2>/dev/null || echo "max")
+            if [[ "$cg_val" =~ ^[0-9]+$ ]] && [ "$cg_val" -gt 0 ] && [ "$cg_val" -lt 9223372036854771712 ] 2>/dev/null; then
+                _candidates+=( $(( cg_val / 1048576 )) )
+            fi
+        fi
+        if [ -f "/sys/fs/cgroup${cur_cg}/memory.high" ]; then
+            local cg_high
+            cg_high=$(cat "/sys/fs/cgroup${cur_cg}/memory.high" 2>/dev/null || echo "max")
+            if [[ "$cg_high" =~ ^[0-9]+$ ]] && [ "$cg_high" -gt 0 ] && [ "$cg_high" -lt 9223372036854771712 ] 2>/dev/null; then
+                _candidates+=( $(( cg_high / 1048576 )) )
+            fi
+        fi
+        cur_cg=$(dirname "$cur_cg" 2>/dev/null || echo "")
+        [ "$cur_cg" = "." ] && cur_cg=""
+    done
+
+    if [ -f /sys/fs/cgroup/memory.max ]; then
+        local root_max
+        root_max=$(cat /sys/fs/cgroup/memory.max 2>/dev/null || echo "max")
+        if [[ "$root_max" =~ ^[0-9]+$ ]] && [ "$root_max" -gt 0 ] && [ "$root_max" -lt 9223372036854771712 ] 2>/dev/null; then
+            _candidates+=( $(( root_max / 1048576 )) )
+        fi
+    fi
+
+    # 3. Cgroups v1 hierarchical walk
+    local cg_v1=""
+    if [ -f /proc/self/cgroup ]; then
+        cg_v1=$(awk -F: '$2 == "memory" {print $3}' /proc/self/cgroup 2>/dev/null | head -1)
+    fi
+
+    if [ -n "$cg_v1" ] && [ -f "/sys/fs/cgroup/memory${cg_v1}/memory.limit_in_bytes" ]; then
+        local v1_lim
+        v1_lim=$(cat "/sys/fs/cgroup/memory${cg_v1}/memory.limit_in_bytes" 2>/dev/null || echo 0)
+        if [[ "$v1_lim" =~ ^[0-9]+$ ]] && [ "$v1_lim" -gt 0 ] && [ "$v1_lim" -lt 100000000000000 ] 2>/dev/null; then
+            _candidates+=( $(( v1_lim / 1048576 )) )
+        fi
+    fi
+
+    if [ -f /sys/fs/cgroup/memory/memory.limit_in_bytes ]; then
         local cg_lim
         cg_lim=$(cat /sys/fs/cgroup/memory/memory.limit_in_bytes 2>/dev/null || echo 0)
         if [[ "$cg_lim" =~ ^[0-9]+$ ]] && [ "$cg_lim" -gt 0 ] && [ "$cg_lim" -lt 100000000000000 ] 2>/dev/null; then
-            cg_mb=$(( cg_lim / 1048576 ))
+            _candidates+=( $(( cg_lim / 1048576 )) )
         fi
     elif [ -f /sys/fs/cgroup/memory.limit_in_bytes ]; then
         local cg_lim
         cg_lim=$(cat /sys/fs/cgroup/memory.limit_in_bytes 2>/dev/null || echo 0)
         if [[ "$cg_lim" =~ ^[0-9]+$ ]] && [ "$cg_lim" -gt 0 ] && [ "$cg_lim" -lt 100000000000000 ] 2>/dev/null; then
-            cg_mb=$(( cg_lim / 1048576 ))
-        fi
-    elif [ -f /proc/user_beancounters ]; then
-        local bc_pages
-        bc_pages=$(awk '/physpages/ {print $4}' /proc/user_beancounters 2>/dev/null || echo 0)
-        if [[ "$bc_pages" =~ ^[0-9]+$ ]] && [ "$bc_pages" -gt 0 ] && [ "$bc_pages" -lt 2147483647 ] 2>/dev/null; then
-            cg_mb=$(( bc_pages / 256 ))
+            _candidates+=( $(( cg_lim / 1048576 )) )
         fi
     fi
 
-    if [ "$cg_mb" -gt 0 ] && [ "$host_mb" -gt 0 ]; then
-        if [ "$cg_mb" -lt "$host_mb" ]; then
-            echo "$cg_mb"
-        else
-            echo "$host_mb"
+    # 4. OpenVZ / Virtuozzo
+    if [ -f /proc/user_beancounters ]; then
+        local bc_pages
+        bc_pages=$(awk '/physpages/ {print $4}' /proc/user_beancounters 2>/dev/null || echo 0)
+        if [[ "$bc_pages" =~ ^[0-9]+$ ]] && [ "$bc_pages" -gt 0 ] && [ "$bc_pages" -lt 2147483647 ] 2>/dev/null; then
+            _candidates+=( $(( bc_pages / 256 )) )
         fi
-    elif [ "$cg_mb" -gt 0 ]; then
-        echo "$cg_mb"
-    elif [ "$host_mb" -gt 0 ]; then
-        echo "$host_mb"
-    else
-        echo 0
     fi
+
+    # 5. Fallback: free -m (host physical RAM via sysinfo() syscall)
+    local free_mb
+    free_mb=$(free -m 2>/dev/null | awk '/^Mem:/{print $2}' | tr -cd '0-9')
+    if [[ "$free_mb" =~ ^[0-9]+$ ]] && [ "$free_mb" -gt 0 ] 2>/dev/null; then
+        _candidates+=( "$free_mb" )
+    fi
+
+    # Resolve to the minimum valid positive RAM detected across all layers
+    local min_mb=0 val
+    for val in "${_candidates[@]}"; do
+        if [[ "$val" =~ ^[0-9]+$ ]] && [ "$val" -gt 0 ] 2>/dev/null; then
+            if [ "$min_mb" -eq 0 ] || [ "$val" -lt "$min_mb" ]; then
+                min_mb="$val"
+            fi
+        fi
+    done
+    echo "$min_mb"
 }
 
 run_ram_tune() {
@@ -8293,6 +8421,77 @@ SYSCTL
             ;;
         *)
             log_error "用法： mtproxymax ram-tune [auto|off|status]"
+            return 1
+            ;;
+    esac
+}
+
+# ── Container Resource Limits (CPU / Memory) ──
+run_resources() {
+    load_settings
+    local action="${1:-status}"
+    case "$action" in
+        status|"")
+            echo -e "\n  🖥️  ${BOLD}容器资源限制：${NC}"
+            echo -e "     CPU 核心数： ${CYAN}${PROXY_CPUS:-不限}${NC}"
+            echo -e "     内存限制：  ${CYAN}${PROXY_MEMORY:-不限}${NC}"
+            echo -e "\n  用法：mtproxymax resources [status|clear|set <cpus|none> <memory|none>]\n"
+            ;;
+        clear|reset|none|off)
+            check_root
+            if ! confirm_settings_restart "清除 CPU 和内存限制"; then
+                return 0
+            fi
+            PROXY_CPUS=""
+            PROXY_MEMORY=""
+            save_settings
+            log_success "资源限制已清除（CPU 和内存均不限）"
+            if is_proxy_running; then
+                load_secrets
+                restart_proxy_container || true
+            fi
+            ;;
+        set)
+            check_root
+            local new_c="${2:-}" new_m="${3:-}"
+            if [ -z "$new_c" ] || [ -z "$new_m" ]; then
+                log_error "用法：mtproxymax resources set <cpus|none> <memory|none>  （例如 mtproxymax resources set 1 512m）"
+                return 1
+            fi
+            local parsed_c="" parsed_m=""
+            if [[ "$new_c" =~ ^(none|unlimited|clear|0|off)$ ]]; then
+                parsed_c=""
+            elif [[ "$new_c" =~ ^[0-9]+(\.[0-9]+)?$ ]] && awk "BEGIN{exit ($new_c < 0.1)}" 2>/dev/null; then
+                parsed_c="$new_c"
+            else
+                log_error "CPU 值无效（必须大于或等于 0.1，或使用 'none' 取消限制）"
+                return 1
+            fi
+
+            if [[ "$new_m" =~ ^(none|unlimited|clear|0|off)$ ]]; then
+                parsed_m=""
+            elif [[ "$new_m" =~ ^[0-9]+[bBkKmMgG]?$ ]]; then
+                [[ "$new_m" =~ ^[0-9]+$ ]] && new_m="${new_m}m"
+                parsed_m="$new_m"
+            else
+                log_error "内存值无效（例如 256m、1g，或使用 'none' 取消限制）"
+                return 1
+            fi
+
+            if ! confirm_settings_restart "资源限制（CPU：${parsed_c:-不限}，内存：${parsed_m:-不限}）"; then
+                return 0
+            fi
+            PROXY_CPUS="$parsed_c"
+            PROXY_MEMORY="$parsed_m"
+            save_settings
+            log_success "资源限制已更新（CPU：${PROXY_CPUS:-不限}，内存：${PROXY_MEMORY:-不限}）"
+            if is_proxy_running; then
+                load_secrets
+                restart_proxy_container || true
+            fi
+            ;;
+        *)
+            log_error "用法：mtproxymax resources [status|clear|set <cpus|none> <memory|none>]"
             return 1
             ;;
     esac
@@ -8698,6 +8897,14 @@ run_cover_shield() {
             if [ -n "$target" ]; then
                 [[ "$target" =~ ^https?:// ]] || target="https://${target}"
                 COVER_FALLBACK_TARGET="$target"
+                local _ct="${target#*://}"; _ct="${_ct%%/*}"
+                if [[ "$_ct" == *":"* ]]; then
+                    MASKING_HOST="${_ct%%:*}"
+                    MASKING_PORT="${_ct#*:}"
+                else
+                    MASKING_HOST="$_ct"
+                    MASKING_PORT="443"
+                fi
             fi
             log_info "正在启用反向代理掩护防护（主动探测防御）..."
             log_info "回退目标已配置为：${COVER_FALLBACK_TARGET:-https://cloudflare.com}"
@@ -8725,6 +8932,14 @@ run_cover_shield() {
             target="${target// /}"  # strip whitespace
             [[ "$target" =~ ^https?:// ]] || target="https://${target}"
             COVER_FALLBACK_TARGET="$target"
+            local _ct="${target#*://}"; _ct="${_ct%%/*}"
+            if [[ "$_ct" == *":"* ]]; then
+                MASKING_HOST="${_ct%%:*}"
+                MASKING_PORT="${_ct#*:}"
+            else
+                MASKING_HOST="$_ct"
+                MASKING_PORT="443"
+            fi
             save_settings
             if [ "${COVER_SHIELD_ENABLED:-false}" = "true" ] && is_proxy_running; then
                 log_info "正在重启 Telemt 引擎以应用更新后的掩护防护目标..."
@@ -9120,7 +9335,7 @@ run_proxy_container() {
     fi
 
     # Generate config
-    generate_telemt_config
+    generate_telemt_config || { log_error "配置生成失败，已中止容器启动"; return 1; }
 
     # Check port availability
     if ! is_port_available "$PROXY_PORT"; then
@@ -9147,43 +9362,67 @@ run_proxy_container() {
         --log-opt max-file=3
     )
     [ -n "${PROXY_CPUS}" ] && _docker_args+=(--cpus "${PROXY_CPUS}")
-    [ -n "${PROXY_MEMORY}" ] && _docker_args+=(--memory "${PROXY_MEMORY}" --memory-swap "${PROXY_MEMORY}")
+    [ -n "${PROXY_MEMORY}" ] && _docker_args+=(--memory "${PROXY_MEMORY}")
 
     local _run_out
     _run_out=$(docker run -d "${_docker_args[@]}" \
         --ulimit nofile=65535:65535 \
-        -v "${CONFIG_DIR}/config.toml:/etc/telemt.toml:ro" \
-        "$(get_docker_image)" /etc/telemt.toml 2>&1) || {
-            if echo "$_run_out" | grep -E -q "(cgroup|message recipient disconnected|systemd|dbus|EOF|timeout|system\.slice|runc|OCI runtime create failed)"; then
-                log_warn "检测到精简型或低内存 VPS 上的 Docker cgroup/D-Bus 超时，正在尝试自动恢复..."
-                sync; echo 3 > /proc/sys/vm/drop_caches 2>/dev/null || true
-                if command -v systemctl &>/dev/null; then
-                    systemctl daemon-reload 2>/dev/null || true
-                    systemctl restart dbus 2>/dev/null || true
-                    sleep 1
-                    systemctl restart docker 2>/dev/null || true
-                    sleep 2
+        -v "${CONFIG_DIR}:/etc/telemt:ro" \
+        "$(get_docker_image)" /etc/telemt/config.toml 2>&1) || {
+            # Check if failure was caused by resource limits (CPU/Memory cgroup rejection in unprivileged LXC/containers)
+            if [ -n "${PROXY_MEMORY}" ] || [ -n "${PROXY_CPUS}" ]; then
+                if echo "$_run_out" | grep -E -iq "(cgroup|permission denied|OCI runtime create failed|memory|swap|cpus)"; then
+                    log_warn "宿主 cgroup 拒绝容器 CPU 或内存限制（例如非特权 LXC），正在取消资源限制后重试..."
+                    _docker_args=(
+                        --name "$CONTAINER_NAME"
+                        --restart unless-stopped
+                        --network host
+                        --log-opt max-size=10m
+                        --log-opt max-file=3
+                    )
+                    docker rm -f "$CONTAINER_NAME" 2>/dev/null || true
+                    _run_out=$(docker run -d "${_docker_args[@]}" \
+                        --ulimit nofile=65535:65535 \
+                        -v "${CONFIG_DIR}:/etc/telemt:ro" \
+                        "$(get_docker_image)" /etc/telemt/config.toml 2>&1) || true
                 fi
-                docker rm -f "$CONTAINER_NAME" 2>/dev/null || true
-                log_info "D-Bus 和内存缓存恢复后，正在重新启动容器..."
-                _run_out=$(docker run -d "${_docker_args[@]}" \
-                    --ulimit nofile=65535:65535 \
-                    -v "${CONFIG_DIR}/config.toml:/etc/telemt.toml:ro" \
-                    "$(get_docker_image)" /etc/telemt.toml 2>&1) || {
-                        # If standard retry still fails, attempt fallback with explicit host cgroup namespace
-                        _run_out=$(docker run -d "${_docker_args[@]}" \
-                            --cgroupns host \
-                            -v "${CONFIG_DIR}/config.toml:/etc/telemt.toml:ro" \
-                            "$(get_docker_image)" /etc/telemt.toml 2>&1) || {
-                                log_error "完成恢复尝试后仍无法启动容器"
-                                echo -e "  ${DIM}${_run_out}${NC}"
-                                return 1
-                            }
-                    }
-            else
-                log_error "无法启动容器"
-                echo -e "  ${DIM}${_run_out}${NC}"
-                return 1
+            fi
+
+            if ! is_proxy_running; then
+                if echo "$_run_out" | grep -E -q "(cgroup|Message recipient disconnected|systemd|dbus|EOF|timeout|system\.slice|runc|OCI runtime create failed)"; then
+                    log_warn "检测到精简型或低内存 VPS 上的 Docker cgroup/D-Bus 超时，正在尝试自动恢复..."
+                    [ -w /proc/sys/vm/drop_caches ] && { sync; echo 3 > /proc/sys/vm/drop_caches 2>/dev/null || true; }
+                    if command -v systemctl &>/dev/null; then
+                        systemctl daemon-reload 2>/dev/null || true
+                        systemctl restart dbus 2>/dev/null || true
+                        sleep 1
+                        systemctl restart docker 2>/dev/null || true
+                        sleep 2
+                    fi
+                    docker rm -f "$CONTAINER_NAME" 2>/dev/null || true
+                    log_info "D-Bus 和内存缓存恢复后，正在重新启动容器..."
+                    _run_out=$(docker run -d "${_docker_args[@]}" \
+                        --ulimit nofile=65535:65535 \
+                        -v "${CONFIG_DIR}:/etc/telemt:ro" \
+                        "$(get_docker_image)" /etc/telemt/config.toml 2>&1) || {
+                            # If standard retry still fails, attempt fallback with explicit host cgroup namespace
+                            docker rm -f "$CONTAINER_NAME" 2>/dev/null || true
+                            _run_out=$(docker run -d "${_docker_args[@]}" \
+                                --cgroupns host \
+                                -v "${CONFIG_DIR}:/etc/telemt:ro" \
+                                "$(get_docker_image)" /etc/telemt/config.toml 2>&1) || {
+                                    docker rm -f "$CONTAINER_NAME" 2>/dev/null || true
+                                    log_error "完成恢复尝试后仍无法启动容器"
+                                    echo -e "  ${DIM}${_run_out}${NC}"
+                                    return 1
+                                }
+                        }
+                else
+                    docker rm -f "$CONTAINER_NAME" 2>/dev/null || true
+                    log_error "无法启动容器"
+                    echo -e "  ${DIM}${_run_out}${NC}"
+                    return 1
+                fi
             fi
         }
 
@@ -9265,34 +9504,32 @@ _start_all_instances() {
         [ "${INSTANCE_ENABLED[$i]}" = "true" ] || continue
         local cname="mtproxymax-${INSTANCE_PORTS[$i]}"
         docker ps --format '{{.Names}}' 2>/dev/null | grep -q "^${cname}$" && continue
-        # Regenerate instance config dynamically
+        # Regenerate instance config dynamically (straight to its own file — never via config.toml)
         local inst_config="${CONFIG_DIR}/config-${INSTANCE_PORTS[$i]}.toml"
         PROXY_PORT="${INSTANCE_PORTS[$i]}"
         PROXY_METRICS_PORT="${INSTANCE_METRICS_PORTS[$i]}"
-        generate_telemt_config
-        mv "${CONFIG_DIR}/config.toml" "$inst_config" 2>/dev/null
+        generate_telemt_config "$inst_config"
         docker rm -f "$cname" &>/dev/null || true
         local _inst_out
         _inst_out=$(docker run -d --name "$cname" --restart unless-stopped --network host \
             --ulimit nofile=65535:65535 --log-opt max-size=10m --log-opt max-file=3 \
-            -v "${inst_config}:/etc/telemt.toml:ro" \
-            "$(get_docker_image)" /etc/telemt.toml 2>&1) || {
-                if echo "$_inst_out" | grep -E -q "(cgroup|message recipient disconnected|systemd|dbus|EOF|timeout|system\.slice|runc|OCI runtime create failed)"; then
-                    sync; echo 3 > /proc/sys/vm/drop_caches 2>/dev/null || true
+            -v "${CONFIG_DIR}:/etc/telemt:ro" \
+            "$(get_docker_image)" "/etc/telemt/$(basename "$inst_config")" 2>&1) || {
+                if echo "$_inst_out" | grep -E -q "(cgroup|Message recipient disconnected|systemd|dbus|EOF|timeout|system\.slice|runc|OCI runtime create failed)"; then
+                    [ -w /proc/sys/vm/drop_caches ] && { sync; echo 3 > /proc/sys/vm/drop_caches 2>/dev/null || true; }
                     systemctl daemon-reload 2>/dev/null || true
                     systemctl restart dbus docker 2>/dev/null || true
                     sleep 2
                     docker rm -f "$cname" &>/dev/null || true
                     docker run -d --name "$cname" --restart unless-stopped --network host \
                         --cgroupns host --log-opt max-size=10m --log-opt max-file=3 \
-                        -v "${inst_config}:/etc/telemt.toml:ro" \
-                        "$(get_docker_image)" /etc/telemt.toml &>/dev/null || true
+                        -v "${CONFIG_DIR}:/etc/telemt:ro" \
+                        "$(get_docker_image)" "/etc/telemt/$(basename "$inst_config")" &>/dev/null || true
                 fi
             }
     done
     PROXY_PORT="$_orig_port"
     PROXY_METRICS_PORT="$_orig_mport"
-    generate_telemt_config
 }
 
 start_proxy_container() {
@@ -9316,10 +9553,37 @@ start_proxy_container() {
 restart_proxy_container() {
     stop_proxy_container 2>/dev/null || true
     docker rm -f "$CONTAINER_NAME" 2>/dev/null || true
-    run_proxy_container
-    _start_all_instances 2>/dev/null
+    run_proxy_container || return $?
+    _start_all_instances 2>/dev/null || return $?
     apply_firewall_rules 2>/dev/null || true
     speed_limit_apply 2>/dev/null || true
+}
+
+# Does the engine container actually see the config file we just wrote?
+#
+# The container gets a bind mount of CONFIG_DIR. A single-file mount pins one
+# inode, so replacing the file leaves the engine reading an unlinked one (the
+# mount source shows up as "...//deleted" in `mount`) and no reload signal can
+# ever deliver the new bytes. Reading through /proc/<pid>/root gives us the
+# container's view without needing any binary inside the image.
+_engine_config_in_sync() {
+    local cfg="$1" cname="$2" pid
+    [ -f "$cfg" ] || return 0
+    pid=$(docker inspect -f '{{.State.Pid}}' "$cname" 2>/dev/null) || return 1
+    [ -n "$pid" ] && [ "$pid" != "0" ] || return 1
+    local rel="/etc/telemt/$(basename "$cfg")"
+    if [ -r "/proc/${pid}/root${rel}" ]; then
+        cmp -s "$cfg" "/proc/${pid}/root${rel}" 2>/dev/null
+    else
+        # Fallback for hosts where the container root is not readable
+        docker exec "$cname" cat "$rel" 2>/dev/null | cmp -s - "$cfg"
+    fi
+}
+
+# Is a secondary instance container currently up? A stopped instance has no
+# engine to reload and must never be treated as an out-of-sync one.
+_instance_container_running() {
+    docker ps --format '{{.Names}}' 2>/dev/null | grep -q "^$1$"
 }
 
 # Hot-reload: rewrite config.toml and let the engine pick it up (no restart, no dropped connections)
@@ -9331,7 +9595,16 @@ reload_proxy_config() {
     flush_traffic_to_disk 2>/dev/null || true
 
     # Signal primary container to reload config (inotify may miss bind-mount changes)
-    is_proxy_running && docker kill -s SIGHUP "$CONTAINER_NAME" 2>/dev/null || true
+    local _reload_ok=false
+    if is_proxy_running; then
+        if docker kill -s SIGHUP "$CONTAINER_NAME" 2>/dev/null; then
+            _reload_ok=true
+        else
+            log_warn "无法向引擎发送重载信号，请重启代理以应用此更改"
+        fi
+    else
+        log_warn "代理未运行，此更改将在下次启动时生效"
+    fi
 
     # Also reload secondary instances if any
     if [ -f "$INSTANCES_FILE" ]; then
@@ -9342,18 +9615,42 @@ reload_proxy_config() {
             local inst_config="${CONFIG_DIR}/config-${INSTANCE_PORTS[$i]}.toml"
             PROXY_PORT="${INSTANCE_PORTS[$i]}"
             PROXY_METRICS_PORT="${INSTANCE_METRICS_PORTS[$i]}"
-            generate_telemt_config
-            mv "${CONFIG_DIR}/config.toml" "$inst_config" 2>/dev/null
-            docker kill -s SIGHUP "mtproxymax-${INSTANCE_PORTS[$i]}" 2>/dev/null || true
+            generate_telemt_config "$inst_config"
+            _instance_container_running "mtproxymax-${INSTANCE_PORTS[$i]}" || continue
+            docker kill -s SIGHUP "mtproxymax-${INSTANCE_PORTS[$i]}" 2>/dev/null \
+                || log_warn "实例 ${INSTANCE_PORTS[$i]}：无法向引擎发送重载信号"
         done
         PROXY_PORT="$_orig_port"
         PROXY_METRICS_PORT="$_orig_mport"
-        # Regenerate primary config (was overwritten by last instance)
-        generate_telemt_config
     fi
 
     speed_limit_apply 2>/dev/null || true
-    log_info "配置已热重载，无需重启"
+
+    # Verify the running engine can actually see the bytes we wrote. Without this a
+    # detached mount shows up as a silent no-op: secrets that were removed keep
+    # working and new ones never connect.
+    local _stale=false
+    if is_proxy_running && ! _engine_config_in_sync "${CONFIG_DIR}/config.toml" "$CONTAINER_NAME"; then
+        _stale=true
+    fi
+    if [ -f "$INSTANCES_FILE" ]; then
+        local _j
+        for _j in "${!INSTANCE_PORTS[@]}"; do
+            [ "${INSTANCE_ENABLED[$_j]}" = "true" ] || continue
+            _instance_container_running "mtproxymax-${INSTANCE_PORTS[$_j]}" || continue
+            _engine_config_in_sync "${CONFIG_DIR}/config-${INSTANCE_PORTS[$_j]}.toml" "mtproxymax-${INSTANCE_PORTS[$_j]}" \
+                || _stale=true
+        done
+    fi
+
+    if [ "$_stale" = "true" ]; then
+        log_warn "引擎无法读取更新后的配置（绑定挂载已失效），正在重启代理以应用更改"
+        restart_proxy_container
+        return $?
+    fi
+
+    [ "$_reload_ok" = "true" ] && log_info "配置已热重载，无需重启"
+    return 0
 }
 
 # Parse ISO 8601 timestamp to epoch (portable: GNU date, busybox date, Python fallback)
@@ -9952,11 +10249,10 @@ self_update() {
     # Always regenerate and restart Telegram bot service to apply latest daemon code
     if [ "${TELEGRAM_ENABLED:-}" = "true" ]; then
         telegram_generate_service_script
-        if command -v systemctl &>/dev/null && [ -f /etc/systemd/system/mtproxymax-telegram.service ]; then
-            log_info "正在重启 Telegram 机器人服务..."
-            systemctl restart mtproxymax-telegram.service 2>/dev/null \
-                && log_success "Telegram 机器人服务已重启" \
-                || log_warn "Telegram 机器人服务重启失败，请运行：systemctl restart mtproxymax-telegram.service"
+        if telegram_restart_service; then
+            log_success "Telegram 机器人服务已重启"
+        else
+            log_warn "Telegram 机器人服务未安装或重启失败，请检查服务状态，或运行：mtproxymax telegram setup"
         fi
     fi
 
@@ -10981,9 +11277,7 @@ telegram_setup_wizard() {
 
     # Only one getUpdates consumer may run per bot. Stop the existing daemon so
     # it cannot consume /start before the setup wizard reads the chat ID.
-    if command -v systemctl &>/dev/null; then
-        systemctl stop mtproxymax-telegram.service 2>/dev/null || true
-    fi
+    telegram_stop_service
 
     echo ""
     echo -e "  ${BOLD}步骤 2：获取会话 ID${NC}"
@@ -11012,7 +11306,7 @@ telegram_setup_wizard() {
             TELEGRAM_CHAT_ID="$manual_id"
         else
             log_error "会话 ID 无效"
-            command -v systemctl &>/dev/null && systemctl start mtproxymax-telegram.service 2>/dev/null || true
+            telegram_restart_service || true
             return 1
         fi
     fi
@@ -11050,8 +11344,12 @@ telegram_setup_wizard() {
     # Send proxy links
     telegram_notify_proxy_started &>/dev/null &
 
-    # Setup systemd service for bot polling
-    setup_telegram_service
+    # Setup the bot polling service (systemd or OpenRC)
+    if ! setup_telegram_service; then
+        echo ""
+        log_warn "机器人配置已保存，但后台服务未运行。"
+        log_warn "服务启动前，机器人命令和警报不可用，请按上方提示处理。"
+    fi
 
     press_any_key
 }
@@ -11264,6 +11562,11 @@ tg_public_menu() {
 
 tg_admin_menu() {
     local cid="$1" msg="${2:-请选择管理操作：}"
+    case "$(_check_tg_role "$cid")" in
+        superadmin) ;;
+        reseller) tg_voucher_menu "$cid"; return ;;
+        *) tg_public_menu "$cid"; return ;;
+    esac
     local kb='{"inline_keyboard":[[{"text":"📊 运行状态","callback_data":"admin_status"},{"text":"📈 流量报告","callback_data":"admin_traffic"}],[{"text":"🔑 密钥管理","callback_data":"menu_secrets"},{"text":"🔗 代理链接","callback_data":"admin_link"}],[{"text":"🩺 健康检查","callback_data":"admin_health"},{"text":"🛡 安全管理","callback_data":"menu_security"}],[{"text":"⚙️ 更多功能","callback_data":"menu_more"},{"text":"❓ 帮助","callback_data":"menu_help"}]]}'
     tg_send_to "$cid" "$msg" "$kb"
 }
@@ -11646,6 +11949,19 @@ _check_tg_role() {
     echo "${r:-none}"
 }
 
+# Record a security event in the shared audit log. The bot daemon is
+# self-contained and never sources the manager, so it cannot call the manager's
+# audit_log() and writes the same line format itself.
+_tg_security_log() {
+    local cid="$1" action="$2"
+    local _log="${INSTALL_DIR}/audit.log"
+    mkdir -p "$INSTALL_DIR" 2>/dev/null || true
+    printf '%s UTC | telegram:%s | SECURITY: denied %q\n' \
+        "$(date -u '+%Y-%m-%d %H:%M:%S')" "$cid" "$action" >> "$_log" 2>/dev/null || true
+    chmod 600 "$_log" 2>/dev/null || true
+    return 0
+}
+
 _process_cmd() {
     local _l _s _c _en _mc _mi _q _ex _notes _adtag _pu _pc label secret created enabled max_conns max_ips quota expires name type addr user pass weight iface
     local update_id="$1" chat_id="$2" text="$3" callback_id="${4:-}"
@@ -11728,14 +12044,28 @@ _process_cmd() {
         esac
     fi
 
-    if [ "$role" = "none" ]; then
+    # Apply role checks before a button can open a privileged menu or prompt.
+    # Pending replies are checked again below after conversion to commands.
+    if [ "$role" != "superadmin" ]; then
         case "$text" in
             "📊 运行状态"|"📈 流量报告"|"🔑 密钥管理"|"🔗 代理链接"|"🩺 健康检查"|"🛡 安全管理"|"⚙️ 更多功能"|\
             "📋 密钥列表"|"➕ 添加密钥"|"✅ 启用密钥"|"⛔ 禁用密钥"|"🔄 轮换密钥"|"🗑 删除密钥"|"📏 用户限制"|"✏️ 设置限制"|\
             "🔒 锁定状态"|"🚨 启用锁定"|"🔓 关闭锁定"|"📊 系统摘要"|"🌐 上游代理"|"🌍 集群状态"|"🎟 兑换码管理"|\
             "➕ 生成兑换码"|"📋 有效兑换码"|"💬 回复工单"|"📢 广播消息"|"🔄 重启代理"|"⬆️ 检查更新")
-                tg_public_menu "$chat_id" "⛔ 此操作仅限管理员使用。"
-                return
+                if [ "$role" = "reseller" ]; then
+                    case "$text" in
+                        "🎟 兑换码管理"|"➕ 生成兑换码"|"📋 有效兑换码") ;;
+                        *)
+                            tg_send_to "$chat_id" "⛔ 权限不足：经销商角色仅允许使用兑换券命令。"
+                            _tg_security_log "$chat_id" "$text"
+                            return
+                            ;;
+                    esac
+                else
+                    tg_public_menu "$chat_id" "⛔ 权限不足：此操作仅限管理员使用。"
+                    [ "$role" = "none" ] || _tg_security_log "$chat_id" "$text"
+                    return
+                fi
                 ;;
         esac
     fi
@@ -11768,7 +12098,7 @@ _process_cmd() {
         "🔄 重启代理") text="/mp_restart" ;;
         "⬆️ 检查更新") text="/mp_update" ;;
         "❓ 帮助")
-            if [ "$role" = "none" ]; then
+            if [ "$role" != "superadmin" ]; then
                 tg_public_menu "$chat_id" "❓ *使用帮助*\n\n点击“我的状态”查询配额，点击“兑换码”开通服务，遇到问题可点击“联系支持”。"
                 return
             fi
@@ -11795,7 +12125,7 @@ _process_cmd() {
     # Public user or unauthenticated commands
     case "$text" in
         /start|/start\ *|/start@*|/menu|/menu@*)
-            if [ "$role" = "none" ]; then
+            if [ "$role" != "superadmin" ] && [ "$role" != "reseller" ]; then
                 tg_public_menu "$chat_id" "🛡️ *欢迎使用 MTProxyMax 自助服务中心 (${VERSION})*\n\n请选择下方按钮，无需记忆命令。"
             else
                 tg_admin_menu "$chat_id" "🛡️ *MTProxyMax 管理控制台 (${VERSION})*\n\n请选择下方按钮，无需记忆命令。"
@@ -11870,7 +12200,31 @@ _process_cmd() {
         return
     fi
 
-    # Superadmin & Reseller administrative commands
+    # The control plane is an allowlist. A reseller is limited to vouchers (see
+    # README: Role-Based Access Control). Any other role value is a
+    # misconfiguration — admins.conf is a plain file an operator can hand-edit —
+    # and is refused rather than silently granted administrative rights.
+    case "$role" in
+        superadmin)
+            ;;
+        reseller)
+            case "$text" in
+                /mp_voucher|/mp_voucher@*|/mp_voucher\ *|/mp_voucher@*\ *) ;;
+                *)
+                    tg_send_to "$chat_id" "⛔ 权限不足：经销商角色仅允许使用兑换券命令。"
+                    _tg_security_log "$chat_id" "$text"
+                    return
+                    ;;
+            esac
+            ;;
+        *)
+            tg_send_to "$chat_id" "⛔ 权限不足：此账户的角色无法识别。"
+            _tg_security_log "$chat_id" "unrecognised role '${role}': ${text}"
+            return
+            ;;
+    esac
+
+    # Administrative commands (resellers can only reach voucher operations).
     case "$text" in
         /mp_voucher\ *|/mp_voucher@*\ *)
             local sub=$(echo "$text" | awk '{print $2}')
@@ -11885,7 +12239,7 @@ _process_cmd() {
                     ;;
                 list)
                     local vout=$("${INSTALL_DIR}/mtproxymax" voucher list active | head -n 25)
-                    tg_send "📋 *有效 Vouchers*\n\`\`\`\n${vout}\n\`\`\`"
+                    tg_send "📋 *有效兑换码*\n\`\`\`\n${vout}\n\`\`\`"
                     ;;
                 *)
                     tg_send "🎟 *兑换码管理*\n\n用法：\n\`/mp_voucher create <count> <quota> <days>\`\n\`/mp_voucher list\`"
@@ -12356,12 +12710,66 @@ TELEGRAM_SCRIPT
     chmod +x "$script_path"
 }
 
+# Stop the Telegram bot service on whichever init system is present
+telegram_stop_service() {
+    case "$(detect_init_system)" in
+        systemd) systemctl stop mtproxymax-telegram.service 2>/dev/null || true ;;
+        openrc)  rc-service mtproxymax-telegram stop 2>/dev/null || true ;;
+    esac
+    return 0
+}
+
+# Restart the Telegram bot service; nonzero when it is not installed or fails
+telegram_restart_service() {
+    case "$(detect_init_system)" in
+    systemd)
+        [ -f "${SYSTEMD_DIR}/mtproxymax-telegram.service" ] || return 1
+        systemctl restart mtproxymax-telegram.service 2>/dev/null
+        ;;
+    openrc)
+        [ -f "${INITD_DIR}/mtproxymax-telegram" ] || return 1
+        rc-service mtproxymax-telegram restart 2>/dev/null
+        ;;
+    *) return 1 ;;
+    esac
+}
+
+# Remove the Telegram bot service definition from the host init system
+telegram_remove_service() {
+    case "$(detect_init_system)" in
+    systemd)
+        systemctl stop mtproxymax-telegram.service 2>/dev/null || true
+        systemctl disable mtproxymax-telegram.service 2>/dev/null || true
+        rm -f "${SYSTEMD_DIR}/mtproxymax-telegram.service"
+        systemctl daemon-reload 2>/dev/null || true
+        ;;
+    openrc)
+        rc-service mtproxymax-telegram stop 2>/dev/null || true
+        rc-update del mtproxymax-telegram default 2>/dev/null || true
+        rm -f "${INITD_DIR}/mtproxymax-telegram"
+        ;;
+    esac
+    return 0
+}
+
+# True when the Telegram bot service is actually running (not merely enabled)
+telegram_service_running() {
+    case "$(detect_init_system)" in
+        systemd) systemctl is-active --quiet mtproxymax-telegram.service 2>/dev/null ;;
+        openrc)  rc-service mtproxymax-telegram status >/dev/null 2>&1 ;;
+        *)       return 1 ;;
+    esac
+}
+
 setup_telegram_service() {
     telegram_generate_service_script
 
-    # Create systemd service
-    if command -v systemctl &>/dev/null; then
-        cat > /etc/systemd/system/mtproxymax-telegram.service << 'SERVICE_EOF'
+    local init_system
+    init_system=$(detect_init_system)
+
+    case "$init_system" in
+    systemd)
+        cat > "${SYSTEMD_DIR}/mtproxymax-telegram.service" << 'SERVICE_EOF'
 [Unit]
 Description=MTProxyMax Telegram Bot Service
 After=network-online.target docker.service
@@ -12383,12 +12791,82 @@ SERVICE_EOF
         systemctl enable mtproxymax-telegram.service 2>/dev/null
         if systemctl restart mtproxymax-telegram.service 2>/dev/null \
             && systemctl is-active --quiet mtproxymax-telegram.service; then
-            log_success "Telegram 机器人服务已启动"
+            log_success "Telegram 机器人服务已启动（systemd）"
         else
-            log_error "Telegram 机器人服务启动失败，请运行：systemctl status mtproxymax-telegram.service"
+            log_warn "Telegram 机器人服务启动失败，请检查：journalctl -u mtproxymax-telegram.service"
             return 1
         fi
+        ;;
+    openrc)
+        # supervise-daemon keeps the bot alive across crashes, mirroring the
+        # systemd unit's Restart=on-failure / RestartSec=10. The daemon runs its
+        # own foreground poll loop — and is the only scheduler for the periodic
+        # tasks (quota/expiry enforcement, sweep, proxy auto-restart) — so it can
+        # be supervised directly instead of backgrounding itself.
+        #
+        # `need docker` is deliberate: the daemon drives the proxy container, so
+        # starting it without docker would only emit bogus "proxy down" alerts.
+        # `use` is soft — it orders dns/logger only when those services exist.
+        #
+        # respawn_max=0 means "always respawn", which is slightly broader than the
+        # systemd unit's Restart=on-failure: supervise-daemon restarts even after a
+        # clean exit. The daemon only exits on error or a signal, so this is the
+        # behaviour we want, but it is a real difference between the two backends.
+        cat > "${INITD_DIR}/mtproxymax-telegram" << OPENRC_EOF
+#!/sbin/openrc-run
+# MTProxyMax Telegram Bot Service
+# Auto-generated — do not edit manually
+
+name="mtproxymax-telegram"
+description="MTProxyMax Telegram Bot Service"
+
+supervisor=supervise-daemon
+command="/bin/bash"
+command_args="${INSTALL_DIR}/mtproxymax-telegram.sh"
+respawn_delay=10
+respawn_max=0
+
+# NOTE: two pid files exist and they are NOT interchangeable. This one belongs to
+# the supervision layer; the bot daemon separately writes its own PID to
+# ${INSTALL_DIR}/mtproxymax-telegram.pid. Killing the PID in this file stops the
+# supervisor, not the bot.
+pidfile="/run/\${RC_SVCNAME}.pid"
+output_log="/var/log/mtproxymax-telegram.log"
+error_log="/var/log/mtproxymax-telegram.err"
+
+depend() {
+    need net docker
+    use dns logger
+}
+
+start_pre() {
+    # Generated by 'mtproxymax telegram setup'; absent until that wizard runs.
+    if [ ! -f "\${command_args}" ]; then
+        eerror "找不到 \${command_args}。"
+        eerror "请运行：${INSTALL_DIR}/mtproxymax telegram setup"
+        return 1
     fi
+}
+OPENRC_EOF
+
+        chmod +x "${INITD_DIR}/mtproxymax-telegram"
+        if ! openrc_enable_service mtproxymax-telegram default; then
+            log_warn "无法启用机器人开机自启，请运行：rc-update add mtproxymax-telegram default"
+        fi
+        if rc-service mtproxymax-telegram restart 2>/dev/null; then
+            log_success "Telegram 机器人服务已启动（OpenRC）"
+        else
+            log_warn "Telegram 机器人服务启动失败，请检查：rc-service mtproxymax-telegram status"
+            return 1
+        fi
+        ;;
+    *)
+        log_warn "未找到支持的初始化系统（systemd 或 OpenRC）。"
+        log_warn "已生成机器人守护脚本 ${INSTALL_DIR}/mtproxymax-telegram.sh，但尚未运行。"
+        echo -e "  ${DIM}手动启动：nohup ${INSTALL_DIR}/mtproxymax-telegram.sh >/var/log/mtproxymax-telegram.log 2>&1 &${NC}"
+        return 1
+        ;;
+    esac
 }
 
 
@@ -12803,7 +13281,7 @@ setup_replication_service() {
         return 1
     fi
 
-    cat > /etc/systemd/system/mtproxymax-sync.service << 'REPL_SERVICE_EOF'
+    cat > "${SYSTEMD_DIR}/mtproxymax-sync.service" << 'REPL_SERVICE_EOF'
 [Unit]
 Description=MTProxyMax Replication Sync
 After=network-online.target docker.service
@@ -12816,7 +13294,7 @@ StandardOutput=journal
 StandardError=journal
 REPL_SERVICE_EOF
 
-    cat > /etc/systemd/system/mtproxymax-sync.timer << REPL_TIMER_EOF
+    cat > "${SYSTEMD_DIR}/mtproxymax-sync.timer" << REPL_TIMER_EOF
 [Unit]
 Description=MTProxyMax Replication Sync Timer
 
@@ -12845,8 +13323,8 @@ stop_replication_service() {
 
 remove_replication_service() {
     stop_replication_service
-    rm -f /etc/systemd/system/mtproxymax-sync.service
-    rm -f /etc/systemd/system/mtproxymax-sync.timer
+    rm -f "${SYSTEMD_DIR}/mtproxymax-sync.service"
+    rm -f "${SYSTEMD_DIR}/mtproxymax-sync.timer"
     rm -f "${INSTALL_DIR}/mtproxymax-sync.sh"
     command -v systemctl &>/dev/null && systemctl daemon-reload 2>/dev/null || true
 }
@@ -13366,7 +13844,9 @@ run_installer() {
     local cpu_input
     read -r cpu_input
     if [ -n "$cpu_input" ]; then
-        if [[ "$cpu_input" =~ ^[0-9]+(\.[0-9]+)?$ ]]; then
+        if [[ "$cpu_input" =~ ^(0|none|unlimited|clear|off)$ ]]; then
+            PROXY_CPUS=""
+        elif [[ "$cpu_input" =~ ^[0-9]+(\.[0-9]+)?$ ]]; then
             # Ensure minimum 0.1 CPU
             if awk "BEGIN{exit ($cpu_input < 0.1)}" 2>/dev/null; then
                 PROXY_CPUS="$cpu_input"
@@ -13374,7 +13854,7 @@ run_installer() {
                 log_warn "CPU 限制不得低于 0.1，将保留 ${PROXY_CPUS:-不限}"
             fi
         else
-            log_warn "CPU 值无效（必须是数字，例如 1、2、0.5），将保留 ${PROXY_CPUS:-不限}"
+            log_warn "CPU 值无效（例如 1、2、0.5，或 'none' 取消限制），将保留 ${PROXY_CPUS:-不限}"
         fi
     fi
 
@@ -13382,12 +13862,14 @@ run_installer() {
     local mem_input
     read -r mem_input
     if [ -n "$mem_input" ]; then
-        if [[ "$mem_input" =~ ^[0-9]+[bBkKmMgG]?$ ]]; then
+        if [[ "$mem_input" =~ ^(0|none|unlimited|clear|off)$ ]]; then
+            PROXY_MEMORY=""
+        elif [[ "$mem_input" =~ ^[0-9]+[bBkKmMgG]?$ ]]; then
             # Default bare numbers to megabytes
             [[ "$mem_input" =~ ^[0-9]+$ ]] && mem_input="${mem_input}m"
             PROXY_MEMORY="$mem_input"
         else
-            log_warn "内存值无效（例如 256m、1g），将保留 ${PROXY_MEMORY:-不限}"
+            log_warn "内存值无效（例如 256m、1g，或 'none' 取消限制），将保留 ${PROXY_MEMORY:-不限}"
         fi
     fi
 
@@ -13445,7 +13927,7 @@ run_installer() {
     }
 
     # Setup autostart
-    setup_autostart
+    setup_autostart || true
 
     # Telegram setup offer
     echo ""
@@ -13470,9 +13952,28 @@ run_installer() {
     show_main_menu
 }
 
+# Remove the main autostart service definition from the host init system
+main_service_remove() {
+    case "$(detect_init_system)" in
+    systemd)
+        systemctl stop mtproxymax.service 2>/dev/null || true
+        systemctl disable mtproxymax.service 2>/dev/null || true
+        rm -f "${SYSTEMD_DIR}/mtproxymax.service"
+        systemctl daemon-reload 2>/dev/null || true
+        ;;
+    openrc)
+        rc-service mtproxymax stop 2>/dev/null || true
+        rc-update del mtproxymax default 2>/dev/null || true
+        rm -f "${INITD_DIR}/mtproxymax"
+        ;;
+    esac
+    return 0
+}
+
 setup_autostart() {
-    if command -v systemctl &>/dev/null; then
-        cat > /etc/systemd/system/mtproxymax.service << 'AUTOSTART_EOF'
+    case "$(detect_init_system)" in
+    systemd)
+        cat > "${SYSTEMD_DIR}/mtproxymax.service" << 'AUTOSTART_EOF'
 [Unit]
 Description=MTProxyMax Telegram Proxy
 After=network-online.target docker.service
@@ -13492,7 +13993,55 @@ AUTOSTART_EOF
         systemctl daemon-reload
         systemctl enable mtproxymax.service 2>/dev/null
         log_success "已启用 systemd 开机自启"
-    fi
+        ;;
+    openrc)
+        # Type=oneshot + RemainAfterExit=yes wraps the manager's own start/stop,
+        # so a plain start/stop script is the faithful equivalent (no supervisor).
+        cat > "${INITD_DIR}/mtproxymax" << OPENRC_EOF
+#!/sbin/openrc-run
+# MTProxyMax Telegram Proxy
+# Auto-generated — do not edit manually
+
+name="mtproxymax"
+description="MTProxyMax Telegram Proxy"
+
+depend() {
+    need net
+    need docker
+}
+
+start() {
+    ebegin "正在启动 MTProxyMax"
+    /usr/local/bin/mtproxymax start
+    eend \$?
+}
+
+stop() {
+    ebegin "正在停止 MTProxyMax"
+    /usr/local/bin/mtproxymax stop
+    eend \$?
+}
+
+status() {
+    /usr/local/bin/mtproxymax status
+}
+OPENRC_EOF
+
+        chmod +x "${INITD_DIR}/mtproxymax"
+        if openrc_enable_service mtproxymax default; then
+            log_success "已启用 OpenRC 开机自启"
+        else
+            log_warn "无法启用开机自启，请运行：rc-update add mtproxymax default"
+            return 1
+        fi
+        ;;
+    *)
+        log_warn "未找到支持的初始化系统（systemd 或 OpenRC）。"
+        log_warn "尚未启用开机自启。"
+        echo -e "  ${DIM}请手动添加到初始化系统，或在开机时运行： ${INSTALL_DIR}/mtproxymax start${NC}"
+        return 1
+        ;;
+    esac
 }
 
 show_install_summary() {
@@ -13594,15 +14143,8 @@ uninstall() {
 
     echo ""
     log_info "正在移除服务..."
-    systemctl stop mtproxymax-telegram.service 2>/dev/null || true
-    systemctl disable mtproxymax-telegram.service 2>/dev/null || true
-    rm -f /etc/systemd/system/mtproxymax-telegram.service
-
-    systemctl stop mtproxymax.service 2>/dev/null || true
-    systemctl disable mtproxymax.service 2>/dev/null || true
-    rm -f /etc/systemd/system/mtproxymax.service
-
-    systemctl daemon-reload 2>/dev/null || true
+    telegram_remove_service
+    main_service_remove
 
     log_info "正在移除地理位置屏蔽规则..."
     geoblock_remove_all
@@ -13672,21 +14214,39 @@ save_instances() {
 
 _next_free_metrics_port() {
     local mp
+    local prim_m="${PROXY_METRICS_PORT:-9090}"
+    local prim_s=$((prim_m + 1))
     local p=9091
     while [ "${p:-0}" -lt 9200 ]; do
+        local cand_s=$((p + 1))
         local used=false
-        # Check against primary metrics port
-        [ "$p" = "${PROXY_METRICS_PORT:-9090}" ] && used=true
-        # Check against existing instance metrics ports
+
+        # Check against primary proxy ports (metrics and stats)
+        if [ "$p" = "$prim_m" ] || [ "$p" = "$prim_s" ] || \
+           [ "$cand_s" = "$prim_m" ] || [ "$cand_s" = "$prim_s" ]; then
+            used=true
+        fi
+
+        # Check against existing instance ports (metrics and stats)
         if [ "$used" = "false" ]; then
             for mp in "${INSTANCE_METRICS_PORTS[@]}"; do
-                [ "$mp" = "$p" ] && used=true && break
+                [ -z "$mp" ] && continue
+                local ms=$((mp + 1))
+                if [ "$p" = "$mp" ] || [ "$p" = "$ms" ] || \
+                   [ "$cand_s" = "$mp" ] || [ "$cand_s" = "$ms" ]; then
+                    used=true
+                    break
+                fi
             done
         fi
-        [ "$used" = "false" ] && { echo "$p"; return; }
+
+        if [ "$used" = "false" ]; then
+            echo "$p"
+            return 0
+        fi
         ((p++))
     done
-    echo "9091"
+    return 1
 }
 
 instance_add() {
@@ -13702,7 +14262,15 @@ instance_add() {
         [ "${INSTANCE_PORTS[$i]}" = "$port" ] && { log_error "端口 ${port} 上的实例已存在"; return 1; }
     done
 
-    local mport; mport=$(_next_free_metrics_port)
+    local mport
+    mport=$(_next_free_metrics_port) || {
+        log_error "9091-9199 范围内没有可用的指标端口对"
+        return 1
+    }
+    if [ -z "$mport" ]; then
+        log_error "9091-9199 范围内没有可用的指标端口对"
+        return 1
+    fi
 
     INSTANCE_PORTS+=("$port")
     INSTANCE_METRICS_PORTS+=("$mport")
@@ -13715,12 +14283,9 @@ instance_add() {
     local _orig_port="$PROXY_PORT" _orig_mport="$PROXY_METRICS_PORT"
     PROXY_PORT="$port"
     PROXY_METRICS_PORT="$mport"
-    generate_telemt_config
-    mv "${CONFIG_DIR}/config.toml" "$inst_config" 2>/dev/null
+    generate_telemt_config "$inst_config"
     PROXY_PORT="$_orig_port"
     PROXY_METRICS_PORT="$_orig_mport"
-    # Regenerate primary config
-    generate_telemt_config
 
     # Start container
     local cname="mtproxymax-${port}"
@@ -13734,21 +14299,21 @@ instance_add() {
     )
     local _inst_add_out
     _inst_add_out=$(docker run -d "${_docker_args[@]}" \
-        -v "${inst_config}:/etc/telemt.toml:ro" \
-        "$(get_docker_image)" /etc/telemt.toml 2>&1) || {
-            if echo "$_inst_add_out" | grep -E -q "(cgroup|message recipient disconnected|systemd|dbus|EOF|timeout|system\.slice|runc|OCI runtime create failed)"; then
-                sync; echo 3 > /proc/sys/vm/drop_caches 2>/dev/null || true
+        -v "${CONFIG_DIR}:/etc/telemt:ro" \
+        "$(get_docker_image)" "/etc/telemt/$(basename "$inst_config")" 2>&1) || {
+            if echo "$_inst_add_out" | grep -E -q "(cgroup|Message recipient disconnected|systemd|dbus|EOF|timeout|system\.slice|runc|OCI runtime create failed)"; then
+                [ -w /proc/sys/vm/drop_caches ] && { sync; echo 3 > /proc/sys/vm/drop_caches 2>/dev/null || true; }
                 systemctl daemon-reload 2>/dev/null || true
                 systemctl restart dbus docker 2>/dev/null || true
                 sleep 2
                 docker rm -f "$cname" &>/dev/null || true
                 docker run -d "${_docker_args[@]}" \
-                    -v "${inst_config}:/etc/telemt.toml:ro" \
-                    "$(get_docker_image)" /etc/telemt.toml &>/dev/null || {
+                    -v "${CONFIG_DIR}:/etc/telemt:ro" \
+                    "$(get_docker_image)" "/etc/telemt/$(basename "$inst_config")" &>/dev/null || {
                         docker run -d --name "$cname" --restart unless-stopped --network host \
                             --cgroupns host --log-opt max-size=10m --log-opt max-file=3 \
-                            -v "${inst_config}:/etc/telemt.toml:ro" \
-                            "$(get_docker_image)" /etc/telemt.toml &>/dev/null || true
+                            -v "${CONFIG_DIR}:/etc/telemt:ro" \
+                            "$(get_docker_image)" "/etc/telemt/$(basename "$inst_config")" &>/dev/null || true
                     }
             fi
         }
@@ -13978,6 +14543,7 @@ show_cli_help() {
     stealth [ultra|normal|status]  切换隐身防护预设（防重放调优）
     clamp-mss [on|off|status] 切换 TCP MSS 钳制（--clamp-mss-to-pmtu）
     client-mss [status|off|tspu]  配置 Telemt 客户端 MSS（off=普通 TCP，tspu=DPI 规避）
+    resources [status|clear|set <cpus|none> <memory|none>]  管理容器 CPU 和内存限制
     mask-backend [host:port]  查看或设置非代理流量的伪装后端
     mask-relay-bytes [N|0|clear]  设置伪装中继每个方向的最大字节数（0=不限）
     tg-urls [get|set <field> <url>|clear]  配置受限地区使用的 Telegram 基础设施地址
@@ -14814,14 +15380,17 @@ cli_main() {
                         log_success "域名已更改为 ${new_domain}"
                         audit_log "domain change → ${new_domain}"
                         log_warn "现有代理链接仍包含旧域名"
-                        local _rot="y"
+                        local _rot="n"
                         if [ -t 0 ]; then
-                            echo -en "  ${BOLD}是否为新域名轮换所有密钥？[Y/n]：${NC} "
-                            read -r _rot || _rot="y"
+                            echo -en "  ${BOLD}是否为新域名轮换所有密钥？[y/N]：${NC} "
+                            read -r _rot || _rot="n"
+                        elif [ "${2:-}" = "--rotate" ] || [ "${2:-}" = "-r" ]; then
+                            _rot="y"
+                            log_info "正在按 --rotate 参数轮换密钥"
                         else
-                            log_info "非交互模式：自动轮换密钥并重启"
+                            log_info "更换域名后保留原始密钥（传入 --rotate 可重新生成）"
                         fi
-                        if [[ ! "$_rot" =~ ^[nN] ]]; then
+                        if [[ "$_rot" =~ ^[yY] ]]; then
                             local _ri
                             for _ri in "${!SECRETS_LABELS[@]}"; do
                                 SECRETS_KEYS[$_ri]=$(generate_secret)
@@ -14857,7 +15426,11 @@ cli_main() {
             [ -n "$_mp" ] && { [[ "$_mp" =~ ^[0-9]+$ ]] && [ "$_mp" -ge 1 ] && [ "$_mp" -le 65535 ] || { log_error "端口无效"; return 1; }; }
             MASKING_HOST="$_mh"
             [ -n "$_mp" ] && MASKING_PORT="$_mp"
+            COVER_FALLBACK_TARGET="https://${MASKING_HOST}:${MASKING_PORT:-443}"
             save_settings
+            if ([ "$MASKING_HOST" = "127.0.0.1" ] || [ "$MASKING_HOST" = "localhost" ] || [ "$MASKING_HOST" = "::1" ] || [ "$MASKING_HOST" = "${CUSTOM_IP:-}" ]) && [ "${MASKING_PORT:-443}" -eq "${PROXY_PORT:-443}" ] 2>/dev/null; then
+                log_warn "伪装后端指向代理自身监听端口（${PROXY_PORT:-443}），非代理 TLS 探测可能形成循环！"
+            fi
             log_success "伪装后端已设为 ${MASKING_HOST}:${MASKING_PORT:-443}"
             if is_proxy_running; then
                 load_secrets
@@ -15148,6 +15721,10 @@ cli_main() {
 
         client-mss)
             run_client_mss "$@"
+            ;;
+
+        resources)
+            run_resources "$@"
             ;;
 
         domain-pool)
@@ -15724,11 +16301,15 @@ cli_main() {
                 setup)   check_root; telegram_setup_wizard ;;
                 test)    telegram_test_message ;;
                 status|"")
-                    if [ "$TELEGRAM_ENABLED" = "true" ]; then
-                        echo -e "  ${BOLD}Telegram：${NC}$(draw_status running '已启用')"
-        echo -e "  ${DIM}间隔：每 ${TELEGRAM_INTERVAL} 小时 | 警报：$([ "$TELEGRAM_ALERTS_ENABLED" = "true" ] && echo "已启用" || echo "已禁用") | 标签：${TELEGRAM_SERVER_LABEL}${NC}"
+                    if [ "$TELEGRAM_ENABLED" != "true" ]; then
+                        echo -e "  ${BOLD}Telegram:${NC} $(draw_status disabled '已禁用')"
+                    elif telegram_service_running; then
+                        echo -e "  ${BOLD}Telegram:${NC} $(draw_status running '已启用')"
+                        echo -e "  ${DIM}间隔：每 ${TELEGRAM_INTERVAL} 小时 | 警报：$([ "$TELEGRAM_ALERTS_ENABLED" = "true" ] && echo "已启用" || echo "已禁用") | 标签：${TELEGRAM_SERVER_LABEL}${NC}"
                     else
-                        echo -e "  ${BOLD}Telegram：${NC}$(draw_status disabled '已禁用')"
+                        echo -e "  ${BOLD}Telegram:${NC} $(draw_status warning '已启用（服务未运行）')"
+                        echo -e "  ${DIM}间隔：每 ${TELEGRAM_INTERVAL} 小时 | 警报：$([ "$TELEGRAM_ALERTS_ENABLED" = "true" ] && echo "已启用" || echo "已禁用") | 标签：${TELEGRAM_SERVER_LABEL}${NC}"
+                        echo -e "  ${DIM}机器人服务已配置但未运行，请运行：mtproxymax telegram setup${NC}"
                     fi
                     ;;
                 interval)
@@ -15796,7 +16377,7 @@ cli_main() {
                     check_root
                     TELEGRAM_ENABLED="false"
                     save_settings
-                    systemctl stop mtproxymax-telegram.service 2>/dev/null || true
+                    telegram_stop_service
                     log_success "Telegram 已禁用"
                     ;;
                 remove)
@@ -15805,8 +16386,7 @@ cli_main() {
                     TELEGRAM_BOT_TOKEN=""
                     TELEGRAM_CHAT_ID=""
                     save_settings
-                    systemctl stop mtproxymax-telegram.service 2>/dev/null || true
-                    systemctl disable mtproxymax-telegram.service 2>/dev/null || true
+                    telegram_remove_service
                     log_success "Telegram 机器人已移除"
                     ;;
                 *) log_error "用法： mtproxymax telegram [setup|test|status|interval|label|alerts|disable|remove]"; return 1 ;;
@@ -17482,13 +18062,16 @@ show_telegram_menu() {
             4)
                 if [ "$TELEGRAM_ENABLED" = "true" ]; then
                     TELEGRAM_ENABLED="false"
-                    systemctl stop mtproxymax-telegram.service 2>/dev/null || true
+                    telegram_stop_service
                     log_success "Telegram 已禁用"
                 else
                     if [ -n "$TELEGRAM_BOT_TOKEN" ] && [ -n "$TELEGRAM_CHAT_ID" ]; then
                         TELEGRAM_ENABLED="true"
-                        setup_telegram_service
-                        log_success "Telegram 已启用"
+                        if setup_telegram_service; then
+                            log_success "Telegram 已启用"
+                        else
+                            log_warn "Telegram 机器人服务无法启动"
+                        fi
                     else
                         log_warn "请先运行设置向导"
                     fi
@@ -17687,11 +18270,11 @@ show_settings_menu() {
                     PROXY_DOMAIN="$_new_domain"
                     sync_domain_cert_len "true" "false" || true
                     save_settings
-                log_success "域名已设为 ${PROXY_DOMAIN}"
-                log_warn "现有代理链接仍包含旧域名"
-                echo -en "  ${BOLD}是否为新域名轮换所有密钥？[Y/n]：${NC} "
+                    log_success "域名已设为 ${PROXY_DOMAIN}"
+                    log_warn "现有代理链接仍包含旧域名"
+                    echo -en "  ${BOLD}是否为新域名轮换所有密钥？[y/N]：${NC} "
                     local _rot; read -r _rot
-                    if [[ ! "$_rot" =~ ^[nN] ]]; then
+                    if [[ "$_rot" =~ ^[yY] ]]; then
                         local _ri
                         for _ri in "${!SECRETS_LABELS[@]}"; do
                             SECRETS_KEYS[$_ri]=$(generate_secret)
@@ -17707,37 +18290,45 @@ show_settings_menu() {
                 press_any_key
                 ;;
             4)
-                echo -en "  ${BOLD}CPU 核心数 [${PROXY_CPUS:-不限}]：${NC} "
+                echo -en "  ${BOLD}CPU 核心数 [${PROXY_CPUS:-不限}]（输入 'none' 取消限制）：${NC} "
                 local c; read -r c
                 local _res_changed=false
                 local _new_cpus="$PROXY_CPUS"
                 local _new_memory="$PROXY_MEMORY"
                 if [ -n "$c" ]; then
-                    if [[ "$c" =~ ^[0-9]+(\.[0-9]+)?$ ]] && awk "BEGIN{exit ($c < 0.1)}" 2>/dev/null; then
-                        _new_cpus="$c"; _res_changed=true
+                    if [[ "$c" =~ ^(0|none|unlimited|clear|off|reset)$ ]]; then
+                        _new_cpus=""
+                        _res_changed=true
+                    elif [[ "$c" =~ ^[0-9]+(\.[0-9]+)?$ ]] && awk "BEGIN{exit ($c < 0.1)}" 2>/dev/null; then
+                        _new_cpus="$c"
+                        _res_changed=true
                     else
-                        log_error "CPU 值无效（必须是大于或等于 0.1 的数字，例如 1、2、0.5）"
+                        log_error "CPU 值无效（必须大于或等于 0.1，例如 1、2、0.5，或 'none' 取消限制）"
                     fi
                 fi
-                echo -en "  ${BOLD}内存限制，例如 256m、1g [${PROXY_MEMORY:-不限}]：${NC}"
+                echo -en "  ${BOLD}内存限制，例如 256m、1g [${PROXY_MEMORY:-不限}]（输入 'none' 取消限制）：${NC} "
                 local m; read -r m
                 if [ -n "$m" ]; then
-                    if [[ "$m" =~ ^[0-9]+[bBkKmMgG]?$ ]]; then
+                    if [[ "$m" =~ ^(0|none|unlimited|clear|off|reset)$ ]]; then
+                        _new_memory=""
+                        _res_changed=true
+                    elif [[ "$m" =~ ^[0-9]+[bBkKmMgG]?$ ]]; then
                         [[ "$m" =~ ^[0-9]+$ ]] && m="${m}m"
-                        _new_memory="$m"; _res_changed=true
+                        _new_memory="$m"
+                        _res_changed=true
                     else
-                        log_error "内存值无效（例如 256m、1g）"
+                        log_error "内存值无效（例如 256m、1g，或 'none' 取消限制）"
                     fi
                 fi
                 if $_res_changed; then
-                    if ! confirm_settings_restart "resource changes"; then
+                    if ! confirm_settings_restart "资源限制更改（CPU：${_new_cpus:-不限}，内存：${_new_memory:-不限}）"; then
                         press_any_key
                         continue
                     fi
                     PROXY_CPUS="$_new_cpus"
                     PROXY_MEMORY="$_new_memory"
                     save_settings
-                log_success "资源限制已更新"
+                    log_success "资源限制已更新（CPU：${PROXY_CPUS:-不限}，内存：${PROXY_MEMORY:-不限}）"
                     if is_proxy_running; then
                         load_secrets
                         restart_proxy_container || true
@@ -17843,8 +18434,12 @@ show_settings_menu() {
                     fi
                     MASKING_HOST="$_new_mask_host"
                     MASKING_PORT="$_new_mask_port"
+                    COVER_FALLBACK_TARGET="https://${MASKING_HOST}:${MASKING_PORT:-443}"
                     save_settings
-                log_success "伪装后端已设为 ${MASKING_HOST:-${PROXY_DOMAIN}}:${MASKING_PORT:-443}"
+                    if ([ "$MASKING_HOST" = "127.0.0.1" ] || [ "$MASKING_HOST" = "localhost" ] || [ "$MASKING_HOST" = "::1" ] || [ "$MASKING_HOST" = "${CUSTOM_IP:-}" ]) && [ "${MASKING_PORT:-443}" -eq "${PROXY_PORT:-443}" ] 2>/dev/null; then
+                        log_warn "伪装后端指向代理自身监听端口（${PROXY_PORT:-443}），非代理 TLS 探测可能形成循环！"
+                    fi
+                    log_success "伪装后端已设为 ${MASKING_HOST:-${PROXY_DOMAIN}}:${MASKING_PORT:-443}"
                     if is_proxy_running; then
                         load_secrets
                         restart_proxy_container || true
@@ -18280,7 +18875,9 @@ show_info_telegram() {
     draw_header "TELEGRAM 机器人集成"
     echo ""
     echo -e "  ${BOLD}机器人有什么作用？${NC}"
-    echo -e "  可通过手机上的 Telegram 管理代理。机器人作为独立 systemd 服务运行并响应命令。"
+    echo -e "  可通过手机上的 Telegram 管理代理。"
+    echo -e "  机器人作为独立后台服务（systemd 或 OpenRC）运行，"
+    echo -e "  并响应管理命令。"
     echo ""
     echo -e "  ${BOLD}可用命令：${NC}"
     echo -e "  /mp_status         查看代理状态、运行时间和流量"

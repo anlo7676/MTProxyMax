@@ -4,6 +4,8 @@
 
 **功能完整的 Telegram MTProto 代理管理器**
 
+当前版本：**1.4.1-LTS**；固定引擎版本：**telemt 3.5.7**。
+
 基于 **telemt 3.x Rust 引擎**，提供交互式终端界面、完整命令行工具、Telegram 机器人、多用户访问控制、流量监控、代理链、自动更新和企业级运维能力。
 
 [快速安装](#快速安装) · [功能概览](#功能概览) · [命令参考](#命令参考) · [Telegram 机器人](#telegram-机器人) · [故障排查](#故障排查)
@@ -63,6 +65,19 @@ mtproxymax help
 - 用于 FakeTLS 的可访问 HTTPS 域名。
 
 支持 `amd64`、`arm64` 以及 Docker 镜像覆盖的其他架构。
+
+Telegram 机器人与代理开机自启支持 systemd 和 Alpine Linux 的 OpenRC。运行 `mtproxymax telegram status` 可检查机器人服务是否真正启动。
+
+容器环境会结合 LXCFS 和 cgroup 限制识别可用内存。可通过以下命令管理 Docker 容器的 CPU 和内存限制：
+
+```bash
+mtproxymax resources status
+sudo mtproxymax resources set 1.5 512m
+sudo mtproxymax resources set none none
+sudo mtproxymax resources clear
+```
+
+`none` 表示取消对应限制。代理运行时，修改限制需要确认并重启。
 
 ## 功能概览
 
@@ -482,12 +497,14 @@ sudo mtproxymax logs
 - 确认主机防火墙和云服务商安全组都已放行 TCP 端口。
 - 确认 FakeTLS 域名可访问并拥有有效 TLS 证书。
 - 确认系统时间准确，必要时启用 NTP。
-- Telegram 机器人异常时，检查令牌、聊天 ID、网络连通性及 `mtproxymax-bot` 服务日志。
+- Telegram 机器人异常时，检查令牌、聊天 ID、网络连通性及 `mtproxymax-telegram` 服务日志。
 
 ```bash
 journalctl -u mtproxymax -n 100 --no-pager
-journalctl -u mtproxymax-bot -n 100 --no-pager
+journalctl -u mtproxymax-telegram -n 100 --no-pager
 ```
+
+OpenRC 系统使用 `rc-service mtproxymax-telegram status` 检查状态，日志位于 `/var/log/mtproxymax-telegram.log` 和 `/var/log/mtproxymax-telegram.err`。
 
 ## 安全建议
 
@@ -507,6 +524,17 @@ sudo mtproxymax update
 ```
 
 脚本会从当前项目仓库下载新版本，并在替换前执行 Bash 语法校验。
+
+### 1.4.1-LTS 更新内容
+
+- 引擎升级到 telemt 3.5.7，保留本项目中文界面、Telegram 按钮菜单与安装更新源。
+- 修复 LXC 内存识别与容器恢复，新增 CPU、内存限制查看、设置和清除命令。
+- 支持 OpenRC 机器人服务和开机自启，配置向导会停止旧轮询进程后再获取会话 ID。
+- 经销商 `reseller` 仅能管理兑换券和使用公共自助功能；管理员命令及按钮均检查权限，未知角色拒绝管理操作，越权请求写入审计日志。
+- 配置热重载改为原地写入和目录挂载，避免容器继续读取旧文件；副实例使用独立配置，发现配置未同步时尝试重启，重启失败会返回错误。
+- 伪装后端显式设置优先于 Cover Shield 回退目标，并提示指向代理自身端口的循环风险。
+- 更换 FakeTLS 域名默认保留原始密钥；非交互模式需要显式传入 `--rotate` 才重新生成密钥。
+- 多实例按 metrics/stats 端口对分配，默认首个副实例使用 `9092/9093`，避免与主实例冲突。
 
 ## 项目与相关组件
 

@@ -80,7 +80,7 @@ unset -f curl
 
 MAIN_SCRIPT="$(dirname "$0")/../mtproxymax.sh"
 TESTS_RUN=$((TESTS_RUN + 1))
-if grep -Fq 'systemctl stop mtproxymax-telegram.service' "$MAIN_SCRIPT" && \
+if sed -n '/^telegram_setup_wizard()/,/^}/p' "$MAIN_SCRIPT" | grep -Fq 'telegram_stop_service' && \
    grep -Fq 'TELEGRAM_UPDATE_ID' "$MAIN_SCRIPT" && \
    grep -Fq 'relay_stats/tg_offset' "$MAIN_SCRIPT"; then
     printf '  PASS  setup prevents polling race and rebases offset\n'
