@@ -134,6 +134,8 @@ assert_eq "regeneration keeps the config inode" "$GEN_INODE" \
     "$(stat -c %i "${CONFIG_DIR}/config.toml" 2>/dev/null)"
 assert_eq "in-place write produces a complete config" 1 \
     "$(grep -c '^\[access.users\]$' "${CONFIG_DIR}/config.toml" 2>/dev/null)"
+assert_eq "diagnostic snapshots use writable container storage" 1 \
+    "$(grep -c '^beobachten_file = "/tmp/telemt-beobachten.txt"$' "${CONFIG_DIR}/config.toml")"
 
 # ── 4. Reloading never replaces the primary config file ─────────────────────
 generate_telemt_config 2>/dev/null

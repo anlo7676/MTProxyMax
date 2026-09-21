@@ -1325,6 +1325,8 @@ generate_telemt_config() {
 # Generated: $(date -u '+%Y-%m-%d %H:%M:%S UTC')
 
 [general]
+# Keep diagnostic snapshots outside the read-only configuration directory.
+beobachten_file = "/tmp/telemt-beobachten.txt"
 prefer_ipv6 = false
 fast_mode = true
 use_middle_proxy = true
