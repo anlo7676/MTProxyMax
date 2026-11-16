@@ -4676,6 +4676,7 @@ _TUNE_WHITELIST=(
     "accept_permit_timeout_ms:server:^[0-9]+$"
     "prefer_ipv6:general:^(true|false)$"
     "fast_mode:general:^(true|false)$"
+    "me_adaptive_floor_max_active_writers_per_core:general:^[1-9][0-9]{0,2}$"
     "log_level:general:^(debug|verbose|normal|silent)$"
     "mask_relay_timeout_ms:censorship:^[0-9]+$"
     "mask_relay_idle_timeout_ms:censorship:^[0-9]+$"

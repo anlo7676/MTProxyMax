@@ -334,6 +334,15 @@ mtproxymax heal-now
 
 这些功能可能修改内核参数、队列和网卡设置。启用后建议运行 `mtproxymax verify` 和 `mtproxymax doctor`。
 
+Middle-End 多路复用已默认启用。如果指标显示活跃上游连接持续达到容量上限，同时日志出现 `DC writer floor is below required level`，可按资源余量提高每个逻辑 CPU 的连接上限（管理器接受 1–999）：
+
+```bash
+mtproxymax tune set me_adaptive_floor_max_active_writers_per_core 96
+mtproxymax tune get me_adaptive_floor_max_active_writers_per_core
+```
+
+该设置会持久保存；`tune set` 在代理运行时会要求确认并重启。引擎还会根据连接组目标和全局限制计算实际容量，因此设置 96 不表示始终建立 96 条连接。应对照观察 DC 连接不足、重连和会话切换情况，不能仅凭连接数判断测速延迟改善。
+
 ### 维护模式
 
 ```bash
