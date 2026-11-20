@@ -11,7 +11,7 @@ set -eo pipefail
 export LC_NUMERIC=C
 
 # ── Section 1: Initialization ────────────────────────────────
-VERSION="1.4.1-LTS"
+VERSION="1.4.2-LTS"
 SCRIPT_NAME="mtproxymax"
 INSTALL_DIR="${INSTALL_DIR:-/opt/mtproxymax}"
 CONFIG_DIR="${CONFIG_DIR:-${INSTALL_DIR}/mtproxy}"
@@ -41,8 +41,8 @@ RUNLEVELS_DIR="${RUNLEVELS_DIR:-/etc/runlevels}"
 SCANNER_SHIELD_SET="mtp_scanners"
 CONTAINER_NAME="mtproxymax"
 DOCKER_IMAGE_BASE="mtproxymax-telemt"
-TELEMT_MIN_VERSION="3.5.7"
-TELEMT_COMMIT="4ca7418"  # Pinned: v3.5.7 — Wirtschaftsvertreter: TCP probe validation & websocket recovery
+TELEMT_MIN_VERSION="3.5.17"
+TELEMT_COMMIT="66708d2"  # Pinned: v3.5.17 (66708d2) — API capabilities/schema discovery, dry-run validation, scoped DNS overrides (#970)
 GITHUB_REPO="anlo7676/MTProxyMax"
 REGISTRY_IMAGE="ghcr.io/samnet-dev/mtproxymax-telemt"
 
@@ -148,6 +148,12 @@ TELEGRAM_CHAT_ID=""
 TELEGRAM_INTERVAL=6
 TELEGRAM_ALERTS_ENABLED="true"
 TELEGRAM_SERVER_LABEL="MTProxyMax"
+# Rolling traffic history. Disabling it stops new samples; existing ones stay.
+TELEGRAM_HISTORY_ENABLED="true"
+TELEGRAM_HISTORY_INTERVAL_MIN="5"
+TELEGRAM_HISTORY_RETENTION_DAYS="7"
+# auto = send a full report only when there was traffic, else a heartbeat.
+TELEGRAM_REPORT_DETAIL="auto"
 AUTO_UPDATE_ENABLED="true"
 
 # Anti-DPI & Stealth Defenses
@@ -486,16 +492,31 @@ validate_port() {
     [[ "$port" =~ ^[0-9]+$ ]] && [ "$port" -ge 1 ] && [ "$port" -le 65535 ]
 }
 
+# Is anything listening on the given TCP port?
+# Returns 0 when something is listening, 1 otherwise — including when neither ss nor
+# netstat is installed, which is the case on a stock Debian or Fedora (iproute2 is not in
+# the base image) and on Alpine unless busybox-extras was added. Both tools put the local
+# address in column 4 of `-tln` output, so one awk serves either.
+_port_listening() {
+    local _port="${1:?port required}"
+    local _out=""
+    if command -v ss &>/dev/null; then
+        _out=$(ss -tln 2>/dev/null) || _out=""
+    elif command -v netstat &>/dev/null; then
+        _out=$(netstat -tln 2>/dev/null) || _out=""
+    else
+        return 1
+    fi
+    printf '%s\n' "$_out" | awk '{print $4}' | grep -cE "[:.]${_port}\$" >/dev/null
+}
+
 # Check if port is available
+# Note the historical behaviour preserved here: with no tool to ask, the port is reported
+# as available. That keeps the pre-flight check in run_proxy_container from blocking starts
+# on hosts where nothing can answer, rather than silently deciding the opposite.
 is_port_available() {
     local port="$1"
-    if command -v ss &>/dev/null; then
-        ! ss -tln 2>/dev/null | awk '{print $4}' | grep -qE "[:.]${port}$"
-    elif command -v netstat &>/dev/null; then
-        ! netstat -tln 2>/dev/null | awk '{print $4}' | grep -qE "[:.]${port}$"
-    else
-        return 0
-    fi
+    ! _port_listening "$port"
 }
 
 # Check if running as root
@@ -526,9 +547,21 @@ detect_os() {
     fi
 }
 
+# True only when systemd is actually running as PID 1. Testing for the `systemctl`
+# binary alone is not enough: a chroot, a container that pulled systemd in as a
+# dependency, and a half-booted host all have the binary while every systemctl call
+# fails. `systemctl --version` is no better — it exits 0 with no bus at all.
+_systemd_is_running() {
+    [ -d "${_SYSTEMD_RUNDIR:-/run/systemd/system}" ] || return 1
+    local _state
+    _state=$(systemctl is-system-running 2>/dev/null) || true
+    # "degraded" still means booted, so this compares the value rather than the status.
+    [ -n "$_state" ] && [ "$_state" != "offline" ]
+}
+
 # Detect the host init system: systemd | openrc | none
 detect_init_system() {
-    if command -v systemctl &>/dev/null; then
+    if _systemd_is_running; then
         echo "systemd"
     elif [ -x /sbin/openrc-run ] || command -v rc-service &>/dev/null; then
         echo "openrc"
@@ -721,6 +754,10 @@ TELEGRAM_CHAT_ID='${TELEGRAM_CHAT_ID}'
 TELEGRAM_INTERVAL='${TELEGRAM_INTERVAL}'
 TELEGRAM_ALERTS_ENABLED='${TELEGRAM_ALERTS_ENABLED}'
 TELEGRAM_SERVER_LABEL='${TELEGRAM_SERVER_LABEL}'
+TELEGRAM_HISTORY_ENABLED='${TELEGRAM_HISTORY_ENABLED}'
+TELEGRAM_HISTORY_INTERVAL_MIN='${TELEGRAM_HISTORY_INTERVAL_MIN}'
+TELEGRAM_HISTORY_RETENTION_DAYS='${TELEGRAM_HISTORY_RETENTION_DAYS}'
+TELEGRAM_REPORT_DETAIL='${TELEGRAM_REPORT_DETAIL}'
 
 # Auto-Update
 AUTO_UPDATE_ENABLED='${AUTO_UPDATE_ENABLED}'
@@ -807,6 +844,7 @@ load_settings() {
             PROXY_SECRET_URL|PROXY_CONFIG_V4_URL|PROXY_CONFIG_V6_URL|\
             TELEGRAM_ENABLED|TELEGRAM_BOT_TOKEN|TELEGRAM_CHAT_ID|\
             TELEGRAM_INTERVAL|TELEGRAM_ALERTS_ENABLED|TELEGRAM_SERVER_LABEL|\
+            TELEGRAM_HISTORY_ENABLED|TELEGRAM_HISTORY_INTERVAL_MIN|TELEGRAM_HISTORY_RETENTION_DAYS|TELEGRAM_REPORT_DETAIL|\
             AUTO_UPDATE_ENABLED|SECRET_AUTO_ROTATE_DAYS|BACKUP_RETENTION_DAYS|QUOTA_ENFORCEMENT_MODE|\
             STEALTH_SHIELD|STEALTH_PRESET|STEALTH_MSS_CLAMP|LOCKDOWN_MODE|PORT_POOL_PORTS|QOS_LIMIT_MBPS|HAPPY_HOURS_WINDOW|\
             REPLICATION_ENABLED|REPLICATION_ROLE|REPLICATION_SYNC_INTERVAL|\
@@ -889,7 +927,11 @@ declare -a SECRETS_AD_TAGS=()
 
 # Load secrets database
 load_secrets() {
+    # Bash uses dynamic scoping. Keep parser fields local so loading the secrets
+    # database cannot overwrite variables (label, quota, created, etc.) in a
+    # caller such as voucher_redeem.
     local label secret created enabled max_conns max_ips quota expires notes ad_tag
+
     SECRETS_LABELS=()
     SECRETS_KEYS=()
     SECRETS_CREATED=()
@@ -1113,22 +1155,22 @@ wait_for_docker() {
     return 1
 }
 
-# Build telemt Docker image from latest GitHub release binary
+# Obtain the pinned telemt image, or build the exact commit from source
 build_telemt_image() {
     local force="${1:-false}"
 
     local commit="${TELEMT_COMMIT}"
     local version="${TELEMT_MIN_VERSION}-${commit}"
 
-    # Skip if image 已存在 (unless forced)
-    if [ "$force" != "true" ] && docker image inspect "${DOCKER_IMAGE_BASE}:${version}" &>/dev/null; then
+    # Skip if image already exists (unless forced)
+    if [ "$force" = "false" ] && docker image inspect "${DOCKER_IMAGE_BASE}:${version}" &>/dev/null; then
         return 0
     fi
 
     # Strategy 1: Pull pre-built image from registry (fast — seconds)
     log_info "正在拉取预构建的 telemt v${version}..."
-    if docker pull "${REGISTRY_IMAGE}:${version}" 2>/dev/null; then
-        docker tag "${REGISTRY_IMAGE}:${version}" "${DOCKER_IMAGE_BASE}:${version}"
+    if [ "$force" != "source" ] && docker pull "${REGISTRY_IMAGE}:${version}" 2>/dev/null; then
+        docker tag "${REGISTRY_IMAGE}:${version}" "${DOCKER_IMAGE_BASE}:${version}" || return 1
         docker tag "${DOCKER_IMAGE_BASE}:${version}" "${DOCKER_IMAGE_BASE}:latest" 2>/dev/null || true
         log_success "已拉取 telemt v${version}"
         mkdir -p "$INSTALL_DIR"
@@ -1136,22 +1178,10 @@ build_telemt_image() {
         return 0
     fi
 
-    # Strategy 2: Pull latest from registry if exact version 未找到
-    if [ "$force" != "source" ]; then
-        log_info "仓库中没有指定版本，正在尝试 latest..."
-        if docker pull "${REGISTRY_IMAGE}:latest" 2>/dev/null; then
-            docker tag "${REGISTRY_IMAGE}:latest" "${DOCKER_IMAGE_BASE}:${version}"
-            docker tag "${DOCKER_IMAGE_BASE}:${version}" "${DOCKER_IMAGE_BASE}:latest" 2>/dev/null || true
-            log_success "已拉取 telemt (latest)"
-            mkdir -p "$INSTALL_DIR"
-            echo "$version" > "${INSTALL_DIR}/.telemt_version"
-            return 0
-        fi
-    fi
-
-    # Strategy 3: Build from source (slow first time, cached after)
-    log_warn "预构建镜像不可用，正在从源码编译..."
-    log_info "包含：Prometheus 指标、ME 性能修复及 ME 关键错误修复"
+    # Never relabel registry :latest as the requested version.
+    # If the exact tag is unavailable (or source was requested), build the pin.
+    log_warn "预构建镜像不可用，将从源码编译。"
+    log_info "包含 Prometheus 指标和 ME 性能修复"
 
     local build_dir
     build_dir=$(mktemp -d "${TMPDIR:-/tmp}/mtproxymax-build.XXXXXX")
@@ -1164,10 +1194,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends git && \
     rm -rf /var/lib/apt/lists/*
 RUN git clone "https://github.com/telemt/telemt.git" /build
 WORKDIR /build
-RUN git checkout "${TELEMT_COMMIT}"
+RUN git checkout --detach "${TELEMT_COMMIT}" && test "$(git rev-parse HEAD | cut -c1-7)" = "$(printf '%.7s' "${TELEMT_COMMIT}")"
 ENV CARGO_PROFILE_RELEASE_LTO=true CARGO_PROFILE_RELEASE_CODEGEN_UNITS=1 CARGO_PROFILE_RELEASE_DEBUG=false
-RUN cargo build --release && \
-    strip target/release/telemt 2>/dev/null || true && \
+RUN cargo build --release --locked && \
+    (strip target/release/telemt 2>/dev/null || true) && \
     cp target/release/telemt /telemt
 
 FROM debian:bookworm-slim
@@ -1189,7 +1219,7 @@ DOCKERFILE_EOF
         mkdir -p "$INSTALL_DIR"
         echo "$version" > "${INSTALL_DIR}/.telemt_version"
     else
-        log_error "源码构建失败——请确保 Docker 至少有 2GB 可用内存"
+        log_error "源码构建失败，请检查 Docker 构建日志、可用内存（至少 2 GB）和网络连接"
         rm -rf "$build_dir"
         return 1
     fi
@@ -1562,7 +1592,29 @@ _METRICS_CACHE=""
 _METRICS_CACHE_AGE=0
 
 # Fetch Prometheus metrics (cached for 2 seconds to avoid hammering)
+_normalize_byte_metrics() {
+    awk '
+        /^telemt_user_octets_(from|to)_client_total\{/ {
+            direction = ($0 ~ /^telemt_user_octets_from_/)
+            modern[direction] = 1
+        }
+        /^telemt_user_octets_(from|to)_client\{/ {
+            direction = ($0 ~ /^telemt_user_octets_from_/)
+            sub(/_client\{/, "_client_total{")
+            old[++count] = $0
+            dirs[count] = direction
+            next
+        }
+        { print }
+        END { for (i = 1; i <= count; i++) if (!modern[dirs[i]]) print old[i] }
+    '
+}
+
 _fetch_metrics() {
+    _fetch_metrics_raw | _normalize_byte_metrics
+}
+
+_fetch_metrics_raw() {
     local now
     now=$(date +%s)
     if [ -n "$_METRICS_CACHE" ] && [ $((now - _METRICS_CACHE_AGE)) -lt 2 ]; then
@@ -1632,8 +1684,8 @@ get_proxy_stats() {
     local m
     if m=$(_fetch_metrics); then
         local bi bo conns
-        bi=$(echo "$m" | awk '/^telemt_user_octets_from_client(_total)?\{/{s+=$NF}END{printf "%.0f",s}')
-        bo=$(echo "$m" | awk '/^telemt_user_octets_to_client(_total)?\{/{s+=$NF}END{printf "%.0f",s}')
+        bi=$(echo "$m" | awk '/^telemt_user_octets_from_client_total\{/{s+=$NF}END{printf "%.0f",s}')
+        bo=$(echo "$m" | awk '/^telemt_user_octets_to_client_total\{/{s+=$NF}END{printf "%.0f",s}')
         conns=$(echo "$m" | awk '/^telemt_user_connections_current\{/{s+=$NF}END{printf "%.0f",s}')
         echo "${bi:-0} ${bo:-0} ${conns:-0}"
         return
@@ -1652,7 +1704,18 @@ get_proxy_stats() {
     bytes_in=$(echo "$stats" | awk '/mtproxymax-in/ {print $2; exit}')
     bytes_out=$(echo "$stats" | awk '/mtproxymax-out/ {print $2; exit}')
     local connections
-    connections=$(ss -tn state established 2>/dev/null | grep -c ":${port} " || echo "0")
+    # Established connections to this port. ss and netstat need different patterns: ss is
+    # invoked with a state filter and prints no State column, while netstat prints one.
+    # With neither tool installed the count is unknown and reported as 0, which is what
+    # this returned unconditionally before (ss is absent on a stock Debian, Fedora and
+    # Alpine, so the fallback below is what makes this work on a stock host at all).
+    if command -v ss &>/dev/null; then
+        connections=$(ss -tn state established 2>/dev/null | grep -c ":${port} " || echo "0")
+    elif command -v netstat &>/dev/null; then
+        connections=$(netstat -tn 2>/dev/null | grep -cE "[:.]${port}[[:space:]].*ESTABLISHED" || echo "0")
+    else
+        connections=0
+    fi
 
     echo "${bytes_in:-0} ${bytes_out:-0} ${connections:-0}"
 }
@@ -1695,8 +1758,8 @@ get_user_stats() {
     local m
     if m=$(_fetch_metrics); then
         local i o c
-        i=$(echo "$m" | awk -v u="$user" '$0 ~ "^telemt_user_octets_from_client(_total)?\\{.*user=\"" u "\"" {print $NF}')
-        o=$(echo "$m" | awk -v u="$user" '$0 ~ "^telemt_user_octets_to_client(_total)?\\{.*user=\"" u "\"" {print $NF}')
+        i=$(echo "$m" | awk -v u="$user" '$0 ~ "^telemt_user_octets_from_client_total\\{.*user=\"" u "\"" {print $NF}')
+        o=$(echo "$m" | awk -v u="$user" '$0 ~ "^telemt_user_octets_to_client_total\\{.*user=\"" u "\"" {print $NF}')
         c=$(echo "$m" | awk -v u="$user" '$0 ~ "^telemt_user_connections_current\\{.*user=\"" u "\"" {print $NF}')
         echo "${i:-0} ${o:-0} ${c:-0}"
         return
@@ -1758,10 +1821,10 @@ _load_all_cumulative_user_stats() {
                 q = index(s, "\"")
                 return q ? substr(s, 1, q - 1) : ""
             }
-            /^telemt_user_octets_from_client(_total)?\{/ {
+            /^telemt_user_octets_from_client_total\{/ {
                 u = get_user($0); if (u) users_in[u] += $NF
             }
-            /^telemt_user_octets_to_client(_total)?\{/ {
+            /^telemt_user_octets_to_client_total\{/ {
                 u = get_user($0); if (u) users_out[u] += $NF
             }
             /^telemt_user_connections_current\{/ {
@@ -1788,6 +1851,38 @@ _load_all_cumulative_user_stats() {
     done
 }
 
+# util-linux flock takes `-w SECS` to wait for a lock; busybox's flock applet does not,
+# and `command -v flock` cannot tell the two apart because busybox installs a `flock`
+# symlink to /bin/busybox. Testing for the binary therefore succeeds on Alpine while the
+# lock call itself fails. Probe the capability once instead of assuming it.
+_FLOCK_WAIT_SUPPORTED=""
+_flock_supports_wait() {
+    if [ -z "$_FLOCK_WAIT_SUPPORTED" ]; then
+        if command -v flock >/dev/null 2>&1 &&
+            (exec 9>/dev/null; flock -w 0 9) 2>/dev/null; then
+            _FLOCK_WAIT_SUPPORTED="yes"
+        else
+            _FLOCK_WAIT_SUPPORTED="no"
+        fi
+    fi
+    [ "$_FLOCK_WAIT_SUPPORTED" = "yes" ]
+}
+
+# Take an exclusive lock on the already-open file descriptor $1.
+# Returns 0 when the lock is held, non-zero when it could not be taken. A host with no
+# flock at all proceeds unlocked, which is the long-standing behaviour in that case.
+_lock_fd() {
+    local _fd="${1:?file descriptor required}"
+    command -v flock >/dev/null 2>&1 || return 0
+    if _flock_supports_wait; then
+        flock -w 5 "$_fd" 2>/dev/null
+    else
+        # busybox: -w is unavailable, so take the lock without waiting rather than not
+        # locking at all. Losing the 5s grace period is far better than skipping the lock.
+        flock -n "$_fd" 2>/dev/null
+    fi
+}
+
 # One-shot flush of traffic counters to disk (for use before stop/restart)
 # Works standalone — loads cumulative from disk, computes delta from live metrics, saves back
 flush_traffic_to_disk() {
@@ -1799,7 +1894,14 @@ flush_traffic_to_disk() {
     mkdir -p "$_stats_dir" 2>/dev/null
     # Acquire lock to prevent race with daemon's save_traffic
     exec 9>"${_stats_dir}/.traffic.lock"
-    flock -w 5 9 2>/dev/null || { exec 9>&- 2>/dev/null; return 0; }
+    # Report failure rather than returning 0: this used to claim success while writing
+    # nothing, which silently discarded counters. Plain stderr, not log_error(), because
+    # this also runs from the daemon, which has no logging helpers of its own.
+    if ! _lock_fd 9; then
+        echo "mtproxymax: could not acquire traffic lock — counters not flushed" >&2
+        exec 9>&-
+        return 1
+    fi
 
     # Load existing cumulative totals
     local cum_in=0 cum_out=0
@@ -1840,14 +1942,14 @@ flush_traffic_to_disk() {
 
     # Fetch current live metrics
     local _metrics _have_metrics=false
-    _metrics=$(curl -s --max-time 2 "http://127.0.0.1:${PROXY_METRICS_PORT:-9090}/metrics" 2>/dev/null) || true
+    _metrics=$(curl -s --max-time 2 "http://127.0.0.1:${PROXY_METRICS_PORT:-9090}/metrics" 2>/dev/null | _normalize_byte_metrics) || true
     [ -n "$_metrics" ] && _have_metrics=true
 
     if $_have_metrics; then
         # Global traffic delta
         local cur_gin cur_gout
-        cur_gin=$(echo "$_metrics" | awk '/^telemt_user_octets_from_client(_total)?\{/{s+=$NF}END{printf "%.0f",s}')
-        cur_gout=$(echo "$_metrics" | awk '/^telemt_user_octets_to_client(_total)?\{/{s+=$NF}END{printf "%.0f",s}')
+        cur_gin=$(echo "$_metrics" | awk '/^telemt_user_octets_from_client_total\{/{s+=$NF}END{printf "%.0f",s}')
+        cur_gout=$(echo "$_metrics" | awk '/^telemt_user_octets_to_client_total\{/{s+=$NF}END{printf "%.0f",s}')
         cur_gin=${cur_gin:-0}; cur_gout=${cur_gout:-0}
         local gd_in=$((cur_gin - snap_gin)) gd_out=$((cur_gout - snap_gout))
         [ "$gd_in" -lt 0 ] 2>/dev/null && gd_in=$cur_gin
@@ -1880,8 +1982,8 @@ flush_traffic_to_disk() {
             [[ "$label" =~ ^# ]] && continue; [ -z "$secret" ] && continue
             [ "$enabled" != "true" ] && continue
             local ui uo
-            ui=$(echo "$_metrics" | awk -v u="$label" '$0 ~ "^telemt_user_octets_from_client(_total)?\\{.*user=\"" u "\"" {print $NF}')
-            uo=$(echo "$_metrics" | awk -v u="$label" '$0 ~ "^telemt_user_octets_to_client(_total)?\\{.*user=\"" u "\"" {print $NF}')
+            ui=$(echo "$_metrics" | awk -v u="$label" '$0 ~ "^telemt_user_octets_from_client_total\\{.*user=\"" u "\"" {print $NF}')
+            uo=$(echo "$_metrics" | awk -v u="$label" '$0 ~ "^telemt_user_octets_to_client_total\\{.*user=\"" u "\"" {print $NF}')
             ui=${ui:-0}; uo=${uo:-0}
             local si=${_fu_snap_in["$label"]:-0} so=${_fu_snap_out["$label"]:-0}
             local di=$((ui - si)) doo=$((uo - so))
@@ -2251,7 +2353,7 @@ secret_list() {
         # Format creation date (use printf builtin when available, fallback to date)
         local created_fmt
         created_fmt=$(printf '%(%Y-%m-%d)T' "$created" 2>/dev/null) || \
-            created_fmt=$(date -d "@${created}" '+%Y-%m-%d' 2>/dev/null || echo "unknown")
+            created_fmt=$(_local_from_epoch "$created" '+%Y-%m-%d') || created_fmt="unknown"
 
         # Get per-user traffic from batch-loaded arrays
         local u_in=${_batch_cum_in["$label"]:-0}
@@ -2622,12 +2724,10 @@ secret_reset_traffic() {
     # disk update with save_traffic() and leave it a reset command to consume
     # before its next write, otherwise it would restore the pre-reset values.
     exec 9>"${STATS_DIR}/.traffic.lock"
-    if command -v flock &>/dev/null; then
-        flock -w 5 9 2>/dev/null || {
-            log_error "无法获取流量锁，Telegram 守护进程可能正忙。"
-            exec 9>&-
-            return 1
-        }
+    if ! _lock_fd 9; then
+        log_error "无法获取流量锁，Telegram 守护进程可能正忙。"
+        exec 9>&-
+        return 1
     fi
 
     if [ "$label" = "all" ]; then
@@ -2644,8 +2744,8 @@ secret_reset_traffic() {
                     q = index(s, "\"")
                     return q ? substr(s, 1, q - 1) : ""
                 }
-                /^telemt_user_octets_from_client(_total)?\{/ { u = get_user($0); if (u) in_oct[u] += $NF }
-                /^telemt_user_octets_to_client(_total)?\{/ { u = get_user($0); if (u) out_oct[u] += $NF }
+                /^telemt_user_octets_from_client_total\{/ { u = get_user($0); if (u) in_oct[u] += $NF }
+                /^telemt_user_octets_to_client_total\{/ { u = get_user($0); if (u) out_oct[u] += $NF }
                 END {
                     for (u in in_oct) {
                         printf "%s|%.0f|%.0f\n", u, in_oct[u], out_oct[u]
@@ -2677,8 +2777,8 @@ secret_reset_traffic() {
 
         # Update user_traffic_snapshot to exact current live Prometheus values so delta becomes 0 right now
         local live_in=0 live_out=0
-        live_in=$(echo "$_reset_metrics" | awk -v u="$label" '$0 ~ "^telemt_user_octets_from_client(_total)?\\{.*user=\"" u "\"" {s+=$NF} END {printf "%.0f",s}')
-        live_out=$(echo "$_reset_metrics" | awk -v u="$label" '$0 ~ "^telemt_user_octets_to_client(_total)?\\{.*user=\"" u "\"" {s+=$NF} END {printf "%.0f",s}')
+        live_in=$(echo "$_reset_metrics" | awk -v u="$label" '$0 ~ "^telemt_user_octets_from_client_total\\{.*user=\"" u "\"" {s+=$NF} END {printf "%.0f",s}')
+        live_out=$(echo "$_reset_metrics" | awk -v u="$label" '$0 ~ "^telemt_user_octets_to_client_total\\{.*user=\"" u "\"" {s+=$NF} END {printf "%.0f",s}')
         [[ "${live_in:-0}" =~ ^[0-9]+$ ]] || live_in=0
         [[ "${live_out:-0}" =~ ^[0-9]+$ ]] || live_out=0
         if [ -f "$_snap" ]; then
@@ -2850,9 +2950,7 @@ secret_bulk_extend() {
 
         local new_epoch=$((base_epoch + days * 86400))
         local new_date
-        new_date=$(date -u -d "@${new_epoch}" '+%Y-%m-%dT23:59:59Z' 2>/dev/null) || \
-        new_date=$(date -u -r "$new_epoch" '+%Y-%m-%dT23:59:59Z' 2>/dev/null) || \
-        new_date=$(python3 -c "import datetime;print(datetime.datetime.utcfromtimestamp(${new_epoch}).strftime('%Y-%m-%dT23:59:59Z'))" 2>/dev/null)
+        new_date=$(_utc_from_epoch "$new_epoch" '+%Y-%m-%dT23:59:59Z')
         [ -z "$new_date" ] && continue
 
         SECRETS_EXPIRES[$i]="$new_date"
@@ -2965,11 +3063,14 @@ show_connections() {
         /^telemt_user_connections_current\{/  { u=lbl($0,"user"); if(u) uc[u]+=$NF }
         /^telemt_user_connections_total\{/    { u=lbl($0,"user"); if(u) ut[u]+=$NF }
         /^telemt_user_unique_ips_current\{/   { u=lbl($0,"user"); if(u) ui[u]+=$NF }
-        /^telemt_user_octets_from_client(_total)?\{/   { u=lbl($0,"user"); if(u) rx[u]+=$NF }
-        /^telemt_user_octets_to_client(_total)?\{/     { u=lbl($0,"user"); if(u) tx[u]+=$NF }
-        /^telemt_connections_current /         { total=$NF }
+        /^telemt_user_octets_from_client_total\{/   { u=lbl($0,"user"); if(u) rx[u]+=$NF }
+        /^telemt_user_octets_to_client_total\{/     { u=lbl($0,"user"); if(u) tx[u]+=$NF }
         END {
-            for (u in uc) users[u]=1
+            # Global active connections are the sum of the per-user gauge. The aggregate
+            # telemt_connections_current was deleted in telemt c07b600, so reading it here
+            # left "Total active" at 0 for every 3.5.x release.
+            # See tests/test_metric_names.sh for the upstream history.
+            for (u in uc) { users[u]=1; total+=uc[u] }
             for (u in ut) users[u]=1
             for (u in ui) users[u]=1
             for (u in rx) users[u]=1
@@ -3066,9 +3167,7 @@ secret_extend() {
 
     local new_epoch=$((base_epoch + days * 86400))
     local new_date
-    new_date=$(date -u -d "@${new_epoch}" '+%Y-%m-%dT23:59:59Z' 2>/dev/null) || \
-    new_date=$(date -u -r "$new_epoch" '+%Y-%m-%dT23:59:59Z' 2>/dev/null) || \
-    new_date=$(python3 -c "import datetime;print(datetime.datetime.utcfromtimestamp(${new_epoch}).strftime('%Y-%m-%dT23:59:59Z'))" 2>/dev/null)
+    new_date=$(_utc_from_epoch "$new_epoch" '+%Y-%m-%dT23:59:59Z')
 
     [ -z "$new_date" ] && { log_error "无法计算新的到期日期"; return 1; }
 
@@ -3095,8 +3194,8 @@ secret_stats() {
                 q = index(s, "\""); return q ? substr(s, 1, q-1) : ""
             }
             /^telemt_user_connections_current\{/  { u=lbl($0,"user"); if(u) uc[u]+=$NF }
-            /^telemt_user_octets_from_client(_total)?\{/   { u=lbl($0,"user"); if(u) rx[u]+=$NF }
-            /^telemt_user_octets_to_client(_total)?\{/     { u=lbl($0,"user"); if(u) tx[u]+=$NF }
+            /^telemt_user_octets_from_client_total\{/   { u=lbl($0,"user"); if(u) rx[u]+=$NF }
+            /^telemt_user_octets_to_client_total\{/     { u=lbl($0,"user"); if(u) tx[u]+=$NF }
             /^telemt_user_unique_ips_current\{/   { u=lbl($0,"user"); if(u) ip[u]+=$NF }
             END { for (u in uc) printf "%s|%.0f|%.0f|%.0f|%.0f\n", u, uc[u]+0, rx[u]+0, tx[u]+0, ip[u]+0 }
         ')
@@ -3323,7 +3422,7 @@ run_doctor() {
         local _cfg; _cfg=$(_mktemp) || true
         if [ -n "$_cfg" ]; then
             printf 'url = "https://api.telegram.org/bot%s/getMe"\n' "$TELEGRAM_BOT_TOKEN" > "$_cfg"
-            if curl -s --max-time 5 -K "$_cfg" 2>/dev/null | grep -q '"ok":true'; then
+            if curl -s --max-time 5 -K "$_cfg" 2>/dev/null | grep -c '"ok":true' >/dev/null; then
                 echo -e "  ${GREEN}${SYM_CHECK}${NC} Telegram 机器人可访问"
             else
                 echo -e "  ${YELLOW}!${NC}  Telegram 机器人不可访问（无法连接 api.telegram.org）"
@@ -3411,7 +3510,7 @@ secret_info() {
     draw_header "密钥：${label}"
     echo ""
     echo -e "  ${BOLD}状态：${NC}$([ "$enabled" = "true" ] && echo "${GREEN}已启用${NC}" || echo "${RED}已禁用${NC}")"
-    echo -e "  ${BOLD}创建时间：${NC}$(date -d "@${created}" '+%Y-%m-%d %H:%M' 2>/dev/null || date -r "$created" '+%Y-%m-%d %H:%M' 2>/dev/null || echo "$created")"
+    echo -e "  ${BOLD}创建时间：${NC}$(_local_from_epoch "$created" '+%Y-%m-%d %H:%M' || echo "$created")"
     [ -n "$notes" ] && echo -e "  ${BOLD}备注：${NC}${notes}"
     local adtag="${SECRETS_AD_TAGS[$idx]:-}"
     if [ -n "$adtag" ]; then
@@ -3443,8 +3542,8 @@ secret_info() {
         local live; live=$(echo "$m" | awk -v u="$label" '
             function lbl(s, k,    p, q) { p=index(s,k"=\""); if(!p) return ""; s=substr(s,p+length(k)+2); q=index(s,"\""); return q ? substr(s,1,q-1) : "" }
             /^telemt_user_connections_current\{/ { if(lbl($0,"user")==u) c+=$NF }
-            /^telemt_user_octets_from_client(_total)?\{/  { if(lbl($0,"user")==u) rx+=$NF }
-            /^telemt_user_octets_to_client(_total)?\{/    { if(lbl($0,"user")==u) tx+=$NF }
+            /^telemt_user_octets_from_client_total\{/  { if(lbl($0,"user")==u) rx+=$NF }
+            /^telemt_user_octets_to_client_total\{/    { if(lbl($0,"user")==u) tx+=$NF }
             /^telemt_user_unique_ips_current\{/  { if(lbl($0,"user")==u) ip+=$NF }
             END { printf "%.0f|%.0f|%.0f|%.0f", c+0, rx+0, tx+0, ip+0 }
         ')
@@ -3488,8 +3587,13 @@ secret_generate_links() {
                 local label="${SECRETS_LABELS[$i]}"
                 local fs; fs=$(build_faketls_secret "${SECRETS_KEYS[$i]}")
                 local link="https://t.me/proxy?server=${server_ip}&port=${PROXY_PORT}&secret=${fs}"
-                local qr_url="https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=$(printf '%s' "$link" | sed 's/:/%3A/g;s|/|%2F|g;s/?/%3F/g;s/=/%3D/g;s/&/%26/g')"
-                echo "<div class='user'><h2>${label}</h2><a href='${link}'>${link}</a><br><img src='${qr_url}' alt='二维码'></div>"
+                # Rendered here and inlined: pointing <img> at a remote
+                # renderer would post this user's key to it every time the sheet
+                # is opened. Empty means no renderer — the link above still works.
+                local qr_url; qr_url=$(_qr_data_uri "$link")
+                local qr_tag=""
+                [ -n "$qr_url" ] && qr_tag="<br><img src='${qr_url}' alt='QR'>"
+                echo "<div class='user'><h2>${label}</h2><a href='${link}'>${link}</a>${qr_tag}</div>"
             done
             echo "</body></html>"
         } > "$outfile"
@@ -3627,7 +3731,7 @@ secret_archive_list() {
     echo ""
     while IFS='|' read -r label key created enabled _mc _mi _q _ex notes; do
         [ -z "$label" ] && continue
-        local date_str; date_str=$(date -d "@${created}" '+%Y-%m-%d' 2>/dev/null || echo "$created")
+        local date_str; date_str=$(_local_from_epoch "$created" '+%Y-%m-%d') || date_str="$created"
         echo -e "  ${DIM}${SYM_OK}${NC} ${BOLD}${label}${NC}  创建时间：${date_str}$([ -n "$notes" ] && echo "  ${DIM}— ${notes}${NC}")"
     done < "$archive_file"
     echo ""
@@ -3643,8 +3747,8 @@ secret_top() {
     parsed=$(echo "$m" | awk '
         function lbl(s, k,    p, q) { p=index(s,k"=\""); if(!p) return ""; s=substr(s,p+length(k)+2); q=index(s,"\""); return q ? substr(s,1,q-1) : "" }
         /^telemt_user_connections_current\{/  { u=lbl($0,"user"); if(u) uc[u]+=$NF }
-        /^telemt_user_octets_from_client(_total)?\{/   { u=lbl($0,"user"); if(u) rx[u]+=$NF }
-        /^telemt_user_octets_to_client(_total)?\{/     { u=lbl($0,"user"); if(u) tx[u]+=$NF }
+        /^telemt_user_octets_from_client_total\{/   { u=lbl($0,"user"); if(u) rx[u]+=$NF }
+        /^telemt_user_octets_to_client_total\{/     { u=lbl($0,"user"); if(u) tx[u]+=$NF }
         END { for(u in uc) printf "%s|%.0f|%.0f|%.0f\n", u, uc[u]+0, rx[u]+0, tx[u]+0 }
     ')
 
@@ -3831,7 +3935,7 @@ port_check() {
     # Test 2: external reachability via TLS handshake to self
     local result
     result=$(curl -sv --connect-timeout 5 --max-time 10 "https://${ip}:${PROXY_PORT}" 2>&1) || true
-    if echo "$result" | grep -q "Connected to.*${PROXY_PORT}"; then
+    if echo "$result" | grep -c "Connected to.*${PROXY_PORT}" >/dev/null; then
         echo -e "  ${GREEN}${SYM_CHECK}${NC} 可从外部访问端口 ${PROXY_PORT}"
     else
         echo -e "  ${RED}${SYM_CROSS}${NC} 无法从外部访问端口 ${PROXY_PORT}"
@@ -3897,7 +4001,7 @@ profile_list() {
         [ -z "$name" ] && continue
         local ts="" date_str="unknown"
         [ -f "${PROFILES_DIR}/${name}/.timestamp" ] && ts=$(<"${PROFILES_DIR}/${name}/.timestamp")
-        [ -n "$ts" ] && date_str=$(date -d "@${ts}" '+%Y-%m-%d %H:%M' 2>/dev/null || date -r "$ts" '+%Y-%m-%d %H:%M' 2>/dev/null || echo "$ts")
+        [ -n "$ts" ] && { date_str=$(_local_from_epoch "$ts" '+%Y-%m-%d %H:%M') || date_str="$ts"; }
         echo -e "  ${BOLD}${name}${NC}  ${DIM}保存时间：${date_str}${NC}"
     done <<< "$dirs"
     echo ""
@@ -4433,9 +4537,8 @@ secret_check_quota_resets() {
     today_day=$(date +%d | sed 's/^0//')
     today_month=$(date +%Y-%m)
     # Last day of current month (GNU date or BSD fallback)
-    last_day=$(date -d "$(date +%Y-%m-01) +1 month -1 day" +%d 2>/dev/null | sed 's/^0//')
-    [ -z "$last_day" ] && last_day=$(date -v1d -v+1m -v-1d +%d 2>/dev/null | sed 's/^0//')
-    [ -z "$last_day" ] && last_day=31
+    # 10# forces base-10, so months 08 and 09 are not read as invalid octal.
+    last_day=$(_last_day_of_month "$(date +%Y)" "$((10#$(date +%m)))")
 
     mkdir -p "$(dirname "$_QUOTA_RESET_LOG")"
     touch "$_QUOTA_RESET_LOG"; chmod 600 "$_QUOTA_RESET_LOG"
@@ -4677,7 +4780,11 @@ _TUNE_WHITELIST=(
     "prefer_ipv6:general:^(true|false)$"
     "fast_mode:general:^(true|false)$"
     "me_adaptive_floor_max_active_writers_per_core:general:^[1-9][0-9]{0,2}$"
+    "middle_proxy_nat_ip:general:^((25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])[.]){3}(25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])$"
+    "middle_proxy_nat_probe:general:^(true|false)$"
     "log_level:general:^(debug|verbose|normal|silent)$"
+    "direct_relay_buffer_budget_max_bytes:general:^[0-9]+$"
+    "conntrack_control:server:^(true|false)$"
     "mask_relay_timeout_ms:censorship:^[0-9]+$"
     "mask_relay_idle_timeout_ms:censorship:^[0-9]+$"
     "syn_per_sec:rate_limit:^[0-9]+$"
@@ -4833,9 +4940,9 @@ run_verify() {
 
     _check "Docker 已安装"           "command -v docker"
     _check "引擎容器正在运行"   "is_proxy_running"
-    _check "端口 ${PROXY_PORT} 正在监听" "ss -tln 2>/dev/null | grep -qE ':${PROXY_PORT}[[:space:]]'"
+    _check "端口 ${PROXY_PORT} 正在监听" "_port_listening ${PROXY_PORT}"
     _check "指标端点正常响应"  "curl -fsS --max-time 3 http://127.0.0.1:${PROXY_METRICS_PORT:-9090}/metrics -o /dev/null"
-    _check "代理端口 TLS 握手正常" "echo | timeout 5 openssl s_client -connect 127.0.0.1:${PROXY_PORT} -servername ${PROXY_DOMAIN:-cloudflare.com} 2>&1 | grep -q 'CONNECTED'"
+    _check "代理端口 TLS 握手正常" "echo | timeout 5 openssl s_client -connect 127.0.0.1:${PROXY_PORT} -servername ${PROXY_DOMAIN:-cloudflare.com} 2>&1 | grep -c 'CONNECTED' >/dev/null"
     _check "域名 ${PROXY_DOMAIN:-cloudflare.com} 可访问" "curl -fsS --max-time 5 -o /dev/null https://${PROXY_DOMAIN:-cloudflare.com}"
     _check "api.telegram.org 可访问" "curl -fsS --max-time 5 -o /dev/null https://api.telegram.org"
     _check "至少有一个活动密钥"  "[ ${#SECRETS_LABELS[@]} -gt 0 ]"
@@ -4845,7 +4952,7 @@ run_verify() {
     if [ "$TELEGRAM_ENABLED" = "true" ] && [ -n "$TELEGRAM_BOT_TOKEN" ]; then
         local _cfg; _cfg=$(_mktemp)
         printf 'url = "https://api.telegram.org/bot%s/getMe"\n' "$TELEGRAM_BOT_TOKEN" > "$_cfg"
-        _check "Telegram 机器人令牌有效" "curl -fsS --max-time 5 -K '$_cfg' | grep -q '\"ok\":true'"
+        _check "Telegram 机器人令牌有效" "curl -fsS --max-time 5 -K '$_cfg' | grep -c '\"ok\":true' >/dev/null"
         rm -f "$_cfg"
     fi
 
@@ -4917,6 +5024,9 @@ _mtproxymax_completion() {
     # Subcommands
     [ "$cmd" = "resources" ] && [ "$COMP_CWORD" -eq 2 ] && COMPREPLY=( $(compgen -W "status clear set" -- "${cur}") )
     case "$cmd" in
+        traffic)
+            [ "$COMP_CWORD" -eq 2 ] && COMPREPLY=( $(compgen -W "reset-all reset-global reset-users help" -- "${cur}") )
+            ;;
         secret)
             if [ "$COMP_CWORD" -eq 2 ]; then
                 COMPREPLY=( $(compgen -W "add remove list info rotate clone rename enable disable limits setlimit setlimits link qr note stats sort top search archive unarchive archives generate-links extend bulk-extend disable-expired export import reset-traffic tag untag tags logs quota-reset purge-disabled sub export-json rename-prefix" -- "${cur}") )
@@ -5063,7 +5173,7 @@ run_digest() {
     echo ""
 
     local _running=false _pstatus="stopped" uptime_str="—"
-    if docker ps --format '{{.Names}}' 2>/dev/null | grep -q "^${CONTAINER_NAME}$"; then
+    if docker ps --format '{{.Names}}' 2>/dev/null | grep -c "^${CONTAINER_NAME}$" >/dev/null; then
         _running=true
         _pstatus="running"
         local started_at
@@ -5171,11 +5281,11 @@ run_upload_test() {
     # 3. Live Traffic Upload vs Download Ratio Audit
     printf "  %-35s" "实时入站与出站指标："
     local _metrics
-    _metrics=$(fetch_metrics 2>/dev/null || true)
+    _metrics=$(_fetch_metrics 2>/dev/null || true)
     if [ -n "$_metrics" ]; then
         local up_bytes down_bytes
-        up_bytes=$(echo "$_metrics" | awk '/^telemt_user_octets_from_client(_total)?\{/{s+=$NF}END{printf "%.0f",s}')
-        down_bytes=$(echo "$_metrics" | awk '/^telemt_user_octets_to_client(_total)?\{/{s+=$NF}END{printf "%.0f",s}')
+        up_bytes=$(echo "$_metrics" | awk '/^telemt_user_octets_from_client_total\{/{s+=$NF}END{printf "%.0f",s}')
+        down_bytes=$(echo "$_metrics" | awk '/^telemt_user_octets_to_client_total\{/{s+=$NF}END{printf "%.0f",s}')
 
         local up_fmt; up_fmt=$(format_bytes "${up_bytes:-0}")
         local down_fmt; down_fmt=$(format_bytes "${down_bytes:-0}")
@@ -5870,12 +5980,12 @@ apply_qos_rules() {
     [ -z "${PROXY_PORT:-}" ] && return 0
     if command -v iptables >/dev/null 2>&1; then
         # Robustly delete any existing mtproxy_qos rules cleanly via line numbers
-        while iptables -S INPUT 2>/dev/null | grep -q "mtproxy_qos_in"; do
+        while iptables -S INPUT 2>/dev/null | grep -c "mtproxy_qos_in" >/dev/null; do
             local num
             num=$(iptables -L INPUT --line-numbers -n 2>/dev/null | awk '/mtproxy_qos_in/{print $1; exit}')
             [ -n "$num" ] && iptables -D INPUT "$num" 2>/dev/null || break
         done
-        while iptables -S FORWARD 2>/dev/null | grep -q "mtproxy_qos_out"; do
+        while iptables -S FORWARD 2>/dev/null | grep -c "mtproxy_qos_out" >/dev/null; do
             local num
             num=$(iptables -L FORWARD --line-numbers -n 2>/dev/null | awk '/mtproxy_qos_out/{print $1; exit}')
             [ -n "$num" ] && iptables -D FORWARD "$num" 2>/dev/null || break
@@ -6245,7 +6355,7 @@ run_ddns() {
                 -H "Authorization: Bearer ${DDNS_CF_TOKEN}" \
                 -H "Content-Type: application/json" \
                 --data "{\"type\":\"A\",\"name\":\"${DDNS_RECORD_NAME}\",\"content\":\"${cur_ip}\",\"ttl\":120,\"proxied\":false}" --max-time 10)
-            if echo "$update_res" | grep -q '"success":true'; then
+            if echo "$update_res" | grep -c '"success":true' >/dev/null; then
                 log_success "Cloudflare DDNS 记录 '${DDNS_RECORD_NAME}' 已成功更新为 ${cur_ip}！"
             else
                 log_error "无法更新 Cloudflare DNS 记录。"
@@ -6632,13 +6742,18 @@ EOF
         local label="${SECRETS_LABELS[$i]}"
         local sec="${SECRETS_KEYS[$i]}"
         local tg_url="tg://proxy?server=${ip}&port=${port}&secret=${sec}"
-        local qr_api="https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${tg_url}"
-        
+        # Inlined rather than fetched: see _qr_data_uri.
+        local qr_api; qr_api=$(_qr_data_uri "$tg_url")
+
         echo "<div class='card'>" >> "$outfile"
         echo "  <h3>${label}</h3>" >> "$outfile"
         echo "  <p>高速 MTProto 代理</p>" >> "$outfile"
-        echo "  <div class='qr-box'><img src='${qr_api}' alt='二维码' width='150' height='150'></div>" >> "$outfile"
-        echo "  <p>使用 Telegram 相机扫描</p>" >> "$outfile"
+        if [ -n "$qr_api" ]; then
+            echo "  <div class='qr-box'><img src='${qr_api}' alt='QR Code' width='150' height='150'></div>" >> "$outfile"
+        else
+            echo "  <p><small>服务器缺少二维码生成工具，请安装 <code>qrencode</code> 以生成二维码。</small></p>" >> "$outfile"
+        fi
+        echo "  <p>使用 Telegram 扫描连接</p>" >> "$outfile"
         echo "</div>" >> "$outfile"
     done
 
@@ -6660,9 +6775,10 @@ run_traffic_reset_global() {
     if [ "$force" != "--force" ] && [ "$force" != "-y" ]; then
         echo -e "此操作将永久重置服务器范围内的累计流量计数器。"
         echo -e "各密钥的流量与配额不会受到影响。"
+        echo -e "${DIM}重置各用户的流量请运行 mtproxymax traffic reset-users （或 reset-all）${NC}"
         echo -n -e "确定要继续吗？[y/N]："
         read -r confirm
-        [[ "${confirm,,}" =~ ^y ]] || { log_error "Aborted."; return 0; }
+        [[ "${confirm,,}" =~ ^y ]] || { log_error "已取消。"; return 0; }
     fi
     
     local _stats_dir="${INSTALL_DIR}/relay_stats"
@@ -6670,19 +6786,21 @@ run_traffic_reset_global() {
     
     log_info "正在获取当前实时指标基线..."
     local _metrics
-    if ! _metrics=$(curl -fsS --max-time 2 "http://127.0.0.1:${PROXY_METRICS_PORT:-9090}/metrics" 2>/dev/null); then
+    if ! _metrics=$(curl -fsS --max-time 2 "http://127.0.0.1:${PROXY_METRICS_PORT:-9090}/metrics" 2>/dev/null | _normalize_byte_metrics); then
         log_error "无法重置流量：实时指标不可用。"
         return 1
     fi
     local cur_in=0 cur_out=0
-    cur_in=$(echo "$_metrics"|awk '/^telemt_user_octets_from_client(_total)?\{/{s+=$NF}END{printf "%.0f",s}')
-    cur_out=$(echo "$_metrics"|awk '/^telemt_user_octets_to_client(_total)?\{/{s+=$NF}END{printf "%.0f",s}')
+    cur_in=$(echo "$_metrics"|awk '/^telemt_user_octets_from_client_total\{/{s+=$NF}END{printf "%.0f",s}')
+    cur_out=$(echo "$_metrics"|awk '/^telemt_user_octets_to_client_total\{/{s+=$NF}END{printf "%.0f",s}')
     cur_in=${cur_in:-0}; cur_out=${cur_out:-0}
     
     log_info "正在重置累计计数器..."
     exec 9>"${_stats_dir}/.traffic.lock"
-    if command -v flock &>/dev/null; then
-        flock -w 5 9 2>/dev/null || { log_error "无法获取流量锁，守护进程可能正忙。"; exec 9>&-; return 1; }
+    if ! _lock_fd 9; then
+        log_error "无法获取流量锁，守护进程可能正忙。"
+        exec 9>&-
+        return 1
     fi
     
     local _tmp
@@ -6705,6 +6823,27 @@ run_traffic_reset_global() {
     log_success "全局流量已成功重置！"
 }
 
+run_traffic_reset_all() {
+    local force="${1:-}" confirm
+    check_root
+    load_settings
+    load_secrets
+
+    echo -e "\n  ── ⚠️ ${BOLD}重置所有流量计数器${NC} ──\n"
+    if [ "$force" != "--force" ] && [ "$force" != "-y" ]; then
+        echo -e "此操作会永久清零服务器和所有用户的流量计数器。"
+        echo -n -e "确认继续？[y/N] "
+        read -r confirm
+        [[ "${confirm,,}" =~ ^y ]] || { log_error "已取消。"; return 0; }
+    fi
+
+    run_traffic_reset_global --force || return 1
+    secret_reset_traffic all || return 1
+
+    audit_log "All global and per-user traffic counters reset to 0"
+    log_success "服务器和所有用户的流量计数器均已清零。"
+}
+
 run_guest() {
     local guest_label="${1:-}"
     local limit_str="${2:-24h}"
@@ -6719,10 +6858,10 @@ run_guest() {
     
     if [[ "${limit_str,,}" =~ ^([0-9]+)h(ours?)?$ ]]; then
         local hours="${BASH_REMATCH[1]}"
-        expires=$(date -u -d "+${hours} hours" "+%Y-%m-%dT%H:%M:%SZ" 2>/dev/null || date -u -r $(( $(date +%s) + hours*3600 )) "+%Y-%m-%dT%H:%M:%SZ" 2>/dev/null || echo "")
+        expires=$(_utc_now_plus "$((hours * 3600))" "+%Y-%m-%dT%H:%M:%SZ")
     elif [[ "${limit_str,,}" =~ ^([0-9]+)d(ays?)?$ ]]; then
         local days="${BASH_REMATCH[1]}"
-        expires=$(date -u -d "+${days} days" "+%Y-%m-%d" 2>/dev/null || date -u -r $(( $(date +%s) + days*86400 )) "+%Y-%m-%d" 2>/dev/null || echo "")
+        expires=$(_utc_now_plus "$((days * 86400))" "+%Y-%m-%d")
     elif [[ "${limit_str,,}" =~ ^([0-9]+)(mb|gb|kb|b)$ ]]; then
         quota=$(parse_human_bytes "$limit_str") || {
             log_error "配额格式无效：${limit_str}"
@@ -7347,7 +7486,7 @@ run_chaos_test() {
         status|"")
             echo -e "\n  ── 🌪️ ${BOLD}沙箱化混沌工程与压力韧性基准测试${NC} ──\n"
             local st="${GREEN}正常（未注入混沌故障）${NC}"
-            if command -v tc >/dev/null 2>&1 && tc qdisc show dev lo 2>/dev/null | grep -q "netem"; then
+            if command -v tc >/dev/null 2>&1 && tc qdisc show dev lo 2>/dev/null | grep -c "netem" >/dev/null; then
                 st="${RED}已注入混沌故障（netem 故障模拟生效中）${NC}"
             fi
             echo -e "  ${BOLD}状态：${NC}${st}"
@@ -7447,7 +7586,7 @@ run_backup_send_tg() {
     log_info "正在向 Telegram 管理员会话发送备份归档（${target_file}）..."
     local res
     res=$(curl -s --max-time 60 -F "chat_id=${TELEGRAM_CHAT_ID}" -F "document=@${target_file}" -F "caption=📦 MTProxyMax 服务器备份（${SCRIPT_NAME} v${VERSION}）" "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendDocument")
-    if echo "$res" | grep -q '"ok":true'; then
+    if echo "$res" | grep -c '"ok":true' >/dev/null; then
         log_success "备份归档已成功发送到 Telegram 聊天！"
     else
         log_error "无法通过 Telegram API 发送备份归档。"
@@ -7667,7 +7806,7 @@ run_onboard_wizard() {
 
     local expires=""
     if [ "$days" -gt 0 ] 2>/dev/null; then
-        expires=$(date -d "+${days} days" "+%Y-%m-%d" 2>/dev/null || date -v+${days}d "+%Y-%m-%d" 2>/dev/null || echo "")
+        expires=$(_utc_now_plus "$((days * 86400))" "+%Y-%m-%d")
     fi
 
     log_info "正在创建用户 '${label}'，限制：连接数=${conns}，配额=${quota}，到期时间=${expires:-无}..."
@@ -7890,9 +8029,13 @@ run_heal() {
     echo -e "  └────────────────────────────────────────────────────────┘\n"
 
     if ! is_proxy_running; then
-        log_warn "代理容器未运行，正在尝试恢复启动..."
-        docker rm -f "$CONTAINER_NAME" 2>/dev/null || true
-        start_proxy_container 2>/dev/null || true
+        # Transient Docker daemon hiccups (e.g. right after drop_caches) can cause a probe
+        # to miss. Verify with a second probe after a brief pause before declaring it down.
+        sleep 1
+        if ! is_proxy_running; then
+            log_warn "代理容器未运行，正在尝试重新启动。"
+            start_proxy_container 2>/dev/null || true
+        fi
     fi
 }
 
@@ -8758,7 +8901,7 @@ run_bbr() {
             modprobe tcp_bbr 2>/dev/null || true
             local avail_cc
             avail_cc=$(sysctl -n net.ipv4.tcp_available_congestion_control 2>/dev/null || echo "")
-            if ! echo "$avail_cc" | grep -qw "bbr"; then
+            if ! echo "$avail_cc" | grep -cw "bbr" >/dev/null; then
                 log_warn "内核报告的可用拥塞控制算法中没有 'bbr'，仍将尝试通过 sysctl 启用..."
             fi
             local sysctl_content="# MTProxyMax BBRv3 与 ECN 高吞吐量优化\n"
@@ -9321,7 +9464,19 @@ upstream_test() {
 # ── Section 9: Container Management ─────────────────────────
 
 is_proxy_running() {
-    [ "$(docker inspect -f '{{.State.Running}}' "${CONTAINER_NAME:-mtproxymax}" 2>/dev/null)" = "true" ]
+    local _cname="${1:-${CONTAINER_NAME:-mtproxymax}}"
+    local _state
+    _state=$(docker inspect -f '{{.State.Running}}' "$_cname" 2>/dev/null)
+    if [ "$_state" = "true" ]; then
+        return 0
+    elif [ "$_state" = "false" ]; then
+        return 1
+    fi
+    # If inspect failed to report true or false (e.g. transient Docker daemon latency
+    # or socket hiccup), retry once after a short pause before treating it as not running.
+    sleep 0.5 2>/dev/null || sleep 1
+    _state=$(docker inspect -f '{{.State.Running}}' "$_cname" 2>/dev/null)
+    [ "$_state" = "true" ]
 }
 
 run_proxy_container() {
@@ -9506,7 +9661,7 @@ _start_all_instances() {
     for i in "${!INSTANCE_PORTS[@]}"; do
         [ "${INSTANCE_ENABLED[$i]}" = "true" ] || continue
         local cname="mtproxymax-${INSTANCE_PORTS[$i]}"
-        docker ps --format '{{.Names}}' 2>/dev/null | grep -q "^${cname}$" && continue
+        docker ps --format '{{.Names}}' 2>/dev/null | grep -c "^${cname}$" >/dev/null && continue
         # Regenerate instance config dynamically (straight to its own file — never via config.toml)
         local inst_config="${CONFIG_DIR}/config-${INSTANCE_PORTS[$i]}.toml"
         PROXY_PORT="${INSTANCE_PORTS[$i]}"
@@ -9586,7 +9741,7 @@ _engine_config_in_sync() {
 # Is a secondary instance container currently up? A stopped instance has no
 # engine to reload and must never be treated as an out-of-sync one.
 _instance_container_running() {
-    docker ps --format '{{.Names}}' 2>/dev/null | grep -q "^$1$"
+    docker ps --format '{{.Names}}' 2>/dev/null | grep -c "^$1$" >/dev/null
 }
 
 # Hot-reload: rewrite config.toml and let the engine pick it up (no restart, no dropped connections)
@@ -9662,15 +9817,77 @@ _iso_to_epoch() {
     [ -z "$ts" ] && { echo "0"; return; }
     # Strip sub-second precision only, keep Z for UTC (e.g. 2026-03-03T10:00:00.123456789Z -> 2026-03-03T10:00:00Z)
     local ts_clean="${ts%%.*}"
-    # Restore trailing Z if original had it
-    [[ "$ts" == *Z ]] && ts_clean="${ts_clean}Z"
+    # Restore trailing Z only if stripping the fraction removed it. Doing this
+    # unconditionally produced "...ZZ" for the stored format (which has no fractional
+    # seconds), and no date accepts that: GNU rejected it and then fell through to the
+    # busybox branch, which GNU cannot run either, so the function returned 0 — which
+    # callers read as "no expiry" and skip enforcement entirely.
+    [[ "$ts" == *Z && "$ts_clean" != *Z ]] && ts_clean="${ts_clean}Z"
     local epoch
     # GNU date: handles ISO 8601 with Z correctly
     epoch=$(date -d "${ts_clean}" +%s 2>/dev/null) && [ "$epoch" -gt 0 ] 2>/dev/null && { echo "$epoch"; return; }
-    # Busybox date: strip Z, use explicit format
+    # Busybox date: strip Z, use explicit format, and force UTC. Under `-D` busybox
+    # ignores a trailing Z entirely, so without TZ=UTC the value is parsed as local time
+    # and the epoch is out by the offset that timestamp's own date carries.
     local ts_bb="${ts_clean%Z}"
-    epoch=$(date -D '%Y-%m-%dT%H:%M:%S' -d "${ts_bb}" +%s 2>/dev/null) && [ "$epoch" -gt 0 ] 2>/dev/null && { echo "$epoch"; return; }
+    epoch=$(TZ=UTC date -D '%Y-%m-%dT%H:%M:%S' -d "${ts_bb}" +%s 2>/dev/null) && [ "$epoch" -gt 0 ] 2>/dev/null && { echo "$epoch"; return; }
     echo "0"
+}
+
+# Format an epoch as a UTC string, in-process.
+# The usual `date -d "@epoch" || date -r epoch` chain cannot work on Alpine: GNU takes
+# -d, BSD takes -r, and busybox takes neither (its -r reads the timestamp of a *file*).
+# Both branches therefore failed and callers silently ended up with an empty expiry.
+# bash's printf %()T needs no external command at all; the date branches remain as a
+# fallback for bash builds without it.
+# $3 is "utc" (default) or "local". Callers that deliberately render local time keep
+# doing so — this only changes how the value is obtained, never which timezone it is in.
+_epoch_to_date() {
+    # Callers pass a `date`-style format, where a leading + is a prefix meaning "this is a
+    # format". printf %()T has no such prefix — leaving it in emits a literal '+'. Strip it
+    # for printf and put it back for the date fallbacks.
+    local _epoch="${1:-}" _fmt="${2#+}" _zone="${3:-utc}" _out=""
+    [ -n "$_epoch" ] && [ -n "$_fmt" ] || return 1
+    if [ "$_zone" = "utc" ]; then
+        _out=$(TZ=UTC printf "%(${_fmt})T" "$_epoch" 2>/dev/null) ||
+            _out=$(date -u -d "@${_epoch}" "+${_fmt}" 2>/dev/null) ||
+            _out=$(date -u -r "$_epoch" "+${_fmt}" 2>/dev/null) ||
+            _out=""
+    else
+        _out=$(printf "%(${_fmt})T" "$_epoch" 2>/dev/null) ||
+            _out=$(date -d "@${_epoch}" "+${_fmt}" 2>/dev/null) ||
+            _out=$(date -r "$_epoch" "+${_fmt}" 2>/dev/null) ||
+            _out=""
+    fi
+    [ -n "$_out" ] || return 1
+    printf '%s\n' "$_out"
+}
+
+_utc_from_epoch() { _epoch_to_date "$1" "$2" utc; }
+_local_from_epoch() { _epoch_to_date "$1" "$2" local; }
+
+# Epoch $1 seconds from now, formatted as UTC in $2.
+_utc_now_plus() {
+    _utc_from_epoch "$(($(date +%s) + ${1:-0}))" "${2:-}"
+}
+
+# Number of days in a month. `date -d "$(date +%Y-%m-01) +1 month -1 day"` is GNU-only
+# and the BSD fallback failed as well, so last_day stayed at a hardcoded 31 — meaning the
+# monthly quota reset fired on the wrong day for every month shorter than 31 days.
+_last_day_of_month() {
+    local _year="${1:-}" _month="${2:-}"
+    case "$_month" in
+    1 | 3 | 5 | 7 | 8 | 10 | 12) echo 31 ;;
+    4 | 6 | 9 | 11) echo 30 ;;
+    2)
+        if { [ $((_year % 4)) -eq 0 ] && [ $((_year % 100)) -ne 0 ]; } || [ $((_year % 400)) -eq 0 ]; then
+            echo 29
+        else
+            echo 28
+        fi
+        ;;
+    *) echo 31 ;;
+    esac
 }
 
 # Get container uptime
@@ -9757,12 +9974,49 @@ secret_qr() {
 }
 
 
-# Generate QR code URL (for Telegram photo messages)
-generate_qr_url() {
-    local link="$1"
-    local encoded
-    encoded=$(printf '%s' "$link" | sed 's/&/%26/g; s/?/%3F/g; s/=/%3D/g; s/:/%3A/g; s|/|%2F|g')
-    echo "https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encoded}"
+# Render a QR to a PNG on this host. Non-zero when no renderer is available.
+#
+# Duplicated from the bot daemon on purpose: the daemon is generated as a
+# self-contained script and never sources this one, which is the same reason
+# format_bytes and friends appear in both.
+_qr_png() {
+    local data="$1" out="$2"
+    [ -n "$data" ] && [ -n "$out" ] || return 1
+    if command -v qrencode &>/dev/null; then
+        qrencode -o "$out" -s 6 -m 2 "$data" 2>/dev/null && [ -s "$out" ] && return 0
+    fi
+    if command -v python3 &>/dev/null && python3 -c '' &>/dev/null 2>&1 && \
+       python3 -c 'import qrcode' &>/dev/null; then
+        python3 - "$data" "$out" <<'PYQ' 2>/dev/null && [ -s "$out" ] && return 0
+import sys
+import qrcode
+qrcode.make(sys.argv[1]).save(sys.argv[2])
+PYQ
+    fi
+    rm -f "$out" 2>/dev/null
+    return 1
+}
+
+# A self-contained <img> source for a QR, or "" when nothing can render one.
+#
+# The exported HTML sheets used to point <img> straight at api.qrserver.com, so
+# opening the sheet in a browser handed every user's proxy key — the link IS the
+# credential — to a third party. A data: URI keeps the image inside the file and
+# the key on this machine. Callers must render the link without an image when
+# this returns empty rather than reaching for a remote renderer.
+_qr_data_uri() {
+    local data="$1" png b64
+    command -v base64 &>/dev/null || return 0
+    png=$(mktemp "${TMPDIR:-/tmp}/mtpx-qr.XXXXXX") || return 0
+    if _qr_png "$data" "$png"; then
+        # busybox base64 has no -w, GNU's wraps at 76 columns by default.
+        b64=$(base64 -w0 < "$png" 2>/dev/null) || b64=$(base64 < "$png" 2>/dev/null | tr -d '\n')
+        rm -f "$png" 2>/dev/null
+        [ -n "$b64" ] && printf 'data:image/png;base64,%s' "$b64"
+        return 0
+    fi
+    rm -f "$png" 2>/dev/null
+    return 0
 }
 
 # ── Section 11: Geo-Blocking ────────────────────────────────
@@ -9965,7 +10219,7 @@ show_geoblock_menu() {
                 read -r code
                 code=$(echo "$code" | tr '[:upper:]' '[:lower:]')
                 if [[ "$code" =~ ^[a-z]{2}$ ]]; then
-                    if echo ",$BLOCKLIST_COUNTRIES," | grep -q ",${code},"; then
+                    if echo ",$BLOCKLIST_COUNTRIES," | grep -c ",${code}," >/dev/null; then
                         log_info "国家/地区 '${code}' 已在列表中"
                     else
                         _ensure_ipset && _download_country_cidrs "$code" && {
@@ -9986,7 +10240,7 @@ show_geoblock_menu() {
                 read -r rm_code
                 rm_code=$(echo "$rm_code" | tr '[:upper:]' '[:lower:]')
                 if [[ "$rm_code" =~ ^[a-z]{2}$ ]]; then
-                    if echo ",$BLOCKLIST_COUNTRIES," | grep -q ",${rm_code},"; then
+                    if echo ",$BLOCKLIST_COUNTRIES," | grep -c ",${rm_code}," >/dev/null; then
                         BLOCKLIST_COUNTRIES=$(echo ",$BLOCKLIST_COUNTRIES," | sed "s/,${rm_code},/,/g;s/^,//;s/,$//")
                         save_settings
                         _remove_country_rules "$rm_code"
@@ -10279,7 +10533,10 @@ self_update() {
         log_success "Telemt 引擎已是最新版本（v${_current_ver}）"
     else
         log_info "引擎更新：v${_current_ver} -> v${_expected_ver}"
-        build_telemt_image true
+        if ! build_telemt_image true; then
+            log_error "无法获取 telemt v${_expected_ver}，当前代理继续运行。"
+            return 1
+        fi
         if is_proxy_running; then
             load_secrets
             restart_proxy_container
@@ -10324,8 +10581,15 @@ voucher_create() {
     local i code p1 p2
     echo -e "  ${BOLD}${CYAN}正在生成 ${count} 个兑换码（${quota_str}，${days} 天）...${NC}\n"
     for ((i=1; i<=count; i++)); do
-        p1=$(tr -dc 'A-Z0-9' < /dev/urandom 2>/dev/null | head -c 4 || echo "8F9A")
-        p2=$(tr -dc 'A-Z0-9' < /dev/urandom 2>/dev/null | head -c 4 || echo "2K1X")
+        # Do not use `tr | head` here: with the script-wide `pipefail`, tr gets
+        # SIGPIPE and the fallback text is appended to otherwise valid output.
+        # Four random bytes per part give a stable 64-bit voucher identifier.
+        p1=$(od -An -N4 -tx1 /dev/urandom 2>/dev/null | tr -d ' \n' | tr '[:lower:]' '[:upper:]')
+        p2=$(od -An -N4 -tx1 /dev/urandom 2>/dev/null | tr -d ' \n' | tr '[:lower:]' '[:upper:]')
+        [ ${#p1} -eq 8 ] && [ ${#p2} -eq 8 ] || {
+            log_error "无法生成安全的兑换码"
+            return 1
+        }
         code="MTP-${p1}-${p2}"
         echo "${code}|${quota_raw}|${days}|${conns}|${ips}|${tier}|ACTIVE|${created_at}|-|-" >> "$VOUCHERS_FILE"
         echo -e "  ${GREEN}✓${NC} 兑换码 #${i}：${BOLD}${BRIGHT_GREEN}${code}${NC}（等级：${tier}，配额：${quota_str}，有效期：${days} 天）"
@@ -10341,7 +10605,7 @@ voucher_list() {
         return 0
     fi
     local filter="${1:-all}"
-    printf "  %-14s %-10s %-6s %-8s %-10s %-15s\n" "兑换码" "配额" "天数" "状态" "等级" "兑换者"
+    printf "  %-23s %-10s %-6s %-8s %-10s %-20s\n" "兑换码" "配额" "天数" "状态" "等级" "聊天 ID / 账户"
     draw_line
     while IFS='|' read -r code quota days conns ips tier status created_at redeemed_by redeemed_at; do
         [[ "$code" =~ ^# ]] && continue; [ -z "$code" ] && continue
@@ -10349,7 +10613,10 @@ voucher_list() {
         if [ "$filter" = "redeemed" ] && [ "$status" != "REDEEMED" ]; then continue; fi
         local q_fmt="不限"; [ "${quota:-0}" -gt 0 ] && q_fmt=$(format_human_bytes "$quota")
         local st_col="$GREEN"; [ "$status" = "REDEEMED" ] && st_col="$DIM"; [ "$status" = "REVOKED" ] && st_col="$RED"
-        printf "  ${BOLD}%-14s${NC} %-10s %-6s ${st_col}%-8s${NC} %-10s %-15s\n" "$code" "$q_fmt" "${days}d" "$status" "${tier:-std}" "${redeemed_by:-}"
+        local owner="${redeemed_by:--}"
+        [ "$status" = "REDEEMED" ] && { [ -z "$redeemed_by" ] || [ "$redeemed_by" = "-" ]; } && owner="UNKNOWN (legacy)"
+        [[ "$owner" == tg_* ]] && owner="${owner#tg_}"
+        printf "  ${BOLD}%-23s${NC} %-10s %-6s ${st_col}%-8s${NC} %-10s %-20s\n" "$code" "$q_fmt" "${days}d" "$status" "${tier:-std}" "$owner"
     done < "$VOUCHERS_FILE"
 }
 
@@ -10370,33 +10637,122 @@ voucher_redeem() {
     local target="$1" label="${2:-}"
     [ -z "$target" ] && { log_error "用法： voucher redeem <code> [label]"; return 1; }
     load_vouchers
-    local line; line=$(grep "^${target}|" "$VOUCHERS_FILE" 2>/dev/null | head -1)
+    mkdir -p "$INSTALL_DIR" 2>/dev/null || true
+    exec 8>"${VOUCHERS_FILE}.lock" || { log_error "无法锁定兑换码数据库"; return 1; }
+    if ! _lock_fd 8; then
+        exec 8>&-
+        log_error "兑换码数据库正忙，请重试"
+        return 1
+    fi
+
+    local line; line=$(awk -F'|' -v c="$target" '$1==c {print; exit}' "$VOUCHERS_FILE" 2>/dev/null)
     if [ -z "$line" ]; then
+        exec 8>&-
         log_error "兑换码 '${target}' 不存在。"
         return 1
     fi
     IFS='|' read -r code quota days conns ips tier status created_at redeemed_by redeemed_at <<< "$line"
-    if [ "$status" != "ACTIVE" ]; then
-        log_error "兑换码 '${target}' 已处于 ${status} 状态。"
-        return 1
-    fi
     [ -z "$label" ] && label="v_${code//MTP-/}"
+    [[ "$label" =~ ^[a-zA-Z0-9_-]+$ ]] && [ ${#label} -le 32 ] || {
+        exec 8>&-
+        log_error "标签只允许字母、数字、下划线和短横线，最多 32 个字符"
+        return 1
+    }
+
+    # Load the complete database before secret_add; otherwise a redemption from
+    # the standalone `voucher` command could overwrite existing users.
+    load_secrets
+
+    local recovery="false"
+    if [ "$status" != "ACTIVE" ]; then
+        # v1.4.1 consumed the voucher before calling secret_add with an invalid
+        # argument list. Let the same account repair that interrupted redemption
+        # when its secret was never created; never transfer it to another label.
+        if [ "$status" = "REDEEMED" ] && { [ -z "$redeemed_by" ] || [ "$redeemed_by" = "-" ]; } &&
+           awk -F'|' -v l="$label" -v n="Voucher ${target}" '$1==l && $9==n {found=1} END {exit !found}' "$SECRETS_FILE" 2>/dev/null; then
+            # Repair vouchers affected by the old dynamic-scope bug. Claiming is
+            # safe only when this exact account carries this voucher in its note.
+            local repair_tmp
+            repair_tmp=$(_mktemp "$INSTALL_DIR") || { exec 8>&-; return 1; }
+            if awk -F'|' -v c="$target" -v u="$label" -v t="$(date -u '+%Y-%m-%d %H:%M:%S UTC')" '
+                BEGIN { OFS="|"; changed=0 }
+                $1==c && $7=="REDEEMED" && ($9=="" || $9=="-") { $9=u; $10=t; changed++ }
+                { print }
+                END { if (changed != 1) exit 1 }
+            ' "$VOUCHERS_FILE" > "$repair_tmp" && mv "$repair_tmp" "$VOUCHERS_FILE"; then
+                chmod 600 "$VOUCHERS_FILE" 2>/dev/null || true
+                exec 8>&-
+                log_success "已将兑换码 '${target}' 恢复到 '${label}'"
+                return 0
+            fi
+            exec 8>&-
+            log_error "无法恢复兑换码 '${target}' 的账户"
+            return 1
+        elif [ "$status" = "REDEEMED" ] && [ "$redeemed_by" = "$label" ]; then
+            if grep -q "^${label}|" "$SECRETS_FILE" 2>/dev/null; then
+                # Idempotent retry by the original owner. The Telegram handler
+                # can safely rebuild and resend the connection link/QR.
+                exec 8>&-
+                log_success "密钥 '${label}' 已使用兑换码 '${target}'"
+                return 0
+            else
+                recovery="true"
+            fi
+        else
+            exec 8>&-
+            log_error "Voucher '${target}' is already ${status}."
+            return 1
+        fi
+    fi
     local now_iso; now_iso=$(date -u '+%Y-%m-%d %H:%M:%S UTC')
     local exp_iso="never"
     if [ "${days:-0}" -gt 0 ]; then
-        exp_iso=$(date -u -d "+${days} days" '+%Y-%m-%dT%H:%M:%SZ' 2>/dev/null || date -u '+%Y-%m-%dT%H:%M:%SZ')
+        # Never fall back to "now": that silently produced a voucher which expired the
+        # instant it was redeemed instead of after its stated duration.
+        exp_iso=$(_utc_now_plus "$((days * 86400))" '+%Y-%m-%dT%H:%M:%SZ') || {
+            exec 8>&-
+            log_error "无法计算兑换码有效期"
+            return 1
+        }
     fi
-    # Mark voucher redeemed atomically
-    awk -F'|' -v c="$target" -v u="$label" -v t="$now_iso" 'BEGIN{OFS="|"} $1==c && $7=="ACTIVE"{$7="REDEEMED"; $9=u; $10=t} {print}' "$VOUCHERS_FILE" > "${VOUCHERS_FILE}.tmp" && mv "${VOUCHERS_FILE}.tmp" "$VOUCHERS_FILE"
-    
-    # Add or update secret
+
+    # Create or update the account first. A failed account operation must leave
+    # the voucher ACTIVE so that the customer can retry it.
     if grep -q "^${label}|" "$SECRETS_FILE" 2>/dev/null; then
-        secret_set_limits "$label" "${conns:-15}" "${ips:-5}" "${quota:-0}" "${exp_iso}" >/dev/null 2>&1
-        log_success "已将兑换码 '${target}' 应用到现有密钥 '${label}'"
+        if ! secret_set_limits "$label" "${conns:-15}" "${ips:-5}" "${quota:-0}" "${exp_iso}" >/dev/null 2>&1; then
+            exec 8>&-
+            log_error "无法将兑换码应用到密钥 '${label}'"
+            return 1
+        fi
+        local result_msg="Applied voucher '${target}' to existing secret '${label}'"
     else
-        secret_add "$label" "${conns:-15}" "${ips:-5}" "${quota:-0}" "${exp_iso}" "Voucher ${target}" >/dev/null 2>&1
-        log_success "兑换码 '${target}' 已兑换，并创建密钥 '${label}'"
+        if ! secret_add "$label" "" "true" >/dev/null 2>&1 ||
+           ! secret_set_limits "$label" "${conns:-15}" "${ips:-5}" "${quota:-0}" "${exp_iso}" "true" >/dev/null 2>&1 ||
+           ! secret_edit_note "$label" "Voucher ${target}" >/dev/null 2>&1 ||
+           ! reload_proxy_config >/dev/null 2>&1; then
+            exec 8>&-
+            log_error "无法创建密钥 '${label}'，兑换码仍可使用"
+            return 1
+        fi
+        local result_msg="Redeemed voucher '${target}' — created secret '${label}'"
     fi
+
+    local voucher_tmp
+    voucher_tmp=$(_mktemp "$INSTALL_DIR") || { exec 8>&-; return 1; }
+    if ! awk -F'|' -v c="$target" -v u="$label" -v t="$now_iso" -v recovery="$recovery" '
+        BEGIN { OFS="|"; changed=0 }
+        $1==c && $7=="ACTIVE" { $7="REDEEMED"; $9=u; $10=t; changed++ }
+        $1==c && recovery=="true" && $7=="REDEEMED" && $9==u { $10=t; changed++ }
+        { print }
+        END { if (changed != 1) exit 1 }
+    ' "$VOUCHERS_FILE" > "$voucher_tmp" || ! mv "$voucher_tmp" "$VOUCHERS_FILE"; then
+        exec 8>&-
+        log_error "账户已更新，但兑换码状态保存失败，请联系管理员"
+        return 1
+    fi
+    chmod 600 "$VOUCHERS_FILE" 2>/dev/null || true
+    exec 8>&-
+    log_success "$result_msg"
 }
 
 # ── Section 13d: Role-Based Access Control (RBAC) ───────────
@@ -10416,6 +10772,8 @@ admin_add() {
         echo "${tg_id}|${role}|${label}|$(date -u '+%Y-%m-%d')" >> "$ADMINS_FILE"
     fi
     log_success "管理员 ${tg_id} 已注册为 '${role}'（${label}）"
+    # Keep the new admin's Telegram command menu in step with their role.
+    telegram_sync_commands &>/dev/null || true
 }
 
 admin_remove() {
@@ -10424,6 +10782,8 @@ admin_remove() {
     load_admins
     grep -v "^${tg_id}|" "$ADMINS_FILE" > "${ADMINS_FILE}.tmp" 2>/dev/null && mv "${ADMINS_FILE}.tmp" "$ADMINS_FILE"
     log_success "Admin ${tg_id} removed"
+    # Drop the revoked admin's menu so it stops offering admin commands.
+    telegram_clear_commands "$tg_id" &>/dev/null || true
 }
 
 admin_list() {
@@ -10855,7 +11215,7 @@ FLEET_JSON
             [ -z "$_rhost" ] && continue
             local _remote_json
             _remote_json=$(ssh -i "${REPLICATION_SSH_KEY_PATH}" -p "$_rport" -o BatchMode=yes -o ConnectTimeout=3 -o StrictHostKeyChecking=accept-new "${_ruser}@${_rhost}" "${INSTALL_DIR}/mtproxymax fleet collect >/dev/null 2>&1 && cat ${FLEET_DATA_DIR}/node-*.json 2>/dev/null | head -1" 2>/dev/null || true)
-            if [ -n "$_remote_json" ] && echo "$_remote_json" | grep -q '"hostname":'; then
+            if [ -n "$_remote_json" ] && echo "$_remote_json" | grep -c '"hostname":' >/dev/null; then
                 echo "$_remote_json" > "${FLEET_DATA_DIR}/node-slave-${_rlbl}.json" 2>/dev/null || true
                 chmod 600 "${FLEET_DATA_DIR}/node-slave-${_rlbl}.json" 2>/dev/null || true
             fi
@@ -11033,7 +11393,7 @@ backup_cloud_push() {
                 return 1
             fi
             local caption="☁️ <b>MTProxyMax 每日备份（${VERSION}）</b>%0A🖥 主机：$(hostname 2>/dev/null || echo 未知)%0A📅 日期：$(date -u '+%Y-%m-%d %H:%M:%S UTC')"
-            if curl -s --max-time 120 -F "chat_id=${chat}" -F "document=@${latest_tar}" -F "caption=${caption}" -F "parse_mode=HTML" "https://api.telegram.org/bot${token}/sendDocument" | grep -q '"ok":true'; then
+            if curl -s --max-time 120 -F "chat_id=${chat}" -F "document=@${latest_tar}" -F "caption=${caption}" -F "parse_mode=HTML" "https://api.telegram.org/bot${token}/sendDocument" | grep -c '"ok":true' >/dev/null; then
                 log_success "备份压缩包已成功上传到 Telegram 管理员聊天（${chat}）！"
                 return 0
             else
@@ -11116,7 +11476,7 @@ telegram_send_message() {
         TELEGRAM_LAST_ERROR="网络请求失败（curl 状态码 ${rc}）"
         return 1
     fi
-    if echo "$response" | grep -q '"ok":true'; then
+    if echo "$response" | grep -c '"ok":true' >/dev/null; then
         TELEGRAM_LAST_ERROR=""
         return 0
     fi
@@ -11125,11 +11485,239 @@ telegram_send_message() {
     return 1
 }
 
-telegram_send_photo() {
-    local photo_url="$1" caption="${2:-}"
+# ── Telegram command menu (setMyCommands) ────────────────────────────────────
+# Without this the client-side "/" menu button has nothing to show and the bot's
+# commands are only discoverable by reading /mp_help. The lists below are the
+# single source of truth: the bot daemon re-runs `mtproxymax telegram
+# sync-commands` on boot rather than duplicating them into its own heredoc.
+# Format is one "command|description" per line, without the leading slash.
+TG_CMDS_PUBLIC="start|打开自助服务和帮助
+my_status|查询流量配额和到期时间（/my_status <label>）
+redeem|兑换服务码（/redeem <code>）
+voucher|兑换服务码（/redeem 的别名）
+support|联系服务器管理员"
+
+TG_CMDS_ADMIN="mp_help|显示全部命令
+mp_status|查看代理状态、运行时间和流量
+mp_secrets|列出密钥和用户统计
+mp_link|获取代理链接和二维码
+mp_add|添加密钥（/mp_add <label>）
+mp_rotate|轮换密钥
+mp_enable|启用密钥
+mp_disable|禁用密钥
+mp_limits|查看各用户限制
+mp_setlimit|设置连接数、IP 数、配额和到期时间
+mp_traffic|查看各用户流量
+mp_upstreams|列出上游线路
+mp_health|运行健康诊断
+mp_digest|查看系统健康和安全摘要
+mp_broadcast|向所有用户广播
+mp_fleet|查看集群状态
+mp_voucher|生成或列出兑换码
+reply|回复支持工单"
+
+# Superadmins additionally get the four commands _process_cmd gates on role.
+TG_CMDS_SUPERADMIN="${TG_CMDS_ADMIN}
+mp_remove|撤销密钥
+mp_restart|重启代理
+mp_update|检查并应用更新
+mp_lockdown|启用或解除紧急锁定"
+
+# Render a "command|description" table as the JSON array the Bot API expects.
+_tg_commands_json() {
+    local table="$1" name desc json="" first=1 line
+    while IFS= read -r line || [ -n "$line" ]; do
+        [ -z "$line" ] && continue
+        name="${line%%|*}"
+        desc="${line#*|}"
+        # Entries are static, but sanitise defensively: Telegram rejects the
+        # entire list if any single entry is malformed, so a stray control
+        # character or quote in a future description must not break the menu.
+        desc=$(printf '%s' "$desc" | tr '\t' ' ' | tr -d '[:cntrl:]')
+        desc="${desc//\\/\\\\}"
+        desc="${desc//\"/\\\"}"
+        [ "$first" -eq 1 ] || json="${json},"
+        first=0
+        json="${json}{\"command\":\"${name}\",\"description\":\"${desc}\"}"
+    done <<< "$table"
+    printf '[%s]' "$json"
+}
+
+# POST to a Bot API method, keeping the token out of the process list. Returns 0
+# only when Telegram acknowledges the call.
+_tg_api_post() {
+    local method="$1" body="$2"
+    local token="${TELEGRAM_BOT_TOKEN:-}"
+    [ -n "$token" ] || return 0
+    local _cfg
+    _cfg=$(_mktemp) || return 0
+    printf 'url = "https://api.telegram.org/bot%s/%s"\n' "$token" "$method" > "$_cfg"
+    local response
+    response=$(curl -s --max-time 10 -K "$_cfg" \
+        -H 'Content-Type: application/json' \
+        -d "$body" 2>/dev/null) || true
+    rm -f "$_cfg"
+    echo "$response" | grep -c '"ok":true' >/dev/null
+}
+
+# Register a command list for one scope. An empty scope means the default scope,
+# which applies to every user who has no more specific scope.
+_tg_set_commands() {
+    local scope="$1" commands="$2"
+    local body
+    if [ -n "$scope" ]; then
+        body="{\"commands\":${commands},\"scope\":${scope}}"
+    else
+        body="{\"commands\":${commands}}"
+    fi
+    _tg_api_post setMyCommands "$body"
+}
+
+# Print the registered command list for a role, as "command|description" lines.
+#
+# The bot daemon cannot read TG_CMDS_* itself — they live here, outside the
+# heredoc it is generated from, and it deliberately re-runs `telegram
+# sync-commands` on boot rather than keeping a copy that could drift. Its /help
+# view calls this instead, so the list a user is shown and the list Telegram is
+# told about are the same bytes.
+telegram_print_commands() {
+    case "${1:-admin}" in
+        public) printf '%s\n' "$TG_CMDS_PUBLIC" ;;
+        # A reseller reaches the public surface plus the voucher engine, which
+        # is exactly the allowlist _process_cmd applies to that role.
+        reseller)
+            printf '%s\n' "$TG_CMDS_PUBLIC"
+            printf 'mp_voucher|生成或列出兑换码\n'
+            ;;
+        superadmin) printf '%s\n' "$TG_CMDS_SUPERADMIN" ;;
+        *) printf '%s\n' "$TG_CMDS_ADMIN" ;;
+    esac
+}
+
+# Push the whole menu: public commands for everyone, the admin control plane for
+# admins, and the privileged commands for superadmins. Entirely best-effort — a
+# network failure must never abort setup or the bot daemon.
+telegram_sync_commands() {
+    local cid role _rest
+    [ "${TELEGRAM_ENABLED:-false}" = "true" ] || return 0
+    [ -n "${TELEGRAM_BOT_TOKEN:-}" ] || return 0
+
+    local pub reseller super scoped
+    pub=$(_tg_commands_json "$TG_CMDS_PUBLIC")
+    reseller=$(_tg_commands_json "$(telegram_print_commands reseller)")
+    super=$(_tg_commands_json "$TG_CMDS_SUPERADMIN")
+
+    _tg_set_commands "" "$pub" || log_warn "无法注册公共命令菜单"
+
+    if [ -n "${TELEGRAM_CHAT_ID:-}" ]; then
+        _tg_set_commands "{\"type\":\"chat\",\"chat_id\":${TELEGRAM_CHAT_ID}}" "$super" || true
+    fi
+
+    # RBAC admins, mirroring the role gates in _process_cmd.
+    if [ -f "${ADMINS_FILE:-}" ]; then
+        while IFS='|' read -r cid role _rest || [ -n "$cid" ]; do
+            [[ "$cid" =~ ^-?[0-9]+$ ]] || continue
+            [ "$cid" = "${TELEGRAM_CHAT_ID:-}" ] && continue
+            case "$role" in
+                superadmin) scoped="$super" ;;
+                reseller) scoped="$reseller" ;;
+                *) scoped="$pub" ;;
+            esac
+            _tg_set_commands "{\"type\":\"chat\",\"chat_id\":${cid}}" "$scoped" || true
+        done < "${ADMINS_FILE}"
+    fi
+    return 0
+}
+
+# Drop a chat's custom menu so a revoked admin stops seeing the admin commands.
+telegram_clear_commands() {
+    local cid="${1:-}"
+    [[ "$cid" =~ ^-?[0-9]+$ ]] || return 0
+    _tg_api_post deleteMyCommands "{\"scope\":{\"type\":\"chat\",\"chat_id\":${cid}}}" || true
+    return 0
+}
+
+# Inspect and maintain the rolling traffic history written by the bot daemon.
+#
+# The daemon owns the format; the manager only counts rows and prunes, so the
+# analytics live in exactly one place. The field order is duplicated here for
+# readability, which matches how format_bytes is already duplicated between the
+# two — keep this comment and the daemon's in step:
+#
+#   global.tsv   epoch|in_delta|out_delta|conns|marker
+#   users.tsv    epoch|label|in_delta|out_delta
+telegram_history_cmd() {
+    local sub="${1:-status}"
+    local dir="${STATS_DIR}/history"
+    case "$sub" in
+        status)
+            echo -e "  ${BOLD}流量历史：${NC} ${dir}"
+            if [ ! -d "$dir" ]; then
+                echo -e "  ${DIM}暂无流量历史。${NC}"
+                return 0
+            fi
+            local gn=0 un=0
+            [ -f "$dir/global.tsv" ] && gn=$(wc -l < "$dir/global.tsv" 2>/dev/null || echo 0)
+            [ -f "$dir/users.tsv" ]  && un=$(wc -l < "$dir/users.tsv" 2>/dev/null || echo 0)
+            echo -e "  ${DIM}全局采样数： ${gn} | 用户记录数： ${un}${NC}"
+            if [ -f "$dir/global.tsv" ] && [ "$gn" -gt 0 ]; then
+                local first last
+                first=$(head -1 "$dir/global.tsv" | cut -d'|' -f1)
+                last=$(tail -1 "$dir/global.tsv" | cut -d'|' -f1)
+                echo -e "  ${DIM}最早记录：$(date -d "@${first}" '+%Y-%m-%d %H:%M' 2>/dev/null || echo "$first")${NC}"
+                echo -e "  ${DIM}最新记录：$(date -d "@${last}" '+%Y-%m-%d %H:%M' 2>/dev/null || echo "$last")${NC}"
+            fi
+            echo -e "  ${DIM}保留 ${TELEGRAM_HISTORY_RETENTION_DAYS:-7} 天 | 采样间隔 ${TELEGRAM_HISTORY_INTERVAL_MIN:-5} 分钟${NC}"
+            ;;
+        prune)
+            check_root
+            if [ ! -d "$dir" ]; then
+                echo -e "  ${DIM}没有需要清理的流量记录。${NC}"
+                return 0
+            fi
+            local cutoff=$(( $(date +%s) - ${TELEGRAM_HISTORY_RETENTION_DAYS:-7} * 86400 ))
+            local f tmp
+            for f in "$dir/global.tsv" "$dir/users.tsv"; do
+                [ -f "$f" ] || continue
+                tmp=$(mktemp "$dir/.prune.XXXXXX") || continue
+                chmod 600 "$tmp"
+                if awk -F'|' -v c="$cutoff" '$1 + 0 >= c' "$f" > "$tmp"; then
+                    mv "$tmp" "$f" 2>/dev/null || rm -f "$tmp"
+                else
+                    rm -f "$tmp"
+                fi
+            done
+            echo -e "  ${GREEN}✓${NC} 已保留最近 ${TELEGRAM_HISTORY_RETENTION_DAYS:-7} 天的记录。"
+            ;;
+        reset)
+            check_root
+            [ -d "$dir" ] || return 0
+            echo -e "  ${YELLOW}此操作会清除所有流量历史。${NC}"
+            echo -e "  ${YELLOW}报表和流量视图将重新开始统计，密钥配额保持不变。${NC}"
+            local _c=""
+            read -r -p "  输入 yes 确认： " _c
+            if [ "$_c" != "yes" ]; then
+                echo -e "  ${DIM}已取消。${NC}"
+                return 0
+            fi
+            rm -f "$dir/global.tsv" "$dir/users.tsv"
+            echo -e "  ${GREEN}✓${NC} 已清除流量历史。"
+            ;;
+        *)
+            echo -e "  用法：mtproxymax telegram history [status|prune|reset]"
+            ;;
+    esac
+}
+
+# Upload a photo from a file on this host. The Bot API only fetches a URL
+# itself, so a locally rendered image has to be sent as multipart — and it is
+# the reason the QR no longer has to be posted to a third party first.
+telegram_send_photo_file() {
+    local file="$1" caption="${2:-}"
     local token="${TELEGRAM_BOT_TOKEN}"
     local chat_id="${TELEGRAM_CHAT_ID}"
     { [ -z "$token" ] || [ -z "$chat_id" ]; } && return 1
+    [ -s "$file" ] || return 1
 
     local label="${TELEGRAM_SERVER_LABEL:-MTProxyMax}"
     [ -n "$caption" ] && caption="[${label}] ${caption}"
@@ -11139,16 +11727,17 @@ telegram_send_photo() {
     printf 'url = "https://api.telegram.org/bot%s/sendPhoto"\n' "$token" > "$_cfg"
 
     local rc=0
-    curl -s --max-time 15 --max-filesize 10485760 -X POST \
+    curl -s --max-time 30 -X POST \
         -K "$_cfg" \
-        --data-urlencode "chat_id=${chat_id}" \
-        --data-urlencode "photo=${photo_url}" \
-        --data-urlencode "caption=${caption}" \
-        --data-urlencode "parse_mode=Markdown" \
+        -F "chat_id=${chat_id}" \
+        -F "photo=@${file}" \
+        --form-string "caption=${caption}" \
+        --form-string "parse_mode=Markdown" \
         >/dev/null 2>&1 || rc=$?
     rm -f "$_cfg"
     return $rc
 }
+
 
 telegram_get_chat_id() {
     local token="${TELEGRAM_BOT_TOKEN}"
@@ -11231,11 +11820,19 @@ telegram_notify_proxy_started() {
 
     telegram_send_message "$msg"
 
-    # Send QR for first enabled secret
+    # Send QR for first enabled secret. Rendered here and uploaded as a file;
+    # a remote renderer would be handed the key.
     if [ -n "$_first_secret" ]; then
-        local qr_url
-        qr_url=$(generate_qr_url "https://t.me/proxy?server=${server_ip}&port=${PROXY_PORT}&secret=${_first_secret}")
-        telegram_send_photo "$qr_url" "📱 *MTProxy 二维码* — 在 Telegram 中扫描即可连接"
+        local _qr_link _qr_file
+        _qr_link="https://t.me/proxy?server=${server_ip}&port=${PROXY_PORT}&secret=${_first_secret}"
+        _qr_file=$(mktemp "${TMPDIR:-/tmp}/mtpx-qr.XXXXXX") || _qr_file=""
+        if [ -n "$_qr_file" ] && _qr_png "$_qr_link" "$_qr_file"; then
+            telegram_send_photo_file "$_qr_file" "📱 *MTProxy 二维码* — 在 Telegram 中扫描即可连接"
+            rm -f "$_qr_file"
+        else
+            rm -f "$_qr_file" 2>/dev/null
+            telegram_send_message "🔗 [立即连接](${_qr_link})\n\n _安装 \`qrencode\` 即可生成二维码。_"
+        fi
     fi
 }
 
@@ -11267,7 +11864,7 @@ telegram_setup_wizard() {
     local response
     response=$(curl -s --max-time 10 -K "$_cfg" 2>/dev/null) || true
     rm -f "$_cfg"
-    if ! echo "$response" | grep -q '"ok":true'; then
+    if ! echo "$response" | grep -c '"ok":true' >/dev/null; then
         log_error "机器人令牌无效，未找到对应机器人"
         return 1
     fi
@@ -11341,6 +11938,9 @@ telegram_setup_wizard() {
     echo ""
     log_success "Telegram 机器人配置完成！"
 
+    # Populate the client-side "/" command menu straight away.
+    telegram_sync_commands &>/dev/null &
+
     # Send test message
     telegram_test_message
 
@@ -11379,6 +11979,9 @@ VERSION="${VERSION:-unknown}"
 # Keep the generated bot daemon self-contained.  It does not source the main
 # manager script, so helpers used by Telegram command handlers must be defined
 # here as well.
+TELEGRAM_SCRIPT
+    declare -f _normalize_byte_metrics >> "$script_path"
+    cat >> "$script_path" << 'TELEGRAM_SCRIPT'
 format_bytes() {
     local bytes="${1:-0}"
     [[ "$bytes" =~ ^[0-9]+$ ]] || bytes=0
@@ -11415,7 +12018,16 @@ format_duration() {
 }
 
 is_proxy_running() {
-    [ "$(docker inspect -f '{{.State.Running}}' mtproxymax 2>/dev/null)" = "true" ]
+    local _state
+    _state=$(docker inspect -f '{{.State.Running}}' mtproxymax 2>/dev/null)
+    if [ "$_state" = "true" ]; then
+        return 0
+    elif [ "$_state" = "false" ]; then
+        return 1
+    fi
+    sleep 0.5 2>/dev/null || sleep 1
+    _state=$(docker inspect -f '{{.State.Running}}' mtproxymax 2>/dev/null)
+    [ "$_state" = "true" ]
 }
 
 get_container_uptime() {
@@ -11443,6 +12055,7 @@ load_tg_settings() {
                 AD_TAG|GEOBLOCK_MODE|BLOCKLIST_COUNTRIES|AUTO_UPDATE_ENABLED|\
                 TELEGRAM_ENABLED|TELEGRAM_BOT_TOKEN|TELEGRAM_CHAT_ID|\
                 TELEGRAM_INTERVAL|TELEGRAM_SERVER_LABEL|TELEGRAM_ALERTS_ENABLED|\
+                TELEGRAM_HISTORY_ENABLED|TELEGRAM_HISTORY_INTERVAL_MIN|TELEGRAM_HISTORY_RETENTION_DAYS|TELEGRAM_REPORT_DETAIL|\
                 LOCKDOWN_MODE|QOS_LIMIT_MBPS|HAPPY_HOURS_WINDOW|PORT_POOL_PORTS|STEALTH_PRESET|COVER_WATCHDOG_ENABLED|DDNS_ENABLED|DDNS_RECORD_NAME)
                     printf -v "$key" '%s' "$val" ;;
             esac
@@ -11504,7 +12117,7 @@ tg_send_to() {
     # /dev/fd/N in send_args closes the descriptor before curl reads it (rc 26).
     response=$(curl -K <(printf 'url = "https://api.telegram.org/bot%s/sendMessage"\n' "$TELEGRAM_BOT_TOKEN") \
         "${send_args[@]}" 2>/dev/null) || rc=$?
-    if [ "$rc" -ne 0 ] || ! printf '%s' "$response" | grep -q '"ok":true'; then
+    if [ "$rc" -ne 0 ] || ! printf '%s' "$response" | grep -c '"ok":true' >/dev/null; then
         description=$(printf '%s' "$response" | sed -n 's/.*"description"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)
         [ -z "$description" ] && description="curl 状态码 ${rc}"
         logger -t mtproxymax-telegram -- "sendMessage 失败（chat_id=${target_cid}）：${description}" 2>/dev/null || true
@@ -11513,33 +12126,12 @@ tg_send_to() {
     return 0
 }
 
-tg_register_commands() {
-    local public_commands admin_commands admin_scope response
-    public_commands='[{"command":"start","description":"打开服务菜单"},{"command":"my_status","description":"查询账户状态"},{"command":"redeem","description":"兑换服务码"},{"command":"support","description":"联系管理员"}]'
-    admin_commands='[{"command":"start","description":"打开管理菜单"},{"command":"mp_status","description":"查看运行状态"},{"command":"mp_traffic","description":"查看流量报告"},{"command":"mp_secrets","description":"管理代理密钥"},{"command":"mp_link","description":"获取代理链接"},{"command":"mp_health","description":"运行健康检查"},{"command":"mp_limits","description":"查看用户限制"},{"command":"mp_upstreams","description":"查看上游代理"},{"command":"mp_lockdown","description":"管理紧急锁定"},{"command":"mp_digest","description":"查看系统摘要"},{"command":"mp_update","description":"更新 MTProxyMax"},{"command":"mp_help","description":"显示命令帮助"}]'
-
-    response=$(curl -s --max-time 10 -X POST \
-        -K <(printf 'url = "https://api.telegram.org/bot%s/setMyCommands"\n' "$TELEGRAM_BOT_TOKEN") \
-        --data-urlencode "commands=${public_commands}" 2>/dev/null) || response=""
-    if ! printf '%s' "$response" | grep -q '"ok":true'; then
-        logger -t mtproxymax-telegram -- "注册 Telegram 公共命令菜单失败" 2>/dev/null || true
-    fi
-
-    if [[ "${TELEGRAM_CHAT_ID:-}" =~ ^-?[0-9]+$ ]]; then
-        admin_scope=$(printf '{"type":"chat","chat_id":%s}' "$TELEGRAM_CHAT_ID")
-        response=$(curl -s --max-time 10 -X POST \
-            -K <(printf 'url = "https://api.telegram.org/bot%s/setMyCommands"\n' "$TELEGRAM_BOT_TOKEN") \
-            --data-urlencode "commands=${admin_commands}" \
-            --data-urlencode "scope=${admin_scope}" 2>/dev/null) || response=""
-        if ! printf '%s' "$response" | grep -q '"ok":true'; then
-            logger -t mtproxymax-telegram -- "注册 Telegram 管理员命令菜单失败（chat_id=${TELEGRAM_CHAT_ID}）" 2>/dev/null || true
-        fi
-    fi
-
+tg_enable_menu_button() {
+    local response
     response=$(curl -s --max-time 10 -X POST \
         -K <(printf 'url = "https://api.telegram.org/bot%s/setChatMenuButton"\n' "$TELEGRAM_BOT_TOKEN") \
         --data-urlencode 'menu_button={"type":"commands"}' 2>/dev/null) || response=""
-    if ! printf '%s' "$response" | grep -q '"ok":true'; then
+    if ! printf '%s' "$response" | grep -c '"ok":true' >/dev/null; then
         logger -t mtproxymax-telegram -- "启用 Telegram 命令菜单按钮失败" 2>/dev/null || true
     fi
 }
@@ -11549,7 +12141,7 @@ tg_prepare_polling() {
     response=$(curl -s --max-time 10 -X POST \
         -K <(printf 'url = "https://api.telegram.org/bot%s/deleteWebhook"\n' "$TELEGRAM_BOT_TOKEN") \
         --data-urlencode "drop_pending_updates=false" 2>/dev/null) || response=""
-    if ! printf '%s' "$response" | grep -q '"ok":true'; then
+    if ! printf '%s' "$response" | grep -c '"ok":true' >/dev/null; then
         description=$(printf '%s' "$response" | sed -n 's/.*"description"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)
         logger -t mtproxymax-telegram -- "清理 Telegram webhook 失败：${description:-Telegram API 返回异常}" 2>/dev/null || true
         return 1
@@ -11570,7 +12162,7 @@ tg_admin_menu() {
         reseller) tg_voucher_menu "$cid"; return ;;
         *) tg_public_menu "$cid"; return ;;
     esac
-    local kb='{"inline_keyboard":[[{"text":"📊 运行状态","callback_data":"admin_status"},{"text":"📈 流量报告","callback_data":"admin_traffic"}],[{"text":"🔑 密钥管理","callback_data":"menu_secrets"},{"text":"🔗 代理链接","callback_data":"admin_link"}],[{"text":"🩺 健康检查","callback_data":"admin_health"},{"text":"🛡 安全管理","callback_data":"menu_security"}],[{"text":"⚙️ 更多功能","callback_data":"menu_more"},{"text":"❓ 帮助","callback_data":"menu_help"}]]}'
+    local kb='{"inline_keyboard":[[{"text":"📊 运行状态","callback_data":"admin_status"},{"text":"📈 流量报告","callback_data":"admin_traffic"}],[{"text":"🔑 密钥管理","callback_data":"menu_secrets"},{"text":"🔗 代理链接","callback_data":"admin_link"}],[{"text":"🩺 健康检查","callback_data":"admin_health"},{"text":"🛡 安全管理","callback_data":"menu_security"}],[{"text":"⚙️ 更多功能","callback_data":"menu_more"},{"text":"❓ 帮助","callback_data":"menu_help"}],[{"text":"📊 交互面板","callback_data":"m"}]]}'
     tg_send_to "$cid" "$msg" "$kb"
 }
 
@@ -11613,62 +12205,322 @@ tg_prompt() {
     tg_send_to "$cid" "$msg" '{"force_reply":true,"selective":true,"input_field_placeholder":"输入内容，或发送“取消”"}'
 }
 
-tg_answer_callback() {
-    local callback_id="$1"
-    [ -z "$callback_id" ] && return 0
-    curl -s --max-time 5 -X POST \
-        -K <(printf 'url = "https://api.telegram.org/bot%s/answerCallbackQuery"\n' "$TELEGRAM_BOT_TOKEN") \
-        --data-urlencode "callback_query_id=${callback_id}" >/dev/null 2>&1 || true
+
+
+# ── QR codes ────────────────────────────────────────────────────────────────
+#
+# The QR used to be drawn by handing the proxy link to api.qrserver.com and
+# letting Telegram fetch the image from there. The link IS the credential —
+# server, port and secret are the whole key — so that handed a working proxy key
+# to a third party on every /mp_link, every /start and every voucher redemption,
+# including in the customer's own chat. It is rendered on this host now, and the
+# image is uploaded from here; nothing but Telegram sees it.
+#
+# The same reasoning applies to the QR image embedded in the exported HTML
+# sheets, which were built from the same kind of URL.
+
+# Render a QR to a PNG on this host. Non-zero when no renderer is available, in
+# which case the caller must NOT fall back to a remote one.
+_qr_png() {
+    local data="$1" out="$2"
+    [ -n "$data" ] && [ -n "$out" ] || return 1
+    if command -v qrencode &>/dev/null; then
+        qrencode -o "$out" -s 6 -m 2 "$data" 2>/dev/null && [ -s "$out" ] && return 0
+    fi
+    if _tg_have_python && python3 -c 'import qrcode' &>/dev/null; then
+        python3 - "$data" "$out" <<'PYQ' 2>/dev/null && [ -s "$out" ] && return 0
+import sys
+import qrcode
+qrcode.make(sys.argv[1]).save(sys.argv[2])
+PYQ
+    fi
+    rm -f "$out" 2>/dev/null
+    return 1
 }
 
-tg_send_photo() {
-    local photo="$1" caption="${2:-}"
-    curl -s --max-time 15 -X POST \
+# Upload a local file as a photo. The token travels in a curl config rather than
+# argv so it never appears in `ps`; -F is required because the image is a file,
+# not a URL the API can fetch itself.
+_tg_send_photo_file() {
+    local chat="$1" file="$2" caption="${3:-}"
+    local parse_mode="${4:-}" label="${TELEGRAM_SERVER_LABEL:-MTProxyMax}"
+    local -a format=()
+    if [ "$parse_mode" = "Markdown" ]; then
+        label=$(_esc "$label")
+        label="${label//[/\\[}"
+        format=(--form-string "parse_mode=Markdown")
+    fi
+    [ -s "$file" ] || return 1
+    local response
+    response=$(curl -s --max-time 30 -X POST \
         -K <(printf 'url = "https://api.telegram.org/bot%s/sendPhoto"\n' "$TELEGRAM_BOT_TOKEN") \
-        --data-urlencode "chat_id=${TELEGRAM_CHAT_ID}" \
-        --data-urlencode "photo=${photo}" \
-        --data-urlencode "caption=[$(_esc "${TELEGRAM_SERVER_LABEL:-MTProxyMax}")] ${caption}" \
-        --data-urlencode "parse_mode=Markdown" >/dev/null 2>&1
+        -F "chat_id=${chat}" \
+        -F "photo=@${file}" \
+        --form-string "caption=[${label}] ${caption}" \
+        "${format[@]}" 2>/dev/null) || return 1
+    # HTTP 400/403 responses do not make curl fail. Check the Bot API result.
+    [[ "$(printf '%s' "$response" | tr -d '[:space:]')" == *'"ok":true'* ]]
+}
+
+# "https://t.me/proxy?...", the one form of the link that is also a credential.
+_proxy_link() {
+    printf 'https://t.me/proxy?server=%s&port=%s&secret=%s' "$1" "$2" "$3"
+}
+
+_send_qr() {
+    local chat="$1" ip="$2" port="$3" secret="$4" caption="$5"
+    local parse_mode="${6:-}"
+    local link png
+    link=$(_proxy_link "$ip" "$port" "$secret")
+    png=$(mktemp "${TMPDIR:-/tmp}/mtpx-qr.XXXXXX") || png=""
+    if [ -n "$png" ] && _qr_png "$link" "$png"; then
+        if _tg_send_photo_file "$chat" "$png" "$caption" "$parse_mode"; then
+            rm -f "$png" 2>/dev/null
+            return 0
+        fi
+    fi
+    rm -f "$png" 2>/dev/null
+    # No renderer, or the upload failed. Keep a usable connection link without
+    # handing the credential to a third-party QR service.
+    # Plain text also works when the URL or server label contains Markdown.
+    local response
+    response=$(_tg_post_method sendMessage "chat_id=${chat}" \
+        "text=🔗 Connect: ${link}") || return 1
+    [[ "$(printf '%s' "$response" | tr -d '[:space:]')" == *'"ok":true'* ]]
 }
 
 # Send QR code image for a proxy secret (no text URL — avoids Telegram bot bans)
 send_proxy_qr() {
     local ip="$1" port="$2" secret="$3" caption="${4:-在 Telegram 中扫描即可连接}"
-    local hl="https://t.me/proxy?server=${ip}&port=${port}&secret=${secret}"
-    local el=$(printf '%s' "$hl" | sed 's/&/%26/g;s/?/%3F/g;s/=/%3D/g;s/:/%3A/g;s|/|%2F|g')
-    tg_send_photo "https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${el}" "$caption"
+    _send_qr "$TELEGRAM_CHAT_ID" "$ip" "$port" "$secret" "$caption"
 }
 
-tg_send_photo_to() {
-    local target_cid="$1" photo="$2" caption="${3:-}"
-    curl -s --max-time 15 -X POST \
-        -K <(printf 'url = "https://api.telegram.org/bot%s/sendPhoto"\n' "$TELEGRAM_BOT_TOKEN") \
-        --data-urlencode "chat_id=${target_cid}" \
-        --data-urlencode "photo=${photo}" \
-        --data-urlencode "caption=[$(_esc "${TELEGRAM_SERVER_LABEL:-MTProxyMax}")] ${caption}" \
-        --data-urlencode "parse_mode=Markdown" >/dev/null 2>&1
-}
 
 send_proxy_qr_to() {
     local target_cid="$1" ip="$2" port="$3" secret="$4" caption="${5:-在 Telegram 中扫描即可连接}"
-    local hl="https://t.me/proxy?server=${ip}&port=${port}&secret=${secret}"
-    local el=$(printf '%s' "$hl" | sed 's/&/%26/g;s/?/%3F/g;s/=/%3D/g;s/:/%3A/g;s|/|%2F|g')
-    tg_send_photo_to "$target_cid" "https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${el}" "$caption"
+    _send_qr "$target_cid" "$ip" "$port" "$secret" "$caption" "${6:-}"
 }
 
 # Escape Markdown special chars in labels for Telegram
 _esc() { local t="$1"; t="${t//_/\\_}"; t="${t//\*/\\*}"; t="${t//\`/\\\`}"; echo "$t"; }
+
+# ── Bot API primitives ──────────────────────────────────────────────────────
+# The daemon is emitted from a QUOTED heredoc, so it inherits nothing from the
+# manager — no _mktemp, no log_*. Everything here is self-contained.
+#
+# tg_send()/tg_send_to() are deliberately left untouched: they have ~40 call
+# sites and tg_send also fires webhook_send, so the reply_markup-capable
+# variants below are additive rather than a signature change.
+
+# Single curl chokepoint for Bot API methods. Fields travel as urlencoded form
+# values — reply_markup is just a JSON string in one of them — which needs no
+# Content-Type header and no temp file, and keeps the token out of the process
+# list via -K process substitution.
+_tg_post_method() {
+    local _m="$1"; shift
+    local _f=()
+    while [ $# -gt 0 ]; do _f+=(--data-urlencode "$1"); shift; done
+    curl -s --max-time 15 -X POST \
+        -K <(printf 'url = "https://api.telegram.org/bot%s/%s"\n' "$TELEGRAM_BOT_TOKEN" "$_m") \
+        "${_f[@]}" 2>/dev/null
+}
+
+# The "[label | ip]" prefix every outgoing message carries. Exposed because the
+# chunker has to budget for it — Telegram counts UTF-16 units, and an emoji in
+# the label costs two.
+_tg_header() {
+    local label="${TELEGRAM_SERVER_LABEL:-MTProxyMax}"
+    local _ip; _ip=$(get_cached_ip)
+    if [ -n "$_ip" ]; then printf '[%s | %s] ' "$(_esc "$label")" "$_ip"
+    else printf '[%s] ' "$(_esc "$label")"; fi
+}
+
+# Split a body into pieces that each fit Telegram's 4096-unit cap, emitted with
+# a trailing \x1f after every piece so they can be read back with `read -d`.
+# A fenced block that straddles a split is closed in the outgoing piece and
+# reopened in the next, otherwise the monospace alignment breaks.
+_tg_chunk_text() {
+    local budget="$1" body="$2"
+    local _sep=$'\x1f'
+    local chunk="" line fence=0 out=""
+    while IFS= read -r line || [ -n "$line" ]; do
+        if [ -n "$chunk" ] && [ $(( ${#chunk} + ${#line} + 1 )) -gt "$budget" ]; then
+            if [ "$fence" -eq 1 ]; then
+                out="${out}${chunk}"$'\n''```'"${_sep}"
+                chunk='```'
+            else
+                out="${out}${chunk}${_sep}"
+                chunk=""
+            fi
+        fi
+        if [ -z "$chunk" ]; then chunk="$line"; else chunk="${chunk}"$'\n'"${line}"; fi
+        case "$line" in
+            '```'*) if [ "$fence" -eq 0 ]; then fence=1; else fence=0; fi ;;
+        esac
+    done <<< "$body"
+    printf '%s%s' "${out}${chunk}" "$_sep"
+}
+
+# Send a text to a chat, chunked if needed, with an optional keyboard on the
+# final piece. A 400 from Telegram is retried once without parse_mode: a
+# malformed Markdown entity should cost the formatting, not the whole message.
+_tg_send_pieces() {
+    local _chat="$1" _hdr="$2" _body="$3" _markup="${4:-}"
+    local _budget=$(( 4096 - ${#_hdr} - 32 ))
+    [ "$_budget" -lt 256 ] && _budget=256
+    local -a _parts=()
+    local _piece=""
+    while IFS= read -r -d $'\x1f' _piece || [ -n "$_piece" ]; do
+        [ -z "$_piece" ] && continue
+        _parts+=("$_piece")
+    done < <(_tg_chunk_text "$_budget" "$_body")
+    local _n=${#_parts[@]} _i=0 _resp
+    local _last_out=""
+    for _piece in "${_parts[@]}"; do
+        _i=$(( _i + 1 ))
+        local _args=( "chat_id=${_chat}" "text=${_hdr}${_piece}" "parse_mode=Markdown" )
+        if [ "$_i" -eq "$_n" ] && [ -n "$_markup" ]; then
+            _args+=( "reply_markup=${_markup}" )
+        fi
+        _resp=$(_tg_post_method sendMessage "${_args[@]}")
+        _last_out="$_resp"
+        case "$_resp" in
+            *'"ok":true'*) : ;;
+            *'"error_code":400'*)
+                local _plain=( "chat_id=${_chat}" "text=${_hdr}${_piece}" )
+                if [ "$_i" -eq "$_n" ] && [ -n "$_markup" ]; then
+                    _plain+=( "reply_markup=${_markup}" )
+                fi
+                _last_out=$(_tg_post_method sendMessage "${_plain[@]}")
+                ;;
+        esac
+    done
+    printf '%s' "$_last_out"
+}
+
+# message_id of the last send, or empty.
+_tg_msg_id() { printf '%s' "$1" | grep -o '"message_id":[0-9]*' | head -1 | grep -o '[0-9]*'; }
+
+tg_send_kb() {
+    local _text="$1" _markup="${2:-}"
+    local _hdr; _hdr=$(_tg_header)
+    local _body; _body=$(printf '%b' "$_text")
+    _tg_send_pieces "${TELEGRAM_CHAT_ID}" "$_hdr" "$_body" "$_markup" >/dev/null
+    webhook_send "$_text" 2>/dev/null || true
+}
+
+tg_send_to_kb() {
+    local _chat="$1" _text="$2" _markup="${3:-}"
+    local _body; _body=$(printf '%b' "$_text")
+    _tg_send_pieces "$_chat" "" "$_body" "$_markup" >/dev/null
+}
+
+# Replace a message's text and keyboard in place. Telegram answers 400
+# "message is not modified" when the text AND markup are unchanged, which
+# happens on every tap of the page the user is already on — treat it as success.
+tg_edit() {
+    local _chat="$1" _mid="$2" _text="$3" _markup="${4:-}"
+    [ -n "$_mid" ] || return 0
+    local _args=( "chat_id=${_chat}" "message_id=${_mid}" "text=${_text}" "parse_mode=Markdown" )
+    [ -n "$_markup" ] && _args+=( "reply_markup=${_markup}" )
+    _tg_post_method editMessageText "${_args[@]}" >/dev/null
+}
+
+# Swap only the keyboard, leaving the body alone. Cheaper than a full edit and
+# it sidesteps "message is not modified" for a pure page flip.
+tg_edit_markup() {
+    local _chat="$1" _mid="$2" _markup="$3"
+    [ -n "$_mid" ] || return 0
+    _tg_post_method editMessageReplyMarkup \
+        "chat_id=${_chat}" "message_id=${_mid}" "reply_markup=${_markup}" >/dev/null
+}
+
+# Acknowledge a callback. The client spins until this arrives, so it must be
+# called on EVERY path including denial and error.
+tg_answer_cb() {
+    local _id="$1" _toast="${2:-}" _alert="${3:-false}"
+    [ -n "$_id" ] || return 0
+    local _args=( "callback_query_id=${_id}" )
+    [ -n "$_toast" ] && _args+=( "text=${_toast}" )
+    [ "$_alert" = "true" ] && _args+=( "show_alert=true" )
+    _tg_post_method answerCallbackQuery "${_args[@]}" >/dev/null
+}
+
+# ── Inline-keyboard callback_data codec ─────────────────────────────────────
+# Grammar: <ns>[:<action>[:<target>[:<page>]]], trailing empty fields trimmed.
+# All ASCII, so byte length equals character length. Fields 3 and 4 are purely
+# positional — their meaning depends on the namespace (for "u:l" field 3 is a
+# page; for "u:s" it is a label and field 4 the page). The dispatcher assigns
+# meaning; the codec only guarantees shape.
+#
+# The Bot API caps callback_data at 64 bytes, and a single over-long payload
+# makes Telegram reject the ENTIRE reply_markup with a 400 — the whole message
+# is lost, not just that one button. So _cb_enc refuses rather than truncating:
+# a truncated payload would decode into a different, still-valid target.
+_CB_MAX=64
+
+# Labels are the only caller-supplied field in a payload, and a ':' inside one
+# would shift the positional fields — turning "u:s:ali:ce" into a 4-field
+# payload that decodes to a different target. Refusing anything outside the
+# secrets.conf charset makes field injection structurally impossible.
+_cb_label_ok() {
+    [[ "$1" =~ ^[a-zA-Z0-9_-]{1,32}$ ]]
+}
+
+# _cb_enc <ns> <action> <target> <page> -> payload on stdout, non-zero if the
+# result would be malformed or over-long.
+_cb_enc() {
+    local ns="$1" act="$2" tgt="$3" page="$4" out
+    [[ "$ns" =~ ^[a-z]{1,2}$ ]] || return 1
+    if [ -n "$act" ]  && ! _cb_label_ok "$act";  then return 1; fi
+    if [ -n "$tgt" ]  && ! _cb_label_ok "$tgt";  then return 1; fi
+    if [ -n "$page" ] && ! _cb_label_ok "$page"; then return 1; fi
+    # An action namespace is meaningless without a target, so require one here
+    # and the dispatcher can then trust that any a:/c: payload it sees names a
+    # label. (It still re-validates that the label exists.)
+    case "$ns" in
+        a|c) [ -n "$tgt" ] || return 1 ;;
+    esac
+    out="$ns"
+    [ -n "$act" ]  && out="${out}:${act}"
+    [ -n "$tgt" ]  && out="${out}:${tgt}"
+    [ -n "$page" ] && out="${out}:${page}"
+    [ "${#out}" -le "${_CB_MAX:-64}" ] || return 1
+    printf '%s' "$out"
+}
+
+# _cb_dec <payload> -> sets _CB_NS _CB_ACT _CB_TGT _CB_PAGE; non-zero if the
+# payload is malformed or over-long.
+#
+# Sets globals rather than printing to stdout on purpose: rendering a menu with
+# 30 buttons would otherwise fork 30 subshells. Callers must therefore never
+# write `x=$(_cb_dec ...)` — the assignments would be lost.
+_cb_dec() {
+    local p="$1"
+    _CB_NS=""; _CB_ACT=""; _CB_TGT=""; _CB_PAGE=""
+    [ -n "$p" ] || return 1
+    [ "${#p}" -le "${_CB_MAX:-64}" ] || return 1
+    [[ "$p" =~ ^[a-z]{1,2}(:[A-Za-z0-9_-]{1,32}){0,3}$ ]] || return 1
+    local IFS=':' _f
+    local -a _fields
+    read -r -a _fields <<< "$p"
+    _CB_NS="${_fields[0]}"
+    [ "${#_fields[@]}" -gt 1 ] && _CB_ACT="${_fields[1]}"
+    [ "${#_fields[@]}" -gt 2 ] && _CB_TGT="${_fields[2]}"
+    [ "${#_fields[@]}" -gt 3 ] && _CB_PAGE="${_fields[3]}"
+    return 0
+}
 
 is_running() {
     is_proxy_running
 }
 
 get_stats() {
-    local m=$(curl -s --max-time 2 "http://127.0.0.1:${PROXY_METRICS_PORT:-9090}/metrics" 2>/dev/null)
+    local m=$(curl -s --max-time 2 "http://127.0.0.1:${PROXY_METRICS_PORT:-9090}/metrics" 2>/dev/null | _normalize_byte_metrics)
     [ -z "$m" ] && echo "0 0 0" && return
     echo "$m" | awk '
-        /^telemt_user_octets_from_client(_total)?\{/ {i+=$NF}
-        /^telemt_user_octets_to_client(_total)?\{/   {o+=$NF}
+        /^telemt_user_octets_from_client_total\{/ {i+=$NF}
+        /^telemt_user_octets_to_client_total\{/   {o+=$NF}
         /^telemt_user_connections_current\{/ {c+=$NF}
         END {printf "%.0f %.0f %.0f\n",i+0,o+0,c+0}
     '
@@ -11678,17 +12530,17 @@ _iso_to_epoch() {
     local ts="$1"
     [ -z "$ts" ] && { echo "0"; return; }
     local ts_clean="${ts%%.*}"
-    [[ "$ts" == *Z ]] && ts_clean="${ts_clean}Z"
+    [[ "$ts" == *Z && "$ts_clean" != *Z ]] && ts_clean="${ts_clean}Z"
     local epoch
     epoch=$(date -d "${ts_clean}" +%s 2>/dev/null) && [ "$epoch" -gt 0 ] 2>/dev/null && { echo "$epoch"; return; }
     local ts_bb="${ts_clean%Z}"
-    epoch=$(date -D '%Y-%m-%dT%H:%M:%S' -d "${ts_bb}" +%s 2>/dev/null) && [ "$epoch" -gt 0 ] 2>/dev/null && { echo "$epoch"; return; }
+    epoch=$(TZ=UTC date -D '%Y-%m-%dT%H:%M:%S' -d "${ts_bb}" +%s 2>/dev/null) && [ "$epoch" -gt 0 ] 2>/dev/null && { echo "$epoch"; return; }
     echo "0"
 }
 
 get_uptime() {
     # Prefer Prometheus uptime metric (always available when engine is running)
-    local m; m=$(curl -s --max-time 2 "http://127.0.0.1:${PROXY_METRICS_PORT:-9090}/metrics" 2>/dev/null)
+    local m; m=$(curl -s --max-time 2 "http://127.0.0.1:${PROXY_METRICS_PORT:-9090}/metrics" 2>/dev/null | _normalize_byte_metrics)
     if [ -n "$m" ]; then
         local up; up=$(echo "$m" | awk '/^telemt_uptime_seconds /{printf "%.0f",$NF}')
         [ -n "$up" ] && [ "$up" -gt 0 ] 2>/dev/null && { echo "$up"; return; }
@@ -11798,13 +12650,53 @@ load_traffic() {
     fi
 }
 
+# Duplicated from the manager script: this heredoc has a quoted delimiter, so it is
+# written out literally and the daemon never sources the manager. Without these two
+# definitions save_traffic() below calls an undefined _lock_fd, gets 127 back, and
+# returns before writing any counters — which is exactly the accounting loss this
+# change set out to fix. Keep identical to _flock_supports_wait/_lock_fd above.
+_FLOCK_WAIT_SUPPORTED=""
+_flock_supports_wait() {
+    if [ -z "$_FLOCK_WAIT_SUPPORTED" ]; then
+        if command -v flock >/dev/null 2>&1 &&
+            (exec 9>/dev/null; flock -w 0 9) 2>/dev/null; then
+            _FLOCK_WAIT_SUPPORTED="yes"
+        else
+            _FLOCK_WAIT_SUPPORTED="no"
+        fi
+    fi
+    [ "$_FLOCK_WAIT_SUPPORTED" = "yes" ]
+}
+
+# Take an exclusive lock on the already-open file descriptor $1.
+# Returns 0 when the lock is held, non-zero when it could not be taken. A host with no
+# flock at all proceeds unlocked, which is the long-standing behaviour in that case.
+_lock_fd() {
+    local _fd="${1:?file descriptor required}"
+    command -v flock >/dev/null 2>&1 || return 0
+    if _flock_supports_wait; then
+        flock -w 5 "$_fd" 2>/dev/null
+    else
+        # busybox: -w is unavailable, so take the lock without waiting rather than not
+        # locking at all. Losing the 5s grace period is far better than skipping the lock.
+        flock -n "$_fd" 2>/dev/null
+    fi
+}
+
 save_traffic() {
     local _ul
     local _tdir="${INSTALL_DIR}/relay_stats"
     mkdir -p "$_tdir" 2>/dev/null
     # Acquire lock to prevent race with flush_traffic_to_disk
     exec 9>"${_tdir}/.traffic.lock"
-    flock -w 5 9 2>/dev/null || { exec 9>&- 2>/dev/null; return 0; }
+    # Fail loudly rather than returning 0: this used to report success while writing
+    # nothing, so on a host whose flock lacked -w the daemon never persisted counters and
+    # no error was ever surfaced. stderr rather than log_error() — see _lock_fd callers.
+    if ! _lock_fd 9; then
+        echo "mtproxymax: could not acquire traffic lock — traffic not saved" >&2
+        exec 9>&-
+        return 1
+    fi
     apply_pending_traffic_resets
     local _tmp=$(mktemp "${_tdir}/.traffic.XXXXXX" 2>/dev/null) || { exec 9>&-; return; }
     chmod 600 "$_tmp"
@@ -11835,11 +12727,11 @@ update_traffic() {
     local _pu _pi _po label secret created enabled _mc _mi _q _ex _notes _adtag
     # Fetch metrics once for both global and per-user stats
     local _metrics
-    _metrics=$(curl -s --max-time 2 "http://127.0.0.1:${PROXY_METRICS_PORT:-9090}/metrics" 2>/dev/null) || true
+    _metrics=$(curl -s --max-time 2 "http://127.0.0.1:${PROXY_METRICS_PORT:-9090}/metrics" 2>/dev/null | _normalize_byte_metrics) || true
     [ -z "$_metrics" ] && return 0
     local cur_in cur_out
-    cur_in=$(echo "$_metrics"|awk '/^telemt_user_octets_from_client(_total)?\{/{s+=$NF}END{printf "%.0f",s}')
-    cur_out=$(echo "$_metrics"|awk '/^telemt_user_octets_to_client(_total)?\{/{s+=$NF}END{printf "%.0f",s}')
+    cur_in=$(echo "$_metrics"|awk '/^telemt_user_octets_from_client_total\{/{s+=$NF}END{printf "%.0f",s}')
+    cur_out=$(echo "$_metrics"|awk '/^telemt_user_octets_to_client_total\{/{s+=$NF}END{printf "%.0f",s}')
     cur_in=${cur_in:-0}; cur_out=${cur_out:-0}
 
     # Compute deltas (torware pattern: detect container restart by negative delta)
@@ -11849,8 +12741,29 @@ update_traffic() {
     [ "$delta_out" -lt 0 ] 2>/dev/null && delta_out=$cur_out
     _cum_in=$((_cum_in + delta_in))
     _cum_out=$((_cum_out + delta_out))
+    # Accumulate the same corrected delta into the history bucket. Doing it
+    # here rather than re-deriving it later means the restart handling above is
+    # inherited by construction instead of duplicated.
+    _bucket_in=$(( ${_bucket_in:-0} + delta_in ))
+    _bucket_out=$(( ${_bucket_out:-0} + delta_out ))
     _prev_total_in=$cur_in
     _prev_total_out=$cur_out
+
+    # Connections and engine uptime for the sample row. A DECREASE in uptime
+    # means the engine restarted, which is recorded as a marker so a later
+    # window spanning the gap can explain itself.
+    local _extra _conns _up
+    _extra=$(printf '%s' "$_metrics" | awk '
+        /^telemt_user_connections_current\{/ { c+=$NF }
+        /^telemt_uptime_seconds /             { u=$NF }
+        END { printf "%.0f %.0f", c+0, u+0 }')
+    read -r _conns _up <<< "$_extra"
+    _bucket_conns="${_conns:-0}"
+    if [ "${_prev_uptime:-0}" -gt 0 ] 2>/dev/null && [ "${_up:-0}" -gt 0 ] 2>/dev/null && \
+       [ "${_up:-0}" -lt "${_prev_uptime:-0}" ] 2>/dev/null; then
+        _bucket_marker="R"
+    fi
+    _prev_uptime="${_up:-0}"
 
     # Per-user delta tracking — single awk pass for all users into associative array
     declare -A _parsed_ui=() _parsed_uo=()
@@ -11859,8 +12772,8 @@ update_traffic() {
             [ -n "$_pu" ] && { _parsed_ui["$_pu"]=${_pi:-0}; _parsed_uo["$_pu"]=${_po:-0}; }
         done < <(echo "$_metrics" | awk '
             function lbl(s, k,    p, q) { p=index(s,k"=\""); if(!p) return ""; s=substr(s,p+length(k)+2); q=index(s,"\""); return q ? substr(s,1,q-1) : "" }
-            /^telemt_user_octets_from_client(_total)?\{/ { u=lbl($0,"user"); if(u) rx[u]+=$NF }
-            /^telemt_user_octets_to_client(_total)?\{/   { u=lbl($0,"user"); if(u) tx[u]+=$NF }
+            /^telemt_user_octets_from_client_total\{/ { u=lbl($0,"user"); if(u) rx[u]+=$NF }
+            /^telemt_user_octets_to_client_total\{/   { u=lbl($0,"user"); if(u) tx[u]+=$NF }
             END { for(u in rx) printf "%s|%.0f|%.0f\n",u,rx[u]+0,tx[u]+0 }
         ')
     fi
@@ -11876,6 +12789,8 @@ update_traffic() {
         [ "$dou" -lt 0 ] 2>/dev/null && dou=$uo
         _cum_user_in["$label"]=$(( ${_cum_user_in["$label"]:-0} + du ))
         _cum_user_out["$label"]=$(( ${_cum_user_out["$label"]:-0} + dou ))
+        _bucket_user_in["$label"]=$(( ${_bucket_user_in["$label"]:-0} + du ))
+        _bucket_user_out["$label"]=$(( ${_bucket_user_out["$label"]:-0} + dou ))
         _prev_user_in["$label"]=$ui
         _prev_user_out["$label"]=$uo
     done < "$SECRETS_FILE"
@@ -11886,6 +12801,206 @@ update_traffic() {
 
 get_cum_user_traffic() { echo "${_cum_user_in[$1]:-0} ${_cum_user_out[$1]:-0}"; }
 
+# `command -v python3` is not sufficient: the Windows Store ships a python3.exe
+# alias that sits on PATH but fails the moment it runs, and some distros ship a
+# stub. Probe by actually executing it.
+_tg_have_python() {
+    command -v python3 &>/dev/null || return 1
+    python3 -c '' &>/dev/null 2>&1
+}
+
+# Both extractors emit the same tab-separated 6-field records:
+#
+#   <update_id>\t<kind>\t<chat_id>\t<message_id>\t<callback_id>\t<payload>
+#
+# kind is "msg" or "cb"; for "msg" the callback id is "-". A record is emitted
+# for EVERY element of `result`, even one carrying no message at all, because
+# the consumer advances the offset per record — skipping one would make
+# Telegram redeliver it forever.
+_tg_parse_updates_py() {
+    printf '%s' "$1" | python3 -c '
+import json,sys
+
+# Pin LF. Python in text mode translates "\n" to os.linesep, so on Windows the
+# records would come out CRLF and the trailing "\r" would end up inside the
+# command payload. The awk extractor always emits LF; this keeps them identical
+# on every platform.
+try:
+    sys.stdout.reconfigure(newline="\n")
+except Exception:
+    pass
+
+def clean(v):
+    if not isinstance(v, str):
+        v = "" if v is None else str(v)
+    # only the first line is the command
+    v = v.split("\n")[0].replace("\t", " ").replace("\r", "")
+    return v[:512]
+
+try:
+    data = json.load(sys.stdin)
+except Exception:
+    sys.exit(0)
+if not isinstance(data, dict):
+    sys.exit(0)
+for r in data.get("result", []) or []:
+    if not isinstance(r, dict):
+        continue
+    uid = r.get("update_id")
+    if uid is None:
+        continue
+    cq = r.get("callback_query")
+    if isinstance(cq, dict):
+        m = cq.get("message")
+        m = m if isinstance(m, dict) else {}
+        ch = m.get("chat")
+        ch = ch if isinstance(ch, dict) else {}
+        print("%s\tcb\t%s\t%s\t%s\t%s" % (uid, ch.get("id", ""), m.get("message_id", ""),
+                                          cq.get("id", ""), clean(cq.get("data", ""))))
+    else:
+        m = r.get("message")
+        m = m if isinstance(m, dict) else {}
+        ch = m.get("chat")
+        ch = ch if isinstance(ch, dict) else {}
+        print("%s\tmsg\t%s\t%s\t-\t%s" % (uid, ch.get("id", ""), m.get("message_id", ""),
+                                          clean(m.get("text", ""))))
+' 2>/dev/null
+}
+
+# Dependency-free fallback, used on hosts without a working python3 — notably
+# Alpine, which this project supports via OpenRC.
+#
+# This MUST be a character scanner rather than a regex pass: a regex cannot tell
+# whether a `}` or `"` sits inside a string literal, and a command's text can
+# contain both ("tricky \"chat\":{\"id\":999}"). The scanner tracks string and
+# escape state and object/array depth, so embedded JSON in a text field is inert.
+#
+# One documented divergence from the python path: \uXXXX escapes are left as
+# literal text rather than decoded. Command text is ASCII in practice, and a
+# mis-decoded command simply matches nothing.
+_tg_parse_updates_awk() {
+    awk '
+    function reset() {
+        e_upd=""; e_chat=""; e_msgid=""; e_text=""; e_cbid=""; e_cbdata=""; e_cb=0
+    }
+    function scalar(k, parent, v) {
+        if (!inel) return
+        if      (k == "update_id"  && parent == "")               e_upd    = v
+        else if (k == "message_id" && parent == "message")        e_msgid  = v
+        else if (k == "id"         && parent == "chat")           e_chat   = v
+        else if (k == "text"       && parent == "message")        e_text   = v
+        else if (k == "id"         && parent == "callback_query") e_cbid   = v
+        else if (k == "data"       && parent == "callback_query") e_cbdata = v
+    }
+    function flush(   kind, cbid, pay, p) {
+        if (e_upd == "") return
+        if (e_cb) { kind = "cb";  cbid = e_cbid; pay = e_cbdata }
+        else      { kind = "msg"; cbid = "-";    pay = e_text }
+        p = index(pay, "\n"); if (p > 0) pay = substr(pay, 1, p - 1)
+        gsub(/\r/, "", pay)
+        if (length(pay) > 512) pay = substr(pay, 1, 512)
+        printf "%s\t%s\t%s\t%s\t%s\t%s\n", e_upd, kind, e_chat, e_msgid, cbid, pay
+    }
+    { if (NR == 1) s = $0; else s = s "\n" $0; next }
+    END {
+        n = length(s)
+        depth = 0; instr = 0; esc = 0; intok = 0
+        arrdepth = -1; inel = 0; want_result = 0
+        curkey = ""; buf = ""; kstk[0] = ""
+        reset()
+        for (i = 1; i <= n; i++) {
+            c = substr(s, i, 1)
+            if (instr) {
+                if (esc) {
+                    esc = 0
+                    if      (c == "n") buf = buf "\n"
+                    else if (c == "t") buf = buf "\t"
+                    else if (c == "r") buf = buf "\r"
+                    else if (c == "b") buf = buf "\b"
+                    else if (c == "f") buf = buf "\f"
+                    else if (c == "u") buf = buf "\\u"
+                    else buf = buf c
+                    continue
+                }
+                if (c == "\\") { esc = 1; continue }
+                if (c == "\"") {
+                    instr = 0
+                    j = i + 1
+                    while (j <= n) {
+                        d = substr(s, j, 1)
+                        if (d == " " || d == "\t" || d == "\n" || d == "\r") { j++; continue }
+                        break
+                    }
+                    if (j <= n && substr(s, j, 1) == ":") {
+                        curkey = buf
+                        if (curkey == "result" && depth == 1) want_result = 1
+                    } else {
+                        scalar(curkey, kstk[depth], buf)
+                    }
+                    continue
+                }
+                buf = buf c
+                continue
+            }
+            if (intok) {
+                if (c == "," || c == "}" || c == "]" || c == " " || c == "\t" || c == "\n" || c == "\r") {
+                    intok = 0
+                    scalar(curkey, kstk[depth], buf)
+                    buf = ""
+                    i--
+                    continue
+                }
+                buf = buf c
+                continue
+            }
+            if (c == "\"") { instr = 1; buf = ""; continue }
+            if (c == "{" || c == "[") {
+                if (c == "[" && want_result) { arrdepth = depth + 1; want_result = 0 }
+                depth++
+                if (c == "{" && inel && curkey == "callback_query") e_cb = 1
+                if (c == "{" && arrdepth >= 0 && depth == arrdepth + 1) {
+                    kstk[depth] = ""
+                    inel = 1
+                    reset()
+                } else {
+                    kstk[depth] = curkey
+                }
+                continue
+            }
+            if (c == "}" || c == "]") {
+                if (c == "}" && inel && depth == arrdepth + 1) { flush(); inel = 0 }
+                depth--
+                continue
+            }
+            if (c == ":" || c == "," || c == " " || c == "\t" || c == "\n" || c == "\r") continue
+            intok = 1; buf = c
+        }
+    }
+    ' <<< "$1"
+}
+
+# Read one batch of records and dispatch. Process substitution, deliberately not
+# a pipe: a pipeline would run the dispatchers in a subshell and silently
+# discard every global they set.
+_consume_updates() {
+    local _uid _kind _cid _mid _cbid _pay
+    while IFS=$'\t' read -r _uid _kind _cid _mid _cbid _pay || [ -n "$_uid" ]; do
+        [ -z "$_uid" ] && continue
+        [[ "$_uid" =~ ^[0-9]+$ ]] || continue
+        # Belt and braces: the extractors already strip CR from the payload and
+        # pin LF terminators, but a stray one here would silently corrupt every
+        # command by appending a character to it.
+        _pay="${_pay%$'\r'}"
+        # Advance per consumed record, not per batch: a parser failure midway
+        # then redelivers the unconsumed tail instead of losing it.
+        printf '%s\n' "$(( _uid + 1 ))" > "$OFFSET_FILE"
+        case "$_kind" in
+            msg) _process_cmd "$_uid" "$_cid" "$_pay" ;;
+            cb)  _process_callback "$_cid" "$_mid" "$_cbid" "$_pay" ;;
+        esac
+    done < <(if _tg_have_python; then _tg_parse_updates_py "$1"; else _tg_parse_updates_awk "$1"; fi)
+}
+
 process_commands() {
     local offset=$(cat "$OFFSET_FILE" 2>/dev/null || echo "0")
     [[ "$offset" =~ ^[0-9]+$ ]] || offset="0"
@@ -11894,52 +13009,14 @@ process_commands() {
         -K <(printf 'url = "https://api.telegram.org/bot%s/getUpdates?offset=%s&timeout=25"\n' "$TELEGRAM_BOT_TOKEN" "$offset") \
         2>/dev/null) || true
     [ -z "$updates" ] && return
-    if ! printf '%s' "$updates" | grep -q '"ok":true'; then
+    if ! printf '%s' "$updates" | grep -c '"ok":true' >/dev/null; then
         local api_error
         api_error=$(printf '%s' "$updates" | sed -n 's/.*"description"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)
         logger -t mtproxymax-telegram -- "getUpdates 失败：${api_error:-Telegram API 返回异常}" 2>/dev/null || true
         return
     fi
 
-    if command -v python3 &>/dev/null; then
-        echo "$updates" | python3 -c "
-import json,sys
-try:
-    data=json.load(sys.stdin)
-    for r in data.get('result',[]):
-        uid=r['update_id']
-        callback=r.get('callback_query',{})
-        message=r.get('message',{})
-        if callback:
-            txt=callback.get('data','')[:200]
-            cid=callback.get('message',{}).get('chat',{}).get('id','')
-            callback_id=callback.get('id','')
-        else:
-            txt=message.get('text','').split('\n')[0][:200]
-            cid=message.get('chat',{}).get('id','')
-            callback_id=''
-        print(f'{uid}\t{cid}\t{txt}\t{callback_id}')
-except Exception:
-    pass
-" 2>/dev/null | while IFS=$'\t' read -r _uid _cid _txt _callback_id || [ -n "$_uid" ]; do
-            [ -z "$_uid" ] && continue
-            _process_cmd "$_uid" "$_cid" "$_txt" "$_callback_id"
-        done
-    else
-        # Fallback: grep-based parsing (no python)
-        local _new_offset
-        _new_offset=$(echo "$updates" | grep -oE '"update_id"\s*:\s*[0-9]+' | tail -1 | grep -oE '[0-9]+')
-        if [ -n "$_new_offset" ]; then
-            echo "$((_new_offset + 1))" > "$OFFSET_FILE"
-        fi
-        local _text _cid
-        _text=$(echo "$updates" | grep -oE '"text"\s*:\s*"[^"]*"' | tail -1 | sed 's/.*"text"\s*:\s*"//;s/"$//')
-        _cid=$(echo "$updates" | grep -oE '"chat"\s*:\s*\{[^}]*"id"\s*:\s*-?[0-9]+' | tail -1 | grep -oE -- '-?[0-9]+$')
-        [ -n "$_text" ] && [ -n "$_cid" ] && {
-            _new_offset=${_new_offset:-0}
-            _process_cmd "$_new_offset" "$_cid" "$_text"
-        }
-    fi
+    _consume_updates "$updates"
 }
 
 _check_tg_role() {
@@ -11967,9 +13044,12 @@ _tg_security_log() {
 
 _process_cmd() {
     local _l _s _c _en _mc _mi _q _ex _notes _adtag _pu _pc label secret created enabled max_conns max_ips quota expires name type addr user pass weight iface
-    local update_id="$1" chat_id="$2" text="$3" callback_id="${4:-}"
-    echo "$((update_id + 1))" > "$OFFSET_FILE"
-    tg_answer_callback "$callback_id"
+    # update_id is accepted but no longer used for the offset: _consume_updates
+    # owns that, so it advances once per consumed record rather than once per
+    # dispatched command. Kept in the signature because callers and tests pass
+    # it positionally.
+    local update_id="$1" chat_id="$2" text="$3"
+    : "${update_id:=0}"
 
     local role
     role=$(_check_tg_role "$chat_id")
@@ -12016,6 +13096,7 @@ _process_cmd() {
         grep -q "^${chat_id}$" "${INSTALL_DIR}/bot_users.txt" 2>/dev/null || echo "$chat_id" >> "${INSTALL_DIR}/bot_users.txt" 2>/dev/null || true
     fi
 
+    _tg_pending_try "$chat_id" "$text" && return
     # Continue button-driven operations that need one line of user input.
     local pending_state=""
     pending_state=$(tg_take_state "$chat_id")
@@ -12076,7 +13157,7 @@ _process_cmd() {
     # Human-readable keyboard buttons map to the existing command handlers.
     case "$text" in
         "📊 我的状态") tg_prompt "$chat_id" my_status "请输入您的账户标签："; return ;;
-        "🎟 兑换码") tg_prompt "$chat_id" redeem "请输入兑换码；如需自定义标签，可输入：\`兑换码 标签\`"; return ;;
+        "🎟 兑换码") tg_prompt "$chat_id" redeem "请输入兑换码："; return ;;
         "💬 联系支持") tg_prompt "$chat_id" support "请直接输入需要提交给管理员的问题："; return ;;
         "📊 运行状态") text="/mp_status" ;;
         "📈 流量报告") text="/mp_traffic" ;;
@@ -12128,7 +13209,9 @@ _process_cmd() {
     # Public user or unauthenticated commands
     case "$text" in
         /start|/start\ *|/start@*|/menu|/menu@*)
-            if [ "$role" != "superadmin" ] && [ "$role" != "reseller" ]; then
+            if [ "$role" = "reseller" ]; then
+                tg_voucher_menu "$chat_id"
+            elif [ "$role" != "superadmin" ]; then
                 tg_public_menu "$chat_id" "🛡️ *欢迎使用 MTProxyMax 自助服务中心 (${VERSION})*\n\n请选择下方按钮，无需记忆命令。"
             else
                 tg_admin_menu "$chat_id" "🛡️ *MTProxyMax 管理控制台 (${VERSION})*\n\n请选择下方按钮，无需记忆命令。"
@@ -12153,11 +13236,10 @@ _process_cmd() {
             fi
             return
             ;;
-        /voucher\ *|/voucher@*\ *)
+        /voucher\ *|/voucher@*\ *|/redeem\ *|/redeem@*\ *|/mp_redeem\ *|/mp_redeem@*\ *)
             local vcode=$(echo "$text" | awk '{print $2}')
-            local vlabel=$(echo "$text" | awk '{print $3}')
-            [ -z "$vcode" ] && { tg_send_to "$chat_id" "❌ 用法： /voucher <code> [optional_label]"; return; }
-            [ -z "$vlabel" ] && vlabel="tg_${chat_id}"
+            local vlabel="tg_${chat_id}"
+            [ -z "$vcode" ] && { tg_send_to "$chat_id" "❌ 用法： /voucher <code>"; return; }
             if "${INSTALL_DIR}/mtproxymax" voucher redeem "$vcode" "$vlabel" &>/dev/null; then
                 load_tg_settings
                 local ip; ip=$(get_cached_ip)
@@ -12178,24 +13260,7 @@ _process_cmd() {
             tg_send_to "$chat_id" "✅ *工单已收到！*\n\n您的消息已转交支持团队，我们会尽快回复。"
             return
             ;;
-        /redeem\ *|/redeem@*\ *|/mp_redeem\ *|/mp_redeem@*\ *)
-            local vcode=$(echo "$text" | awk '{print $2}')
-            local vlabel=$(echo "$text" | awk '{print $3}')
-            [ -z "$vcode" ] && { tg_send_to "$chat_id" "❌ 用法： /redeem <code> [optional_label]"; return; }
-            [ -z "$vlabel" ] && vlabel="tg_${chat_id}"
-            if "${INSTALL_DIR}/mtproxymax" voucher redeem "$vcode" "$vlabel" &>/dev/null; then
-                load_tg_settings
-                local ip; ip=$(get_cached_ip)
-                local ns=$(grep "^${vlabel}|" "$SECRETS_FILE" 2>/dev/null | head -1 | cut -d'|' -f2)
-                local dh=$(domain_to_hex "${PROXY_DOMAIN:-cloudflare.com}")
-                local fs="ee${ns}${dh}"
-                tg_send_to "$chat_id" "🎉 *兑换码兑换成功！*\n\n欢迎使用账户 *$(_esc "$vlabel")*!\n\n🔗 [立即连接](https://t.me/proxy?server=${ip}&port=${PROXY_PORT}&secret=${fs})\n📡 \`${ip}:${PROXY_PORT}\`"
-                send_proxy_qr_to "$chat_id" "$ip" "$PROXY_PORT" "$fs"
-            else
-                tg_send_to "$chat_id" "❌ 无法 兑换该兑换码 '$(_esc "$vcode")' — 兑换码无效、已过期或已被兑换。"
-            fi
-            return
-            ;;
+
     esac
 
     # Reject non-admin senders for all administrative commands below
@@ -12236,16 +13301,30 @@ _process_cmd() {
                     local cnt=$(echo "$text" | awk '{print $3}')
                     local qta=$(echo "$text" | awk '{print $4}')
                     local dys=$(echo "$text" | awk '{print $5}')
-                    "${INSTALL_DIR}/mtproxymax" voucher create "${cnt:-1}" "${qta:-10G}" "${dys:-30}" &>/dev/null
-                    local vout=$("${INSTALL_DIR}/mtproxymax" voucher list active | tail -n +3 | head -n "${cnt:-1}")
-                    tg_send "🎟 *已生成的兑换码*\n\`\`\`\n${vout}\n\`\`\`"
+                    [[ "$cnt" =~ ^[0-9]+$ ]] && [ "$cnt" -ge 1 ] && [ "$cnt" -le 100 ] || cnt=1
+                    # Snapshot the active count first: the vault is append-only,
+                    # so the rows past that index are exactly the new ones. The
+                    # previous version read the list back and did `tail -n +3`,
+                    # which silently showed the wrong rows.
+                    local _before; _before=$(_tg_voucher_count)
+                    "${INSTALL_DIR}/mtproxymax" voucher create "$cnt" "${qta:-10G}" "${dys:-30}" &>/dev/null
+                    local vbody; vbody=$(_tg_voucher_lines "$_before")
+                    if [ -n "$vbody" ]; then
+                        tg_send "🎟 *已生成 ${cnt} 个兑换码*${vbody}"
+                    else
+                        tg_send "❌ 未能生成兑换码，请查看服务器日志。"
+                    fi
                     ;;
                 list)
-                    local vout=$("${INSTALL_DIR}/mtproxymax" voucher list active | head -n 25)
-                    tg_send "📋 *有效兑换码*\n\`\`\`\n${vout}\n\`\`\`"
+                    local vbody; vbody=$(_tg_voucher_lines)
+                    if [ -n "$vbody" ]; then
+                        tg_send "📋 *有效兑换码*${vbody}"
+                    else
+                        tg_send "📋 *有效兑换码*\n\n_暂无记录。_"
+                    fi
                     ;;
                 *)
-                    tg_send "🎟 *兑换码管理*\n\n用法：\n\`/mp_voucher create <count> <quota> <days>\`\n\`/mp_voucher list\`"
+                    tg_send "🎟 *兑换码管理*\n\n• /mp\\_voucher create <count> <quota> <days>\n• /mp\\_voucher list"
                     ;;
             esac
             ;;
@@ -12257,7 +13336,7 @@ _process_cmd() {
             fi
             local _si _so _sc; read -r _si _so _sc <<< "$(get_stats)"
             local up=$(get_uptime)
-            tg_send "📱 *MT 代理状态*\n\n🟢 状态：运行中\n⏱ 运行时长：$(format_duration $up)\n👥 连接数：${_sc}\n📊 流量：↓ $(format_bytes ${_cum_out:-0}) ↑ $(format_bytes ${_cum_in:-0})\n🔗 端口：${PROXY_PORT} | 域名：${PROXY_DOMAIN}"
+            tg_send_kb "📱 *MT 代理状态*\n\n🟢 状态：运行中\n⏱ 运行时长：$(format_duration $up)\n👥 连接数：${_sc}\n📊 流量：↓ $(format_bytes ${_cum_out:-0}) ↑ $(format_bytes ${_cum_in:-0})\n🔗 端口：${PROXY_PORT} | 域名：${PROXY_DOMAIN}" "$(_tg_button_bar "$chat_id")"
             ;;
         /mp_secrets|/mp_secrets@*)
             load_tg_settings
@@ -12266,7 +13345,7 @@ _process_cmd() {
             # Single awk pass for all user metrics into associative array
             local _sec_metrics
             declare -A _parsed_uc=()
-            _sec_metrics=$(curl -s --max-time 2 "http://127.0.0.1:${PROXY_METRICS_PORT:-9090}/metrics" 2>/dev/null) || true
+            _sec_metrics=$(curl -s --max-time 2 "http://127.0.0.1:${PROXY_METRICS_PORT:-9090}/metrics" 2>/dev/null | _normalize_byte_metrics) || true
             if [ -n "$_sec_metrics" ]; then
                 while IFS='|' read -r _pu _pc; do
                     [ -n "$_pu" ] && _parsed_uc["$_pu"]=${_pc:-0}
@@ -12284,7 +13363,7 @@ _process_cmd() {
                 local cui=${_cum_user_in["$label"]:-0} cuo=${_cum_user_out["$label"]:-0}
                 msg+="${icon} *$(_esc "$label")* — ${uc} conn | ↓$(format_bytes $cuo) ↑$(format_bytes $cui)\n"
             done < "$SECRETS_FILE"
-            tg_send "$msg"
+            tg_send_kb "$msg" "$(_tg_button_bar "$chat_id")"
             ;;
         /mp_link|/mp_link@*)
             load_tg_settings
@@ -12398,10 +13477,20 @@ _process_cmd() {
             ;;
         /mp_health|/mp_health@*)
             local health_out
-            health_out=$("${INSTALL_DIR}/mtproxymax" health 2>&1 | sed 's/\x1b\[[0-9;]*m//g' | head -20) || true
-            local status_icon="🟢"
-            echo "$health_out" | grep -qi "fail\|error\|down" && status_icon="🔴"
-            tg_send "${status_icon} *健康检查*\n\n\`\`\`\n${health_out}\n\`\`\`"
+            health_out=$("${INSTALL_DIR}/mtproxymax" health 2>&1 | sed 's/\x1b\[[0-9;]*m//g' | head -40) || true
+            local hbody
+            hbody=$(_tg_kv_lines <<< "$health_out")
+            if [ -z "$hbody" ]; then
+                # The check output is key/value today. If that ever changes, fall
+                # back to the raw lines rather than an empty reply — a failed
+                # parse must not read as "everything is fine".
+                hbody=$(while IFS= read -r _l; do
+                            [ -z "$_l" ] && continue
+                            printf '\n• %s' "$(_esc "$_l")"
+                        done <<< "$(printf '%s' "$health_out" | head -15)")
+                [ -z "$hbody" ] && hbody=$'\n⚠️ 健康检查未返回结果。'
+            fi
+            tg_send_kb "🩺 *健康检查*${hbody}" "$(_tg_button_bar "$chat_id")"
             ;;
         /mp_traffic|/mp_traffic@*)
             load_tg_settings
@@ -12417,21 +13506,14 @@ _process_cmd() {
                 local cuo; cuo=$(echo "$cum_u" | awk '{print $2}')
                 msg+="👤 *$(_esc "$label")*: ↓ $(format_bytes $cuo) ↑ $(format_bytes $cui)\n"
             done < "$SECRETS_FILE"
-            tg_send "$msg"
+            tg_send_kb "$msg" "$(_tg_button_bar "$chat_id")"
             ;;
         /mp_update|/mp_update@*)
             [ "$role" != "superadmin" ] && { tg_send "⛔ 权限不足: 需要超级管理员权限。"; return; }
-            if command -v systemd-run &>/dev/null; then
-                local update_unit="mtproxymax-update-$(date +%s)"
-                if systemd-run --quiet --collect --unit "$update_unit" \
-                    --setenv=MTPROXYMAX_ASSUME_YES=true \
-                    "${INSTALL_DIR}/mtproxymax" update >/dev/null 2>&1; then
-                    tg_send "⬆️ 更新任务已在后台启动。完成后 Telegram 服务会自动重新生成并重启，请稍后重新发送 /start。"
-                else
-                    tg_send "❌ 无法启动后台更新，请在服务器执行：\`sudo mtproxymax update\`"
-                fi
+            if _tg_start_update; then
+                tg_send "⬆️ 当前版本 v${VERSION}，更新任务已在后台启动。完成后请重新发送 /start。"
             else
-                tg_send "❌ 当前系统不支持安全的后台更新，请在服务器执行：\`sudo mtproxymax update\`"
+                tg_send "❌ 无法启动后台更新，请在服务器执行：\`sudo mtproxymax update\`"
             fi
             ;;
         /mp_limits|/mp_limits@*)
@@ -12457,18 +13539,63 @@ _process_cmd() {
             local sl_ips=$(echo "$args" | awk '{print $3}')
             local sl_quota=$(echo "$args" | awk '{print $4}')
             local sl_exp=$(echo "$args" | awk '{print $5}')
-            [ -z "$sl_label" ] && tg_send "❌ 用法： /mp\\_setlimit <label> <conns> <ips> <quota> [expires]\n示例： /mp\\_setlimit alice 100 5 5G 2026-12-31" && return
-            [[ "$sl_label" =~ ^[a-zA-Z0-9_-]+$ ]] || { tg_send "❌ 标签无效"; return; }
-            if "${INSTALL_DIR}/mtproxymax" secret setlimits "$sl_label" "${sl_conns:-0}" "${sl_ips:-0}" "${sl_quota:-0}" "${sl_exp:-}" &>/dev/null; then
-                tg_send "✅ 已更新以下账户的限制： *$(_esc "$sl_label")*\n连接数： ${sl_conns:-0} | IP 数： ${sl_ips:-0} | 配额： ${sl_quota:-0}"
+            [ -z "$sl_label" ] && tg_send "❌ 用法：/mp\\_setlimit <label> <conns> <ips> <quota> [expires]\n示例：/mp\\_setlimit alice 100 5 5G 2026-12-31\n_省略的字段保留原值。_" && return
+            [[ "$sl_label" =~ ^[a-zA-Z0-9_-]+$ ]] || { tg_send "❌ Invalid label"; return; }
+
+            # Only the fields actually given are written. `secret setlimits`
+            # cannot express that: it reads an empty argument as 0, and
+            # secret_set_limits reads 0 as UNLIMITED — so `/mp_setlimit alice
+            # 100` used to clear alice's IP cap and quota as a side effect. The
+            # per-field `secret setlimit` verb touches one field and no other.
+            local -a _sl_changes=() _sl_flags
+            [ -n "$sl_conns" ] && _sl_changes+=("conns:$sl_conns")
+            [ -n "$sl_ips" ]   && _sl_changes+=("ips:$sl_ips")
+            [ -n "$sl_quota" ] && _sl_changes+=("quota:$sl_quota")
+            [ -n "$sl_exp" ]   && _sl_changes+=("expires:$sl_exp")
+            if [ "${#_sl_changes[@]}" -eq 0 ]; then
+                tg_send "❌ 请至少提供连接数、IP 数、配额或到期时间之一。"
+                return
+            fi
+
+            local _ok=1 _i _n=${#_sl_changes[@]}
+            for (( _i = 0; _i < _n; _i++ )); do
+                # Every field but the last is applied without a reload, so a
+                # multi-field change costs one engine sync rather than four.
+                _sl_flags=()
+                [ $(( _i + 1 )) -lt "$_n" ] && _sl_flags=(--no-restart)
+                "${INSTALL_DIR}/mtproxymax" secret setlimit "$sl_label" \
+                    "${_sl_changes[$_i]%%:*}" "${_sl_changes[$_i]#*:}" "${_sl_flags[@]}" &>/dev/null || _ok=0
+            done
+            if [ "$_ok" -eq 1 ]; then
+                local _shown="" _c
+                for _c in "${_sl_changes[@]}"; do _shown+="${_shown:+ · }${_c/:/ = }"; done
+                tg_send "✅ 已更新以下用户的限制： *$(_esc "$sl_label")*\n${_shown}"
             else
-                tg_send "❌ 无法 设置限制： *$(_esc "$sl_label")* — 请确认标签存在"
+                tg_send "❌ 未能设置以下用户的限制： *$(_esc "$sl_label")* ，请检查标签和参数"
             fi
             ;;
         /mp_fleet|/mp_fleet@*)
             local fleet_out; fleet_out=$("${INSTALL_DIR}/mtproxymax" fleet status 2>/dev/null | sed 's/\x1b\[[0-9;]*m//g')
-            [ -z "$fleet_out" ] && fleet_out="尚未采集到多服务器集群遥测数据。"
-            tg_send "🌐 *全局联邦集群摘要*\n\`\`\`\n${fleet_out}\n\`\`\`"
+            if [ -z "$fleet_out" ]; then
+                tg_send "🌐 *集群*\n\n_尚无集群运行数据。_"
+                return
+            fi
+            # One block per node. The CLI aligns this with printf padding, which
+            # only reads as columns inside a fence; per-node lines carry the same
+            # data and survive a proportional font.
+            local _f _msg="🌐 *集群*" _n=0 _h _ip _users _traffic _load
+            while IFS= read -r _f; do
+                case "$_f" in ""|HOSTNAME*|主机名*|*"---"*) continue ;; esac
+                read -r _h _ip _users _traffic _load _ <<< "$_f"
+                [ -z "$_h" ] && continue
+                _msg+="\n🟢 *$(_esc "$_h")*"
+                [ -n "$_ip" ] && _msg+=" — \`$(_esc "$_ip")\`"
+                [ -n "$_users" ] && _msg+=" · 👥 ${_users}"
+                [ -n "$_traffic" ] && _msg+=" · 📊 ${_traffic}"
+                _n=$(( _n + 1 ))
+            done <<< "$fleet_out"
+            [ "$_n" -eq 0 ] && _msg+="\n\n_尚无节点上报。_"
+            tg_send "$_msg"
             ;;
         /mp_upstreams|/mp_upstreams@*)
             load_tg_settings
@@ -12558,13 +13685,2094 @@ _process_cmd() {
             tg_send "📢 广播已发送给所有用户。"
             ;;
         /mp_help|/mp_help@*)
-            tg_send "📋 *MTProxyMax 命令（${VERSION}）*\n\n*公开自助服务：*\n/start — 自助开通服务\n/my\_status <label> — 查询流量配额和到期时间\n/voucher <code> — 兑换兑换码\n/support <msg> — 提交支持工单\n\n*管理员控制台：*\n/mp\_fleet — 全局联邦集群面板\n/mp\_voucher create <cnt> <qta> <dys> — 生成兑换码\n/mp\_voucher list — 列出兑换码\n/mp\_status — 代理状态\n/mp\_secrets — 列出密钥\n/mp\_link — 获取代理链接和二维码\n/mp\_add <label> — 添加密钥\n/mp\_remove / /mp\_revoke <label> — 移除密钥\n/mp\_rotate <label> — 轮换密钥\n/mp\_enable <label> — 启用密钥\n/mp\_disable <label> — 禁用密钥\n/mp\_limits — 显示用户限制\n/mp\_setlimit — 设置用户限制\n/mp\_upstreams — 列出上游代理\n/mp\_traffic — 流量报告\n/mp\_health — 健康检查\n/mp\_lockdown [on|off] — 紧急防护\n/mp\_digest — 系统摘要报告\n/mp\_broadcast <msg> — 向所有用户广播\n/reply <chat\_id> <msg> — 回复支持工单\n/mp\_restart — 重启代理\n/mp\_update — 检查更新\n/mp\_help — 显示此帮助"
+            tg_send_kb "📋 *MTProxyMax 命令（${VERSION}）*\n\n*公开自助服务：*\n/start — 自助开通服务\n/my\_status <label> — 查询流量配额和到期时间\n/voucher <code> — 兑换兑换码\n/support <msg> — 提交支持工单\n\n*管理员控制台：*\n/mp\_fleet — 全局联邦集群面板\n/mp\_voucher create <cnt> <qta> <dys> — 生成兑换码\n/mp\_voucher list — 列出兑换码\n/mp\_status — 代理状态\n/mp\_secrets — 列出密钥\n/mp\_link — 获取代理链接和二维码\n/mp\_add <label> — 添加密钥\n/mp\_remove / /mp\_revoke <label> — 移除密钥\n/mp\_rotate <label> — 轮换密钥\n/mp\_enable <label> — 启用密钥\n/mp\_disable <label> — 禁用密钥\n/mp\_limits — 显示用户限制\n/mp\_setlimit — 设置用户限制\n/mp\_upstreams — 列出上游代理\n/mp\_traffic — 流量报告\n/mp\_health — 健康检查\n/mp\_lockdown [on|off] — 紧急防护\n/mp\_digest — 系统摘要报告\n/mp\_broadcast <msg> — 向所有用户广播\n/reply <chat\_id> <msg> — 回复支持工单\n/mp\_restart — 重启代理\n/mp\_update — 检查更新\n/mp\_help — 显示此帮助" "$(_tg_button_bar "$chat_id")"
             ;;
     esac
 }
 
-# Cleanup trap for temp files
-trap _cleanup EXIT
+# >>> TG_MENU_BEGIN
+_tg_start_update() {
+    command -v systemd-run >/dev/null 2>&1 || return 1
+    systemd-run --quiet --collect --unit "mtproxymax-update-$(date +%s)" \
+        --setenv=MTPROXYMAX_ASSUME_YES=true \
+        "${INSTALL_DIR}/mtproxymax" update >/dev/null 2>&1
+}
+
+
+
+# >>> TG_PENDING_BEGIN
+# ── Pending input ───────────────────────────────────────────────────────────
+#
+# Inline buttons cannot collect typed text, so a flow that needs a value arms a
+# prompt for that chat and the next plain message from it is taken as the
+# answer. State is one line per chat:
+#
+#   <chat_id>|<verb>|<target>|<expires_epoch>
+#
+# This daemon is the only reader AND the only writer (one shell, one loop), so
+# the rewrite needs no lock — the same reasoning the history appenders use.
+#
+# The answer is consumed by _tg_pending_try before the command dispatcher ever
+# sees it, and a slash command always escapes: being trapped in a prompt with no
+# way back to the command surface is a worse failure than losing an answer.
+_TG_PENDING_TTL=300
+_tg_pending_file() { printf '%s' "${INSTALL_DIR}/relay_stats/.tg_pending"; }
+
+_tg_pending_set() {
+    local chat="$1" verb="$2" target="${3:--}"
+    local f now exp tmp
+    f=$(_tg_pending_file)
+    # An empty path would make the temp file below land in the CURRENT
+    # DIRECTORY as "./.tmp.<pid>" — which is how a stray dotfile gets committed.
+    # INSTALL_DIR is always set in the shipped daemon, so this only ever fires
+    # in a caller that sourced the block without it.
+    [ -n "$f" ] || return 1
+    now=$(date +%s)
+    exp=$(( now + ${_TG_PENDING_TTL:-300} ))
+    mkdir -p "${INSTALL_DIR}/relay_stats" 2>/dev/null || true
+    tmp="${f}.tmp.$$"
+    # Re-arm REPLACES rather than appends: leaving an older line in place would
+    # answer with the stale verb, and the file is read top-down.
+    {
+        [ -f "$f" ] && grep -v "^${chat}|" "$f" 2>/dev/null
+        printf '%s|%s|%s|%s\n' "$chat" "$verb" "$target" "$exp"
+    } > "$tmp" 2>/dev/null && mv "$tmp" "$f" 2>/dev/null
+    chmod 600 "$f" 2>/dev/null || true
+    return 0
+}
+
+# Read-and-clear. Prints "<verb>|<target>"; non-zero when nothing was armed.
+_tg_pending_take() {
+    local chat="$1" f now tmp out="" matched=1
+    f=$(_tg_pending_file)
+    [ -n "$f" ] || return 1
+    [ -f "$f" ] || return 1
+    now=$(date +%s)
+    tmp="${f}.tmp.$$"
+    # Expired rows are dropped here rather than by a sweeper: this is the only
+    # place they matter, and a prompt nobody answers leaves no garbage behind.
+    while IFS='|' read -r _c _v _t _e; do
+        [ -z "$_c" ] && continue
+        if [ "$_c" = "$chat" ]; then
+            if [ "${_e:-0}" -gt "$now" ] 2>/dev/null; then
+                out="${_v}|${_t}"; matched=0
+            fi
+            continue
+        fi
+        printf '%s|%s|%s|%s\n' "$_c" "$_v" "$_t" "$_e"
+    done < "$f" > "$tmp" 2>/dev/null
+    mv "$tmp" "$f" 2>/dev/null || : > "$f"
+    [ "$matched" -eq 0 ] || return 1
+    printf '%s' "$out"
+    return 0
+}
+
+_tg_pending_clear() {
+    local chat="$1" f tmp
+    f=$(_tg_pending_file)
+    [ -n "$f" ] || return 0
+    [ -f "$f" ] || return 0
+    tmp="${f}.tmp.$$"
+    grep -v "^${chat}|" "$f" > "$tmp" 2>/dev/null
+    mv "$tmp" "$f" 2>/dev/null || rm -f "$tmp" 2>/dev/null
+    return 0
+}
+
+# Arm a prompt and tell the chat about it. The prompt is SENT rather than used to
+# edit the card that spawned it, because that card is what the operator wants to
+# come back to when they cancel.
+_tg_pending_prompt() {
+    local chat="$1" verb="$2" target="$3" text="$4"
+    _tg_pending_set "$chat" "$verb" "$target" || return 1
+    _UI_ROLE="$(_check_tg_role "$chat")"
+    _kb_reset
+    _kb_row "❌ 取消|p:x"
+    tg_send_to_kb "$chat" "${text}\n\n_直接回复所需内容，发送任意斜杠命令会取消本次输入。_" "$(_kb_json)"
+    return 0
+}
+
+# Give an armed prompt first refusal on an incoming message. Returns 0 when the
+# message was consumed as an answer, 1 when the caller must dispatch it.
+_tg_pending_try() {
+    local chat="$1" text="$2" v
+    case "$text" in
+        /*) _tg_pending_clear "$chat"; return 1 ;;
+    esac
+    v=$(_tg_pending_take "$chat") || return 1
+    if [ "$(_check_tg_role "$chat")" != "superadmin" ]; then
+        _tg_security_log "$chat" "pending ${v%%|*}"
+        tg_send_to "$chat" "⛔ 权限不足，此操作需要超级管理员权限。"
+        return 0
+    fi
+    _tg_pending_run "$chat" "${v%%|*}" "${v#*|}" "$text"
+    return 0
+}
+
+# Dispatch a consumed answer to the flow that armed the prompt.
+_tg_pending_run() {
+    local chat="$1" verb="$2" target="$3" value="$4"
+    case "$verb" in
+        add)
+            if ! _cb_label_ok "$value"; then
+                tg_send_to "$chat" "❌ 标签无效。只可使用字母、数字、下划线和短横线，最多 32 个字符。"
+                return 1
+            fi
+            if ! "${INSTALL_DIR}/mtproxymax" secret add "$value" &>/dev/null; then
+                tg_send_to "$chat" "❌ 无法添加 *$(_esc "$value")* ，该标签可能已存在。"
+                return 1
+            fi
+            tg_send_to "$chat" "✅ Secret *$(_esc "$value")* created.$(_tg_new_secret_link "$value")"
+            ;;
+        note|adtag)
+            # target is the label, read back out of a file on disk, so it is
+            # re-validated here exactly as it was on the way in.
+            if ! _cb_label_ok "$target" || ! _cb_secret_exists "$target"; then
+                tg_send_to "$chat" "❌ 该密钥已不存在。"
+                return 1
+            fi
+            if [ "$verb" = "adtag" ]; then
+                # 32 hex is what the engine accepts; "clear" reverts to the
+                # global tag. Anything else would be written and then ignored.
+                if [ "$value" != "clear" ] && ! [[ "$value" =~ ^[0-9a-fA-F]{32}$ ]]; then
+                    tg_send_to "$chat" "❌ 广告标签需为 32 个十六进制字符，输入 clear 即可清除。"
+                    return 1
+                fi
+            fi
+            if "${INSTALL_DIR}/mtproxymax" secret "$verb" "$target" "$value" &>/dev/null; then
+                tg_send_to "$chat" "✅ 已更新 *$(_esc "$target")* 的 ${verb}。"
+            else
+                tg_send_to "$chat" "❌ 无法更新 ${verb}。"
+                return 1
+            fi
+            ;;
+        tplnew)
+            # "name" or "name conns ips quota expires". read rather than word
+            # splitting: an unquoted expansion would let a "*" in the text glob
+            # against the working directory.
+            local _nm _c _i _q _e
+            read -r _nm _c _i _q _e <<< "$value"
+            if ! _cb_label_ok "$_nm"; then
+                tg_send_to "$chat" "❌ 只能使用字母、数字、下划线和短横线，最多 32 个字符。"
+                return 1
+            fi
+            if "${INSTALL_DIR}/mtproxymax" template save "$_nm" "${_c:-0}" "${_i:-0}" "${_q:-0}" "${_e:-0}" "" &>/dev/null; then
+                tg_send_to "$chat" "✅ 模板 *$(_esc "$_nm")* 已保存。打开*模板*可调整各项限制。"
+            else
+                tg_send_to "$chat" "❌ 无法保存模板。"
+                return 1
+            fi
+            ;;
+        tplnotes|tplexpires)
+            if ! _cb_label_ok "$target" || ! _cb_tpl_exists "$target"; then
+                tg_send_to "$chat" "❌ 该模板已不存在。"
+                return 1
+            fi
+            [ "$verb" = "tplnotes" ] && _cb_tpl_set "$target" notes "$value" || _cb_tpl_set "$target" expires "$value"
+            tg_send_to "$chat" "✅ 模板 *$(_esc "$target")* 已更新。"
+            ;;
+        broadcast)
+            if [ -z "$value" ]; then
+                tg_send_to "$chat" "❌ 广播内容为空。"
+                return 1
+            fi
+            if "${INSTALL_DIR}/mtproxymax" broadcast "$value" &>/dev/null; then
+                tg_send_to "$chat" "📢 广播已发送。"
+            else
+                tg_send_to "$chat" "❌ 广播失败。"
+                return 1
+            fi
+            ;;
+        setq|setc|seti|setx|setr)
+            # target is the label. It came out of a file on disk, so it is
+            # re-validated here exactly as it was on the way in.
+            if ! _cb_label_ok "$target" || ! _cb_secret_exists "$target"; then
+                tg_send_to "$chat" "❌ 该密钥已不存在。"
+                return 1
+            fi
+            _CB_TOAST=""
+            if _cb_apply_limit "$verb" "$target" "$value"; then
+                tg_send_to "$chat" "✅ *$(_esc "$target")*: ${_CB_TOAST}"
+            else
+                tg_send_to "$chat" "❌ ${_CB_TOAST}"
+                return 1
+            fi
+            ;;
+        *)
+            tg_send_to "$chat" "❌ 输入请求已失效。"
+            return 1
+            ;;
+    esac
+    return 0
+}
+
+# The connect block for a just-created secret, or "" if it cannot be built.
+# Shared by every flow that provisions a secret so the wording and the
+# FakeTLS/plain branch stay in one place.
+_tg_new_secret_link() {
+    local label="$1" ip secret dh fs
+    ip=$(get_cached_ip)
+    [ -z "$ip" ] && return 0
+    secret=$(grep -E "^${label}\|" "$SECRETS_FILE" 2>/dev/null | head -1 | cut -d'|' -f2)
+    [ -z "$secret" ] && return 0
+    if [ "${MASKING_ENABLED:-true}" != "false" ]; then
+        dh=$(domain_to_hex "${PROXY_DOMAIN:-cloudflare.com}")
+        fs="ee${secret}${dh}"
+    else
+        fs="dd${secret}"
+    fi
+    printf '\n\n🔗 [连接](https://t.me/proxy?server=%s&port=%s&secret=%s)\n📡 `%s:%s`' \
+        "$ip" "${PROXY_PORT}" "$fs" "$ip" "${PROXY_PORT}"
+}
+# <<< TG_PENDING_END
+# ── Interactive inline-keyboard menus ───────────────────────────────────────
+#
+# The security model: callback_data is entirely attacker-controlled — a user
+# can send any payload they like — so every tap is re-authorised here against
+# the same rules _process_cmd applies. A button must never grant more than
+# typing the equivalent command would.
+#
+# TG_CB_CAPS is the single source of truth for "what capability does this
+# action need". BOTH the renderer (to decide which buttons to show) and the
+# enforcer (to decide whether to act) read it, so the two cannot drift apart.
+# The same property is pinned by tests/test_telegram_callback_dispatch.sh,
+# which fails if this table stops matching _process_cmd's gates.
+#
+# Capabilities, weakest first: public < reseller < admin < superadmin.
+TG_CB_CAPS="n=public
+m=public
+m:h=public
+u:l=admin
+u:s=admin
+u:k=admin
+t=admin
+t:w=admin
+t:u=admin
+y=admin
+y:e=admin
+s=admin
+a:enable=admin
+a:disable=admin
+a:rotate=admin
+c:enable=admin
+c:disable=admin
+c:rotate=admin
+a:remove=superadmin
+c:remove=superadmin
+u:m=admin
+u:t=admin
+e=admin
+e:q=admin
+e:c=admin
+e:i=admin
+e:x=admin
+e:r=admin
+e:n=admin
+e:a=admin
+e:t=admin
+c:setq=admin
+c:setc=admin
+c:seti=admin
+c:setx=admin
+c:setr=admin
+c:tpl=admin
+p=public
+p:x=public
+k=admin
+k:e=admin
+k:p=admin
+k:a=admin
+k:s=admin
+k:d=admin
+k:n=admin
+g=admin
+g:a=admin
+g:b=admin
+y:d=admin
+y:p=admin
+y:f=admin
+y:v=admin
+y:u=admin
+a:rotall=superadmin
+c:rotall=superadmin
+a:restart=superadmin
+c:restart=superadmin
+a:update=superadmin
+c:update=superadmin
+a:lockdown=superadmin
+c:lockdown=superadmin"
+
+_tg_cap_rank() {
+    case "$1" in
+        public)     echo 0 ;;
+        reseller)   echo 1 ;;
+        admin)      echo 2 ;;
+        superadmin) echo 3 ;;
+        *)          echo -1 ;;
+    esac
+}
+
+# An unrecognised role string ranks as public-only and is refused LOUDLY,
+# whereas the literal role "none" is refused silently — mirroring _process_cmd,
+# where an unknown auth level is denied and audited but an unauthenticated
+# chatter is simply ignored. admins.conf is hand-editable, so anything that is
+# not exactly superadmin or reseller must never exceed public.
+_tg_role_rank() {
+    case "$1" in
+        superadmin) echo 3 ;;
+        reseller)   echo 1 ;;
+        *)          echo 0 ;;
+    esac
+}
+
+# Capability for a namespace, preferring the ns:action entry over the bare ns.
+_tg_cap_for() {
+    local ns="$1" act="${2:-}"
+    local k v found=""
+    while IFS='=' read -r k v; do
+        [ -z "$k" ] && continue
+        if [ -n "$act" ] && [ "$k" = "${ns}:${act}" ]; then printf '%s' "$v"; return 0; fi
+        [ "$k" = "$ns" ] && found="$v"
+    done <<< "$TG_CB_CAPS"
+    printf '%s' "$found"
+}
+
+# 0 if the role currently rendering (_UI_ROLE) may use this action.
+_cb_can() {
+    local cap need have
+    cap=$(_tg_cap_for "$1" "${2:-}")
+    [ -n "$cap" ] || return 1
+    need=$(_tg_cap_rank "$cap")
+    have=$(_tg_role_rank "${_UI_ROLE:-none}")
+    [ "$need" -ge 0 ] || return 1
+    [ "$have" -ge "$need" ]
+}
+
+# ── Rendering helpers ───────────────────────────────────────────────────────
+_tg_json_esc() {
+    local t="$1"
+    t="${t//\\/\\\\}"
+    t="${t//\"/\\\"}"
+    printf '%s' "$t"
+}
+
+_TG_KB=""
+_kb_reset() { _TG_KB=""; }
+# _kb_row "Label|payload" "Label|payload" ... — rows with no usable button are
+# dropped, which keeps a viewer without permission from seeing an empty row.
+_kb_row() {
+    local spec lbl data out="" first=1
+    for spec in "$@"; do
+        lbl="${spec%%|*}"; data="${spec#*|}"
+        [ -z "$data" ] && continue
+        [ "$first" -eq 1 ] || out="${out},"
+        first=0
+        out="${out}{\"text\":\"$(_tg_json_esc "$lbl")\",\"callback_data\":\"$(_tg_json_esc "$data")\"}"
+    done
+    [ -z "$out" ] && return 0
+    [ -n "$_TG_KB" ] && _TG_KB="${_TG_KB},"
+    _TG_KB="${_TG_KB}[${out}]"
+}
+_kb_json() { [ -n "$_TG_KB" ] && printf '{"inline_keyboard":[%s]}' "$_TG_KB"; }
+
+# Replace the message the button lived on. Both _CB_CHAT and _CB_MID come from
+# the callback itself, which Telegram authenticates, so no chat id ever has to
+# travel inside callback_data where a user could forge it.
+_cb_edit() {
+    local text="$1" kb="${2:-}"
+    tg_edit "$_CB_CHAT" "$_CB_MID" "$(printf '%b' "$text")" "$kb"
+}
+_cb_edit_markup() {
+    local kb="$1"
+    tg_edit_markup "$_CB_CHAT" "$_CB_MID" "$kb"
+}
+
+_tg_metrics_raw() {
+    curl -s --max-time 2 "http://127.0.0.1:${PROXY_METRICS_PORT:-9090}/metrics" 2>/dev/null | _normalize_byte_metrics
+}
+
+# Per-user live metrics in ONE awk pass: "label|conns|ips" per line. Forking
+# per user would make a 50-user menu unusably slow.
+_cb_user_metrics() {
+    local _m; _m=$(_tg_metrics_raw)
+    [ -z "$_m" ] && return 0
+    printf '%s' "$_m" | awk '
+        function lbl(s, k,   p, q) { p=index(s,k"=\""); if(!p) return ""; s=substr(s,p+length(k)+2); q=index(s,"\""); return q ? substr(s,1,q-1) : "" }
+        /^telemt_user_connections_current\{/ { u=lbl($0,"user"); if(u) c[u]+=$NF }
+        /^telemt_user_unique_ips_current\{/  { u=lbl($0,"user"); if(u) i[u]+=$NF }
+        END { for(u in c) printf "%s|%.0f|%.0f\n", u, c[u]+0, i[u]+0 }
+    '
+}
+
+_cb_secret_exists() {
+    [ -n "$1" ] && _cb_label_ok "$1" && [ -f "$SECRETS_FILE" ] && \
+        grep -qE "^$1\|" "$SECRETS_FILE" 2>/dev/null
+}
+
+# ── Views ───────────────────────────────────────────────────────────────────
+_cb_render_hub() {
+    local _up _msg
+    _up=$(get_uptime)
+    _msg="🛡️ *MTProxyMax* — $(_esc "${TELEGRAM_SERVER_LABEL:-MTProxyMax}")"
+    _msg+="\n\n🟢 运行中 · ⏱ $(format_duration "${_up:-0}")"
+    _msg+="\n👥 $(get_active_connections) 个活跃连接"
+    _msg+="\n\n请选择操作："
+    _kb_reset
+    _kb_row "$(_cb_can u l && printf '👥 用户|u:l:0')" "$(_cb_can t && printf '📈 流量|t')"
+    _kb_row "$(_cb_can y && printf '🖥 服务器|y')"     "$(_cb_can k && printf '🧩 模板|k')"
+    _kb_row "$(_cb_can g && printf '🛠 工具|g')"      "$(_cb_can s && printf '⚙️ 设置|s')"
+    _kb_row "❓ 帮助|m:h"
+    _cb_edit "$_msg" "$(_kb_json)"
+}
+
+# The list is rendered from the same source Telegram is told about, fetched
+# over the CLI. The old version was a hand-maintained string that had already
+# drifted from TG_CMDS_* — it advertised commands that no longer existed and
+# missed ones that did.
+_cb_render_help() {
+    local _case="admin"
+    case "${_UI_ROLE:-none}" in
+        superadmin) _case="superadmin" ;;
+        reseller)   _case="reseller" ;;
+        *)          _case="public" ;;
+    esac
+
+    local out
+    out=$("${INSTALL_DIR}/mtproxymax" telegram commands "$_case" 2>/dev/null)
+    # An underscore in a command name is Markdown emphasis, so the leading slash
+    # has to be escaped or "/mp_status" renders as "/mp" + italic "status".
+    out=$(printf '%s' "$out" | sed 's|^|/|; s|_|\\_|g')
+
+    local _msg="📋 *命令*"
+    if [ -n "$out" ]; then
+        _msg+="\n\n${out}"
+    else
+        _msg+="\n\n_无法读取命令列表，请运行_ \`mtproxymax telegram sync-commands\`_._"
+    fi
+    _msg+="\n\n_发送任意命令即可打开菜单。_"
+
+    _kb_reset
+    _kb_row "🏠 主菜单|m"
+    _cb_edit "$_msg" "$(_kb_json)"
+}
+
+_cb_render_user_list() {
+    local page="${1:-0}" note="${2:-}"
+    [[ "$page" =~ ^[0-9]+$ ]] || page=0
+    [ -f "$SECRETS_FILE" ] || { _cb_edit "📋 尚未配置密钥。" ""; return 0; }
+
+    local -a _labels=() _enabled=()
+    local label secret created enabled rest
+    while IFS='|' read -r label secret created enabled rest || [ -n "$label" ]; do
+        [[ "$label" =~ ^# ]] && continue
+        _cb_label_ok "$label" || continue
+        _labels+=("$label"); _enabled+=("$enabled")
+    done < "$SECRETS_FILE"
+
+    local _total=${#_labels[@]}
+    local per=6
+    local _pages=$(( (_total + per - 1) / per ))
+    [ "$_pages" -lt 1 ] && _pages=1
+    [ "$page" -ge "$_pages" ] && page=$(( _pages - 1 ))
+
+    declare -A _conns=()
+    while IFS='|' read -r _l _c _i; do
+        [ -n "$_l" ] && _conns["$_l"]="${_c:-0}"
+    done < <(_cb_user_metrics)
+
+    local _msg="${note:+${note}\n\n}"
+    _msg+="👥 *用户* — 共 ${_total} 人"
+    # Declared separately on purpose: inside a single `local a=6 b=$((a+6))`
+    # bash expands $a against the OUTER scope, so _end silently came out as
+    # per rather than start+per and every page after the first rendered empty.
+    local _i _start _end
+    _start=$(( page * per ))
+    _end=$(( _start + per ))
+    [ "$_end" -gt "$_total" ] && _end=$_total
+    _kb_reset
+    for (( _i = _start; _i < _end; _i++ )); do
+        local _lbl="${_labels[$_i]}" _icon="🟢"
+        [ "${_enabled[$_i]}" != "true" ] && _icon="🔴"
+        local _btn="${_icon} ${_lbl}"
+        [ "${#_btn}" -gt 34 ] && _btn="${_btn:0:34}"
+        _kb_row "${_btn}|u:s:${_lbl}:${page}"
+    done
+    local _prev="" _next=""
+    [ "$page" -gt 0 ] && _prev="◀ Prev|u:l:$(( page - 1 ))"
+    [ "$_end" -lt "$_total" ] && _next="下一页 ▶|u:l:$(( page + 1 ))"
+    _kb_row "$_prev" "$(( page + 1 ))/${_pages}|n" "$_next"
+    _kb_row "🏠 主菜单|m"
+    _cb_edit "$_msg" "$(_kb_json)"
+}
+
+_cb_bar() {
+    local pct="${1:-0}"
+    [[ "$pct" =~ ^-?[0-9]+$ ]] || pct=0
+    [ "$pct" -lt 0 ] && pct=0
+    [ "$pct" -gt 100 ] && pct=100
+    local _f=$(( pct / 10 )) _e=$(( 10 - pct / 10 ))
+    local _s="" _i
+    for (( _i = 0; _i < _f; _i++ )); do _s+="▓"; done
+    for (( _i = 0; _i < _e; _i++ )); do _s+="░"; done
+    printf '%s' "$_s"
+}
+
+_cb_render_user_detail() {
+    local label="$1" page="${2:-0}" note="${3:-}"
+    ! _cb_secret_exists "$label" && { _CB_TOAST="找不到密钥 '$label'"; return 1; }
+    [[ "$page" =~ ^[0-9]+$ ]] || page=0
+
+    local _line _l _s _created _en _mc _mi _q _ex _notes _adtag
+    _line=$(grep -E "^${label}\|" "$SECRETS_FILE" 2>/dev/null | head -1)
+    IFS='|' read -r _l _s _created _en _mc _mi _q _ex _notes _adtag <<< "$_line"
+
+    local _conns=0 _ips=0
+    while IFS='|' read -r _ml _mc2 _mi2; do
+        [ "$_ml" = "$label" ] && { _conns="${_mc2:-0}"; _ips="${_mi2:-0}"; }
+    done < <(_cb_user_metrics)
+
+    local _in="${_cum_user_in[$label]:-0}" _out="${_cum_user_out[$label]:-0}"
+    local _total=$(( _in + _out ))
+    local _icon="🟢 active" ; [ "$_en" != "true" ] && _icon="🔴 disabled"
+
+    local _msg="${note:+${note}\n\n}"
+    _msg+="👤 *$(_esc "$label")*\n"
+    _msg+="🔌 ${_icon} · 📡 ${_conns} 个连接 / ${_ips} IP\n"
+    _msg+="📊 上次重置以来： ↓ $(format_bytes "$_out") ↑ $(format_bytes "$_in")\n"
+    if [ -n "$_q" ] && [ "$_q" -gt 0 ] 2>/dev/null; then
+        local _pct=$(( (_total * 100) / _q ))
+        [ "$_pct" -gt 100 ] && _pct=100
+        _msg+="🧮 配额 $(_cb_bar "$_pct") ${_pct}%，总配额 $(format_bytes "$_q")\n"
+    else
+        _msg+="🧮 配额不限\n"
+    fi
+    if [ -n "$_ex" ] && [ "$_ex" != "0" ] && [ "$_ex" != "" ]; then
+        local _exp_e _days
+        _exp_e=$(_iso_to_epoch "$_ex")
+        if [ "${_exp_e:-0}" -gt 0 ] 2>/dev/null; then
+            _days=$(( (_exp_e - $(date +%s)) / 86400 ))
+            if [ "$_days" -lt 0 ]; then _msg+="⏳ 过期日期：${_ex}\n"
+            else _msg+="⏳ 距离到期还有 ${_days}d (${_ex})\n"; fi
+        fi
+    else
+        _msg+="⏳ 永不过期\n"
+    fi
+
+    local _reset; _reset=$(_cb_quota_reset_day "$label")
+    [ -n "$_notes" ] && _msg+="📝 $(_esc "$_notes")\n"
+    [ -n "$_reset" ] && _msg+="🔁 每月重置日： ${_reset}\n"
+
+    _kb_reset
+    _kb_row "🔄 刷新|u:s:${label}:${page}" "🔗 连接链接|u:k:${label}"
+    _kb_row "$(_kb_spec "⚙️ 管理" "u" "m" "$label" "$page")" "$(_kb_spec "📊 流量" "u" "t" "$label" "$page")"
+    if [ "$_en" = "true" ]; then
+        _cb_can a disable && _kb_row "⏸ 禁用|a:disable:${label}" "$(_cb_can a rotate && printf '♻️ 轮换|a:rotate:%s' "$label")"
+    else
+        _cb_can a enable && _kb_row "▶️ 启用|a:enable:${label}"
+    fi
+    _cb_can a remove && _kb_row "🗑 移除|a:remove:${label}"
+    _kb_row "◀ 返回|u:l:${page}"
+    _cb_edit "$_msg" "$(_kb_json)"
+}
+
+# "Label|payload", or "" when the payload cannot be encoded. One payload over
+# 64 bytes makes Telegram reject the WHOLE keyboard with a 400, so a button that
+# silently disappears is strictly better than a card that fails to render — but
+# only where the caller says so in the body. See _cb_render_tpl_picker.
+_kb_spec() {
+    local lbl="$1" p
+    p=$(_cb_enc "$2" "$3" "$4" "$5") || return 0
+    printf '%s|%s' "$lbl" "$p"
+}
+
+# Human text for a preset value. Values travel the wire in their raw form (the
+# callback charset has no room for "+", "∞" or a space), so the pretty form is
+# always computed here rather than stored.
+_cb_preset_label() {
+    case "$1" in
+        q|c|i) [ "$2" = "0" ] && printf '∞' || printf '%s' "$2" ;;
+        x)     [ "$2" = "0" ] && printf 'never' || printf '+%sd' "$2" ;;
+        *)     printf '%s' "$2" ;;
+    esac
+}
+
+_cb_render_user_manage() {
+    local label="$1" page="${2:-0}"
+    ! _cb_secret_exists "$label" && { _CB_TOAST="找不到密钥 '$label'"; return 1; }
+    [[ "$page" =~ ^[0-9]+$ ]] || page=0
+
+    local _line _l _s _created _en _mc _mi _q _ex _notes _adtag
+    _line=$(grep -E "^${label}\|" "$SECRETS_FILE" 2>/dev/null | head -1)
+    IFS='|' read -r _l _s _created _en _mc _mi _q _ex _notes _adtag <<< "$_line"
+
+    local _reset; _reset=$(_cb_quota_reset_day "$label")
+
+    local _msg="⚙️ *管理 $(_esc "$label")*\n\n"
+    if [ -n "$_q" ] && [ "$_q" -gt 0 ] 2>/dev/null; then
+        _msg+="🧮 配额: $(format_bytes "$_q")\n"
+    else
+        _msg+="🧮 配额不限\n"
+    fi
+    _msg+="🔌 最大连接数： $([ -n "$_mc" ] && [ "$_mc" != "0" ] && printf '%s' "$_mc" || printf '不限')\n"
+    _msg+="🌐 最大 IP 数: $([ -n "$_mi" ] && [ "$_mi" != "0" ] && printf '%s' "$_mi" || printf '不限')\n"
+    _msg+="⏳ 到期时间: $(_cb_expiry_text "$_ex")\n"
+    _msg+="🔁 配额重置： $([ -n "$_reset" ] && printf 'day %s' "$_reset" || printf 'off')\n"
+    _msg+="📝 备注: $([ -n "$_notes" ] && printf '%s' "$(_esc "$_notes")" || printf '_无_')\n"
+    _msg+="🏷 广告标签: $([ -n "$_adtag" ] && printf '`%s`' "$(_esc "$_adtag")" || printf '_全局默认_')"
+    # The expiry picker's relative presets and its "never" option mean different
+    # CLI verbs, so say which is which rather than making the operator guess.
+
+    _kb_reset
+    _kb_row "$(_kb_spec "🧮 配额" "e" "q" "$label" "$page")" \
+            "$(_kb_spec "🔌 连接数" "e" "c" "$label" "$page")"
+    _kb_row "$(_kb_spec "🌐 IP数" "e" "i" "$label" "$page")" \
+            "$(_kb_spec "⏳ 有效期" "e" "x" "$label" "$page")"
+    _kb_row "$(_kb_spec "🔁 重置日" "e" "r" "$label" "$page")" \
+            "$(_kb_spec "🧩 模板" "e" "t" "$label" "$page")"
+    _kb_row "$(_kb_spec "📝 备注" "e" "n" "$label" "$page")" \
+            "$(_kb_spec "🏷 广告标签" "e" "a" "$label" "$page")"
+    _kb_row "◀ 返回|u:s:${label}:${page}"
+    _cb_edit "$_msg" "$(_kb_json)"
+}
+
+# The picker for one limit field. Every button commits through the per-field
+# CLI verb — never `secret setlimits`, whose zeroes mean "unlimited" and would
+# silently clear the fields the operator did not touch.
+_cb_render_limits() {
+    local field="$1" label="$2" page="${3:-0}" act title presets
+    ! _cb_secret_exists "$label" && { _CB_TOAST="找不到密钥 '$label'"; return 1; }
+    [[ "$page" =~ ^[0-9]+$ ]] || page=0
+
+    case "$field" in
+        q) act="setq"; title="配额";               presets="5G 10G 50G 100G 0" ;;
+        c) act="setc"; title="最大连接数";     presets="5 10 20 50 0" ;;
+        i) act="seti"; title="最大 IP 数";             presets="1 3 5 10 0" ;;
+        x) act="setx"; title="有效期";              presets="7 30 90 365 0" ;;
+        r) act="setr"; title="配额重置日";     presets="1 15 28 off" ;;
+        *) _CB_TOAST="未知字段"; return 1 ;;
+    esac
+
+    local _msg="🧮 *${title} — $(_esc "$label")*\n\n"
+    case "$field" in
+        q) _msg+="_选择限额，∞ 表示不限。_" ;;
+        c) _msg+="_每台设备通常需要约 3 个连接，限制低于 5 可能影响客户端。_" ;;
+        i) _msg+="_移动设备切换网络时 IP 会改变，仅限制 IP 数无法完全防止共享。_" ;;
+        x) _msg+="_预设天数从今天开始计算，选择 never 清除到期日。_" ;;
+        r) _msg+="_每月当天清零流量计数。_" ;;
+    esac
+
+    _kb_reset
+    # Two per row. Built as an array rather than a space-joined string: a spec
+    # containing a space would otherwise split into two bogus buttons.
+    local -a _specs=()
+    local _v _spec
+    for _v in $presets; do
+        _spec=$(_kb_spec "$(_cb_preset_label "$field" "$_v")" "c" "$act" "$label" "$_v")
+        [ -n "$_spec" ] && _specs+=("$_spec")
+        if [ "${#_specs[@]}" -eq 2 ]; then _kb_row "${_specs[@]}"; _specs=(); fi
+    done
+    [ "${#_specs[@]}" -gt 0 ] && _kb_row "${_specs[@]}"
+    # A value the presets do not cover. It arms a pending prompt rather than
+    # committing, because the grammar has no room for free text.
+    _kb_row "$(_kb_enc_custom "$label" "$field")"
+    _kb_row "◀ 返回|u:m:${label}:${page}"
+    _cb_edit "$_msg" "$(_kb_json)"
+}
+
+# "✏️ Custom…" — arms a pending prompt for a value the presets do not cover. The
+# field rides in the page slot so the flow keeps the label as its target, which
+# is what every other payload in this file does.
+_kb_enc_custom() {
+    local label="$1" field="$2" p
+    p=$(_cb_enc "e" "z" "$label" "$field") || return 0
+    printf '✏️ 自定义…|%s' "$p"
+}
+
+# ── Limit templates ─────────────────────────────────────────────────────────
+#
+# templates.conf holds "name|conns|ips|quota|expires|notes", and the CLI's
+# `template save` already overwrites by name — so editing a template is a
+# read-modify-write that rebuilds the row with one field replaced. No new CLI
+# verb is needed, but the rebuild has to carry the fields it did not touch:
+# template_save replaces the whole row, so a stale or mis-split read would
+# quietly reset notes and expiry, the two easiest columns to lose.
+
+_cb_tpl_get() {   # <name> <field 1..6> -> value, "" if absent
+    local f="${INSTALL_DIR}/templates.conf" _n _c _i _q _e _notes
+    [ -f "$f" ] || return 0
+    while IFS='|' read -r _n _c _i _q _e _notes; do
+        [ "$_n" = "$1" ] || continue
+        case "$2" in
+            1) printf '%s' "$_n" ;; 2) printf '%s' "$_c" ;; 3) printf '%s' "$_i" ;;
+            4) printf '%s' "$_q" ;; 5) printf '%s' "$_e" ;; 6) printf '%s' "$_notes" ;;
+        esac
+        return 0
+    done < "$f"
+}
+
+_cb_tpl_exists() {
+    [ -n "$1" ] && [ -f "${INSTALL_DIR}/templates.conf" ] && \
+        grep -qE "^$1\|" "${INSTALL_DIR}/templates.conf" 2>/dev/null
+}
+
+# Write the row back with one field replaced. Reads inside the same call that
+# writes it, so the fields the operator did not touch are the ones on disk now.
+_cb_tpl_set() {   # <name> <slot> <value>; slot = conns|ips|quota|expires|notes
+    local name="$1" slot="$2" value="$3"
+    local _c _i _q _e _notes
+    _c=$(_cb_tpl_get "$name" 2); _i=$(_cb_tpl_get "$name" 3)
+    _q=$(_cb_tpl_get "$name" 4); _e=$(_cb_tpl_get "$name" 5)
+    _notes=$(_cb_tpl_get "$name" 6)
+    case "$slot" in
+        conns)   _c="$value" ;;
+        ips)     _i="$value" ;;
+        quota)   _q="$value" ;;
+        expires) _e="$value" ;;
+        notes)   _notes="$value" ;;
+        *) return 1 ;;
+    esac
+    "${INSTALL_DIR}/mtproxymax" template save "$name" "${_c:-0}" "${_i:-0}" "${_q:-0}" "${_e:-0}" "${_notes:-}" &>/dev/null
+}
+
+_cb_render_tpl_list() {
+    local f="${INSTALL_DIR}/templates.conf" _msg="🧩 *限额模板*\n" _n=0 _t _rest _skipped=""
+    _kb_reset
+    if [ -f "$f" ]; then
+        while IFS='|' read -r _t _rest; do
+            [ -z "$_t" ] && continue
+            # A name outside the callback charset cannot be a button. Say so in
+            # the body rather than letting _kb_spec drop it without a trace.
+            if ! _cb_label_ok "$_t"; then _skipped+="${_t} "; continue; fi
+            _kb_row "$(_kb_spec "📋 $_t" "k" "e" "$_t" "0")"
+            _n=$(( _n + 1 ))
+        done < "$f"
+    fi
+    if [ -n "$_skipped" ]; then
+        _msg+="\n_以下名称含有按钮不支持的字符： ${_skipped}_"
+    fi
+    if [ "$_n" -eq 0 ]; then
+        _msg+="\n_尚未保存模板。_"
+    fi
+    _msg+="\n\n_将限额保存成模板后，可以应用到任意密钥。_"
+    _kb_row "$(_cb_can k n && printf '➕ 新建模板|k:n')"
+    _kb_row "🏠 主菜单|m"
+    _cb_edit "$_msg" "$(_kb_json)"
+}
+
+_cb_render_tpl_edit() {
+    local name="$1" page="${2:-0}" _c _i _q _e _notes
+    ! _cb_tpl_exists "$name" && { _CB_TOAST="找不到模板 '$name'"; return 1; }
+    _c=$(_cb_tpl_get "$name" 2); _i=$(_cb_tpl_get "$name" 3)
+    _q=$(_cb_tpl_get "$name" 4); _e=$(_cb_tpl_get "$name" 5)
+    _notes=$(_cb_tpl_get "$name" 6)
+
+    local _msg="🧩 *$(_esc "$name")*\n\n"
+    _msg+="🔌 最大连接数： $([ -n "$_c" ] && [ "$_c" != "0" ] && printf '%s' "$_c" || printf '不限')\n"
+    _msg+="🌐 最大 IP 数: $([ -n "$_i" ] && [ "$_i" != "0" ] && printf '%s' "$_i" || printf '不限')\n"
+    _msg+="🧮 配额: $([ -n "$_q" ] && [ "$_q" != "0" ] && printf '%s' "$(format_bytes "$_q")" || printf '不限')\n"
+    _msg+="⏳ 到期时间: $(_cb_expiry_text "$_e")\n"
+    _msg+="📝 备注: $([ -n "$_notes" ] && printf '%s' "$(_esc "$_notes")" || printf '_无_')"
+
+    _kb_reset
+    _kb_row "$(_kb_spec "🔌 连接数" "k" "p" "$name" "c")" "$(_kb_spec "🌐 IP数" "k" "p" "$name" "i")"
+    _kb_row "$(_kb_spec "🧮 配额" "k" "p" "$name" "q")" "$(_kb_spec "⏳ 到期时间" "k" "p" "$name" "x")"
+    _kb_row "$(_kb_spec "📝 备注" "k" "p" "$name" "n")"
+    _kb_row "$(_cb_can k s && printf '✨ 应用到用户…|k:s:%s:0' "$name")"
+    _kb_row "$(_cb_can k d && printf '🗑 删除|k:d:%s:0' "$name")"
+    _kb_row "◀ 返回|k"
+    _cb_edit "$_msg" "$(_kb_json)"
+}
+
+# The preset picker for one template field. Commits straight to c:tplset rather
+# than through a confirmation: this edits a stored template, which changes
+# nothing for a connected user and is one tap from being undone. The confirm
+# rule is for actions that touch live secrets.
+_cb_render_tpl_field() {
+    local name="$1" field="$2"
+    ! _cb_tpl_exists "$name" && { _CB_TOAST="找不到模板 '$name'"; return 1; }
+
+    local slot presets title hint
+    case "$field" in
+        c) slot="conns";   presets="5 10 20 50 0";   title="最大连接数"; hint="每台设备通常需要约 3 个连接。" ;;
+        i) slot="ips";     presets="1 3 5 10 0";     title="最大 IP 数";          hint="可辅助限制多人共享。" ;;
+        q) slot="quota";   presets="5G 10G 50G 100G 0"; title="配额";         hint="0 表示不限。" ;;
+        x) slot="expires"; presets="0";              title="到期时间";          hint="应用模板时会设置用户到期日，可输入日期修改。" ;;
+        n) slot="notes";   presets="";               title="备注";            hint="请输入文本。" ;;
+        *) _CB_TOAST="未知字段"; return 1 ;;
+    esac
+
+    if [ "$field" = "n" ]; then
+        # Notes has no useful presets, so it goes straight to a typed prompt.
+        _tg_pending_prompt "$_CB_CHAT" "tplnotes" "$name" \
+            "📝 *模板备注： $(_esc "$name")*\n\n请输入要保存的内容。"
+        _CB_TOAST="请输入备注"
+        return 0
+    fi
+    if [ "$field" = "x" ]; then
+        _tg_pending_prompt "$_CB_CHAT" "tplexpires" "$name" \
+            "⏳ *模板有效期： $(_esc "$name")*\n\n输入 YYYY-MM-DD，或输入 0 表示永久有效。"
+        _CB_TOAST="请输入日期"
+        return 0
+    fi
+
+    local _msg="🧩 *${title} — $(_esc "$name")*\n\n_${hint}_"
+    _kb_reset
+    local -a _specs=()
+    local _v _spec
+    for _v in $presets; do
+        _spec=$(_kb_spec "$(_cb_preset_label "$field" "$_v")" "c" "tplset" "$name" "${field}${_v}")
+        [ -n "$_spec" ] && _specs+=("$_spec")
+        if [ "${#_specs[@]}" -eq 2 ]; then _kb_row "${_specs[@]}"; _specs=(); fi
+    done
+    [ "${#_specs[@]}" -gt 0 ] && _kb_row "${_specs[@]}"
+    _kb_row "◀ 返回|k:e:${name}:0"
+    _cb_edit "$_msg" "$(_kb_json)"
+}
+
+_cb_render_tpl_apply_picker() {
+    local name="$1" page="${2:-0}" _t
+    ! _cb_tpl_exists "$name" && { _CB_TOAST="找不到模板 '$name'"; return 1; }
+
+    local _msg="✨ *Apply $(_esc "$name") to…*\n" _n=0
+    _kb_reset
+    while IFS='|' read -r _l _rest; do
+        [[ "$_l" =~ ^# ]] && continue
+        [ -z "$_l" ] && continue
+        _cb_label_ok "$_l" || continue
+        _kb_row "$(_kb_spec "👤 $_l" "c" "tpl" "$_l" "$name")"
+        _n=$(( _n + 1 ))
+    done < "$SECRETS_FILE"
+    [ "$_n" -eq 0 ] && _msg+="\n_没有可应用的密钥。_"
+    _kb_row "◀ 返回|k:e:${name}:0"
+    _cb_edit "$_msg" "$(_kb_json)"
+}
+
+# Templates that can be applied to this secret. A name that cannot survive the
+# callback charset is listed as text rather than as a button: _kb_spec drops
+# what it cannot encode, and a template the operator can see is unavailable
+# beats one that silently is not there.
+_cb_render_tpl_picker() {
+    local label="$1" page="${2:-0}" f="${INSTALL_DIR}/templates.conf" _t _rest
+    ! _cb_secret_exists "$label" && { _CB_TOAST="找不到密钥 '$label'"; return 1; }
+    [[ "$page" =~ ^[0-9]+$ ]] || page=0
+
+    local _msg="🧩 *应用模板 to $(_esc "$label")*\n\n"
+    _kb_reset
+    local _n=0 _skipped=""
+    if [ -f "$f" ]; then
+        while IFS='|' read -r _t _rest; do
+            [ -z "$_t" ] && continue
+            if ! _cb_label_ok "$_t"; then _skipped+="${_t} "; continue; fi
+            _kb_row "$(_kb_spec "📋 $_t" "c" "tpl" "$label" "$_t")"
+            _n=$(( _n + 1 ))
+        done < "$f"
+    fi
+    if [ -n "$_skipped" ]; then
+        _msg+="_以下名称含有按钮不支持的字符： ${_skipped}_\n\n"
+    fi
+    if [ "$_n" -eq 0 ]; then
+        _msg+="_暂无可应用的模板，请先保存模板：_ \`mtproxymax template save <name> <conns> <ips> <quota> <expires>\`_._\n"
+    fi
+    _kb_row "◀ 返回|u:m:${label}:${page}"
+    _cb_edit "$_msg" "$(_kb_json)"
+}
+
+# What one user actually moved, windowed. users.tsv has been written since the
+# history subsystem landed but nothing read it back per user — the user card
+# could only show the cumulative total since the last reset, which cannot
+# answer "how much today, and is that up or down?".
+#
+# All three windows are on one card rather than behind a window selector: three
+# totals fit comfortably, and a selector would need a fifth field the callback
+# grammar does not have, costing the origin page on the way back.
+_cb_render_user_traffic() {
+    local label="$1" page="${2:-0}"
+    ! _cb_label_ok "$label" && { _CB_TOAST="标签无效"; return 1; }
+    ! _cb_secret_exists "$label" && { _CB_TOAST="找不到密钥 '$label'"; return 1; }
+    [[ "$page" =~ ^[0-9]+$ ]] || page=0
+
+    local _now _w
+    _now=$(date +%s)
+    local _msg="📊 *流量 — $(_esc "$label")*\n"
+    local _in _out
+    for _w in 86400 604800 2592000; do
+        # history_users already does the windowed sum in one pass; reuse it
+        # rather than adding a second reader that could drift from it.
+        IFS='|' read -r _ _in _out <<< "$(history_users "$_w" "$_now" "$label")"
+        case "$_w" in
+            86400)   _msg+="\n*最近 24 小时*  ↓ $(format_bytes "${_out:-0}")  ↑ $(format_bytes "${_in:-0}")" ;;
+            604800)  _msg+="\n*最近 7 天*   ↓ $(format_bytes "${_out:-0}")  ↑ $(format_bytes "${_in:-0}")" ;;
+            2592000) _msg+="\n*最近 30 天*  ↓ $(format_bytes "${_out:-0}")  ↑ $(format_bytes "${_in:-0}")" ;;
+        esac
+    done
+
+    local _spark
+    _spark=$(_tg_spark "$(history_user_series "$label" 86400 "$_now" 24)")
+    [ -n "$_spark" ] && _msg+="\n\n📉 ${_spark}"
+
+    # The card carries the same quota/expiry context as the user card, so an
+    # operator reading the traffic does not have to navigate back to judge it.
+    local _line _q _ex
+    _line=$(grep -E "^${label}\|" "$SECRETS_FILE" 2>/dev/null | head -1)
+    IFS='|' read -r _ _ _ _ _ _ _q _ex _ <<< "$_line"
+    if [ -n "$_q" ] && [ "$_q" -gt 0 ] 2>/dev/null; then
+        local _cum=$(( ${_cum_user_in[$label]:-0} + ${_cum_user_out[$label]:-0} ))
+        local _pct=$(( (_cum * 100) / _q ))
+        [ "$_pct" -gt 100 ] && _pct=100
+        _msg+="\n\n🧮 配额 $(_cb_bar "$_pct") ${_pct}%，总配额 $(format_bytes "$_q")"
+    fi
+    [ -n "$_ex" ] && [ "$_ex" != "0" ] && _msg+="\n⏳ expires $(_cb_expiry_text "$_ex")"
+
+    _kb_reset
+    _kb_row "🔄 刷新|u:t:${label}:${page}" "⚙️ 管理|u:m:${label}:${page}"
+    _kb_row "◀ 返回|u:s:${label}:${page}"
+    _cb_edit "$_msg" "$(_kb_json)"
+}
+
+_cb_quota_reset_day() {
+    local f="${INSTALL_DIR}/secrets_quota_reset.conf" _l _d
+    [ -f "$f" ] || return 0
+    while IFS='|' read -r _l _d; do
+        [ "$_l" = "$1" ] && { printf '%s' "$_d"; return 0; }
+    done < "$f"
+}
+
+_cb_expiry_text() {
+    local ex="$1" e days
+    if [ -z "$ex" ] || [ "$ex" = "0" ]; then printf 'never'; return 0; fi
+    e=$(_iso_to_epoch "$ex")
+    if [ "${e:-0}" -gt 0 ] 2>/dev/null; then
+        days=$(( (e - $(date +%s)) / 86400 ))
+        if [ "$days" -lt 0 ]; then printf '已过期（%s）' "$ex"
+        else printf '%s 天后（%s）' "$days" "$ex"; fi
+    else
+        printf '%s' "$ex"
+    fi
+}
+
+_cb_render_confirm() {
+    local verb="$1" label="$2" page="${3:-0}" pretty=""
+    case "$verb" in
+        enable)  pretty="启用" ;;
+        disable) pretty="禁用" ;;
+        rotate)  pretty="轮换" ;;
+        remove)  pretty="移除" ;;
+        rotall)  pretty="轮换全部密钥" ;;
+        restart) pretty="重启代理" ;;
+        update)  pretty="应用更新" ;;
+        lockdown)
+            case "$label" in
+                on)  pretty="启用锁定" ;;
+                off) pretty="解除锁定" ;;
+                *) _CB_TOAST="未知模式"; return 1 ;;
+            esac ;;
+        *) _CB_TOAST="未知操作"; return 1 ;;
+    esac
+
+    local callback_target="$label" cancel_data="u:s:${label}:${page}"
+    # The global verbs are targetless. "_" is their placeholder, and it is
+    # matched here rather than treated as a label so that a secret genuinely
+    # named "_" is still a secret for enable/disable/rotate/remove.
+    case "$verb" in
+        rotall|restart|update|lockdown)
+            label=""
+            callback_target="${callback_target:-_}"
+            cancel_data="g"
+            ;;
+    esac
+    [ -n "$label" ] && ! _cb_secret_exists "$label" && { _CB_TOAST="找不到密钥 '$label'"; return 1; }
+
+    local _extra=""
+    case "$verb" in
+        rotall)  _extra="\n\n所有用户的客户端都需重新连接。" ;;
+        restart) _extra="\n\n所有用户的代理连接会短暂中断。" ;;
+        update)  _extra="\n\n更新将替换已安装的脚本，代理可能重启。" ;;
+        lockdown) _extra="\n\n此操作会立即调整内核和代理的防护设置。" ;;
+        disable)
+            local _c=0
+            while IFS='|' read -r _ml _mc2 _mi2; do
+                [ "$_ml" = "$label" ] && _c="${_mc2:-0}"
+            done < <(_cb_user_metrics)
+            [ "${_c:-0}" -gt 0 ] && _extra="\n\n此操作将立即断开 *${_c}* 个活跃会话。"
+            ;;
+        remove) _extra="\n\n密钥将立即失效，删除后无法恢复。" ;;
+        rotate) _extra="\n\n使用此密钥的客户端都需重新连接。" ;;
+    esac
+    local _msg="⚠️ *${pretty} $(_esc "$label")？*${_extra}"
+    _kb_reset
+    _kb_row "✅ 确认${pretty,,}|c:${verb}:${callback_target}" "❌ 取消|${cancel_data}"
+    _cb_edit "$_msg" "$(_kb_json)"
+}
+
+# Arm a pending prompt for a limit value outside the preset set. The verb in the
+# store is the same one the preset commits through, so the typed value lands on
+# exactly the same validated path — the prompt is not a second, laxer way in.
+_cb_prompt_custom_limit() {
+    local label="$1" field="$2" act="" title=""
+    ! _cb_secret_exists "$label" && { _CB_TOAST="找不到密钥 '$label'"; return 1; }
+    case "$field" in
+        q) act="setq"; title="配额（例如 250M、2G，0 表示不限）" ;;
+        c) act="setc"; title="最大连接数（整数，0 表示不限）" ;;
+        i) act="seti"; title="最大 IP 数（整数，0 表示不限）" ;;
+        x) act="setx"; title="有效天数或 YYYY-MM-DD，0 表示永久有效" ;;
+        r) act="setr"; title="配额重置日（1 至 28，off 表示关闭）" ;;
+        *) _CB_TOAST="未知字段"; return 1 ;;
+    esac
+    _tg_pending_prompt "$_CB_CHAT" "$act" "$label" \
+        "✏️ *自定义 ${act#set} for $(_esc "$label")*\n\n请直接回复 ${title}."
+    _CB_TOAST="请输入数值"
+}
+
+# Validate and apply one limit change. Sets _CB_TOAST on failure; returns 0 when
+# the CLI accepted it.
+#
+# The value arrives through callback_data (attacker-controlled) or through the
+# pending store (a file on disk), so it is validated here rather than trusted.
+# Every field goes through the per-field `secret setlimit` verb and never
+# `secret setlimits`, whose zeroes read as "unlimited" and would silently clear
+# the fields the operator did not touch.
+_cb_apply_limit() {
+    local verb="$1" label="$2" value="$3"
+    case "$verb" in
+        setq)
+            [[ "$value" =~ ^[0-9]+[KMGTkmgt]?$ ]] || { _CB_TOAST="请输入流量大小，例如 250M 或 2G"; return 1; }
+            "${INSTALL_DIR}/mtproxymax" secret setlimit "$label" quota "$value" &>/dev/null \
+                && { _CB_TOAST="配额已更新"; return 0; }
+            ;;
+        setc)
+            { [[ "$value" =~ ^[0-9]+$ ]] && [ "$value" -le 1000000 ]; } || { _CB_TOAST="请输入整数，最大值为 1000000"; return 1; }
+            "${INSTALL_DIR}/mtproxymax" secret setlimit "$label" conns "$value" &>/dev/null \
+                && { _CB_TOAST="连接限制已更新"; return 0; }
+            ;;
+        seti)
+            { [[ "$value" =~ ^[0-9]+$ ]] && [ "$value" -le 100000 ]; } || { _CB_TOAST="请输入整数，最大值为 100000"; return 1; }
+            "${INSTALL_DIR}/mtproxymax" secret setlimit "$label" ips "$value" &>/dev/null \
+                && { _CB_TOAST="IP 限制已更新"; return 0; }
+            ;;
+        setx)
+            if [ "$value" = "0" ]; then
+                "${INSTALL_DIR}/mtproxymax" secret setlimit "$label" expires 0 &>/dev/null \
+                    && { _CB_TOAST="已清除到期时间"; return 0; }
+            elif [[ "$value" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then
+                "${INSTALL_DIR}/mtproxymax" secret setlimit "$label" expires "$value" &>/dev/null \
+                    && { _CB_TOAST="到期时间已设为 ${value}"; return 0; }
+            elif [[ "$value" =~ ^[0-9]+$ ]] && [ "$value" -le 3650 ]; then
+                # Relative dates are the CLI's job: it already does the calendar
+                # arithmetic, including the short-month and timezone handling.
+                "${INSTALL_DIR}/mtproxymax" secret extend "$label" "$value" &>/dev/null \
+                    && { _CB_TOAST="已延长 ${value}d"; return 0; }
+            else
+                _CB_TOAST="请输入天数（1–3650）或 YYYY-MM-DD，永久有效填 0"
+                return 1
+            fi
+            ;;
+        setr)
+            case "$value" in
+                off) ;;
+                [0-9]|[12][0-9]) ;;
+                *) _CB_TOAST="请输入 1 至 28 的日期，或输入 off 关闭"; return 1 ;;
+            esac
+            "${INSTALL_DIR}/mtproxymax" secret quota-reset "$label" "$value" &>/dev/null \
+                && { _CB_TOAST="重置日已更新"; return 0; }
+            ;;
+        *) _CB_TOAST="未知操作"; return 1 ;;
+    esac
+    _CB_TOAST="操作失败，请查看服务器日志"
+    return 1
+}
+
+# One field of a stored template, encoded as "<field-letter><value>" so a field
+# name and its value fit in the single slot the grammar has left.
+_cb_exec_tplset() {
+    local name="$1" spec="$2" field="${2:0:1}" value="${2:1}"
+    case "$field" in
+        c) { [[ "$value" =~ ^[0-9]+$ ]] && [ "$value" -le 1000000 ]; } || { _CB_TOAST="请输入整数，最大值为 1000000"; return 1; }
+           _cb_tpl_set "$name" conns "$value" ;;
+        i) { [[ "$value" =~ ^[0-9]+$ ]] && [ "$value" -le 100000 ]; } || { _CB_TOAST="请输入整数，最大值为 100000"; return 1; }
+           _cb_tpl_set "$name" ips "$value" ;;
+        q) [[ "$value" =~ ^[0-9]+[KMGTkmgt]?$ ]] || { _CB_TOAST="请输入流量大小，例如 250M 或 2G"; return 1; }
+           _cb_tpl_set "$name" quota "$value" ;;
+        *) _CB_TOAST="未知字段"; return 1 ;;
+    esac
+    _CB_TOAST="已保存"
+    return 0
+}
+
+# The verbs that act on the server rather than on one secret. They have no
+# label, and for lockdown the second field is a mode rather than a page number.
+_cb_exec_global() {
+    local verb="$1" arg="$2" out=""
+    case "$verb" in
+        rotall)
+            if out=$("${INSTALL_DIR}/mtproxymax" secret rotate --all 2>&1); then
+                _CB_TOAST="已轮换全部密钥"
+            else
+                _CB_TOAST="批量轮换失败"
+            fi
+            _cb_render_tools
+            ;;
+        restart)
+            if "${INSTALL_DIR}/mtproxymax" restart &>/dev/null; then
+                _CB_TOAST="正在重启"
+            else
+                _CB_TOAST="重启失败"
+            fi
+            _cb_render_tools
+            ;;
+        update)
+            if _tg_start_update; then
+                _CB_TOAST="更新任务已在后台启动"
+            else
+                _CB_TOAST="后台更新启动失败，请在服务器运行 sudo mtproxymax update"
+                _CB_ALERT=true
+            fi
+            _cb_render_update "$_CB_TOAST"
+            ;;
+        lockdown)
+            case "$arg" in
+                on|off) ;;
+                *) _CB_TOAST="未知锁定模式"; return 1 ;;
+            esac
+            if "${INSTALL_DIR}/mtproxymax" lockdown "$arg" &>/dev/null; then
+                _CB_TOAST="锁定 ${arg}"
+                # LOCKDOWN_MODE is read by the renderers; reload it so the tools
+                # card reflects the change on the very next draw.
+                load_tg_settings
+            else
+                _CB_TOAST="锁定操作失败"
+            fi
+            _cb_render_tools
+            ;;
+        *) _CB_TOAST="未知操作"; return 1 ;;
+    esac
+    return 0
+}
+
+# Only the c: namespace mutates anything. a: just renders a confirmation, so a
+# destructive action is never one mis-tap away.
+#
+# $3 is the origin list page for the secret verbs and the VALUE for the set-*
+# verbs: the grammar allows four fields and a commit needs both, so they share
+# the slot. The cost is that a limit change forgets which list page the operator
+# came from. Putting the value in the action instead would cost more — the
+# capability table matches exact keys and is what decides whether a tap is
+# allowed at all, so a dynamic action name could not be authorised.
+_cb_exec_action() {
+    local verb="$1" label="$2" page="${3:-0}" out=""
+    case "$verb" in
+        rotall|restart|update|lockdown)
+            # Targetless global verbs run before the label checks below: they
+            # have no secret to validate, and for lockdown the second field is
+            # the mode ("on"/"off") rather than a page.
+            _cb_exec_global "$verb" "$label"
+            return $?
+            ;;
+        tpl)
+            # Apply a stored template to a secret. The template name rides in
+            # the page slot, so both names have to survive the callback budget;
+            # _kb_spec drops the button when they cannot.
+            ! _cb_label_ok "$label" && { _CB_TOAST="标签无效"; return 1; }
+            ! _cb_secret_exists "$label" && { _CB_TOAST="找不到密钥 '$label'"; return 1; }
+            ! _cb_tpl_exists "$page" && { _CB_TOAST="找不到模板 '$page'"; return 1; }
+            if "${INSTALL_DIR}/mtproxymax" template apply "$page" "$label" &>/dev/null; then
+                _CB_TOAST="已应用"
+                _cb_render_user_manage "$label" 0
+            else
+                _CB_TOAST="失败"
+                _cb_render_user_manage "$label" 0
+            fi
+            return 0
+            ;;
+        tplset)
+            # One field of a stored template. page is "<field-letter><value>".
+            ! _cb_tpl_exists "$label" && { _CB_TOAST="找不到模板 '$label'"; return 1; }
+            _cb_exec_tplset "$label" "$page" || return 1
+            _cb_render_tpl_edit "$label" 0
+            return 0
+            ;;
+        tplnew)
+            # Named only; the values come from the editor afterwards. A name is
+            # typed, so this is reached through the pending prompt rather than a
+            # button — the branch stays for completeness and tests.
+            ! _cb_label_ok "$page" && { _CB_TOAST="模板名称无效"; return 1; }
+            "${INSTALL_DIR}/mtproxymax" template save "$page" 0 0 0 0 "" &>/dev/null \
+                && _CB_TOAST="已创建" || _CB_TOAST="失败"
+            _cb_render_tpl_edit "$page" 0
+            return 0
+            ;;
+        tpldel)
+            ! _cb_tpl_exists "$label" && { _CB_TOAST="找不到模板 '$label'"; return 1; }
+            "${INSTALL_DIR}/mtproxymax" template delete "$label" &>/dev/null \
+                && _CB_TOAST="已删除" || _CB_TOAST="失败"
+            _cb_render_tpl_list
+            return 0
+            ;;
+        enable|disable|rotate|remove) ;;
+        setq|setc|seti|setx|setr) ;;
+        *) _CB_TOAST="未知操作"; return 1 ;;
+    esac
+    ! _cb_label_ok "$label" && { _CB_TOAST="标签无效"; return 1; }
+    ! _cb_secret_exists "$label" && { _CB_TOAST="找不到密钥 '$label'"; return 1; }
+    # Only the secret verbs carry a page number. Coercing unconditionally here
+    # would flatten a limit value like "10G" or "off" to 0 before it was read.
+    case "$verb" in
+        enable|disable|rotate|remove) [[ "$page" =~ ^[0-9]+$ ]] || page=0 ;;
+    esac
+
+    case "$verb" in
+        setq|setc|seti|setx|setr)
+            # Applied, then the card is redrawn. A button tap is the only caller
+            # that wants a redraw — the pending-input path shares this validation
+            # and reports back in the chat instead, which is why the write lives
+            # in _cb_apply_limit rather than here.
+            _cb_apply_limit "$verb" "$label" "$page" || return 1
+            _cb_render_user_manage "$label" 0
+            return 0
+            ;;
+    esac
+
+    if [ "$verb" = "remove" ]; then
+        if out=$("${INSTALL_DIR}/mtproxymax" secret remove "$label" 2>&1); then
+            _CB_TOAST="已移除"
+            _cb_render_user_list "$page" "🗑 已移除 *$(_esc "$label")*"
+        else
+            _CB_TOAST="失败"
+            _cb_render_user_detail "$label" "$page" "❌ Could not remove *$(_esc "$label")*"
+        fi
+        return 0
+    fi
+
+    if out=$("${INSTALL_DIR}/mtproxymax" secret "$verb" "$label" 2>&1); then
+        _CB_TOAST="已完成"
+    else
+        _CB_TOAST="失败"
+    fi
+    _cb_render_user_detail "$label" "$page"
+}
+
+_cb_render_traffic() {
+    local win="${1:-24h}"
+    case "$win" in
+        7d)  _win_s=604800 ;;
+        30d) _win_s=2592000 ;;
+        *)   win="24h"; _win_s=86400 ;;
+    esac
+    local _now; _now=$(date +%s)
+    local _ci _co _pi _po _pct _peak _avg _n _span
+    IFS='|' read -r _ci _co _pi _po _pct _peak _avg _n _span <<< "$(history_summary "$_win_s" "$_now")"
+
+    local _msg="📈 *流量统计 · 最近 ${win}*\n\n"
+    _msg+="↓ $(format_bytes "${_co:-0}")  ↑ $(format_bytes "${_ci:-0}")$(_tg_pct_str "$_pct")\n"
+    _msg+="⚡ 峰值 $(format_bytes "${_peak:-0}")/s · 平均 $(format_bytes "${_avg:-0}")/s\n"
+    _msg+="👥 $(get_active_connections) 个活跃连接\n"
+    if [ "${_n:-0}" -gt 0 ]; then
+        _msg+="\n_from ${_n} 次采样 over $(format_duration "${_span:-0}")_\n"
+    else
+        _msg+="\n_暂无流量历史。_\n"
+    fi
+
+    local _spark
+    _spark=$(_tg_spark "$(history_hourly "$_win_s" "$_now")")
+    # Inline, not fenced. The glyphs are block elements, which are drawn as a
+    # tiling set and share an advance width in a proportional font, so the
+    # sparkline stays aligned without a fence — and a fence would wrap it in a
+    # monospace box with a copy button, which is the wrong shape for a chart.
+    # Not passed through _esc either: the glyphs contain no Markdown
+    # metacharacter, and escaping would render literal backslashes.
+    [ -n "$_spark" ] && _msg+="\n📉 ${_spark}\n"
+
+    local _top _l _b
+    _top=$(history_top "$_win_s" "$_now" 5)
+    if [ -n "$_top" ]; then
+        _msg+="\n🏆 *流量排名*\n"
+        while IFS='|' read -r _l _b; do
+            [ -z "$_l" ] && continue
+            _msg+="👤 $(_esc "$_l"): $(format_bytes "${_b:-0}")\n"
+        done <<< "$_top"
+    fi
+
+    _kb_reset
+    _kb_row "$([ "$win" = "24h" ] && printf '24h ✓|t:w:24h' || printf '24h|t:w:24h')" \
+            "$([ "$win" = "7d" ] && printf '7d ✓|t:w:7d' || printf '7d|t:w:7d')" \
+            "$([ "$win" = "30d" ] && printf '30d ✓|t:w:30d' || printf '30d|t:w:30d')"
+    _kb_row "🔄 刷新|t:w:${win}" "🏠 主菜单|m"
+    _cb_edit "$_msg" "$(_kb_json)"
+}
+
+_cb_render_engine() {
+    local _m _msg
+    _m=$(_tg_metrics_raw)
+    _msg="🩺 *引擎*\n\n"
+    if [ -z "$_m" ]; then
+        _msg+="无法获取指标。\n"
+    else
+        _msg+=$(printf '%s' "$_m" | awk '
+            function v(n,   i) { return (n in m) ? m[n] : 0 }
+            /^telemt_uptime_seconds /        { m["up"]=$NF }
+            /^telemt_connections_total /     { m["tot"]=$NF }
+            /^telemt_connections_bad_total / { m["bad"]=$NF }
+            /^telemt_user_connections_current\{/ { m["cur"]+=$NF }
+            /^telemt_upstream_connect_success_total / { m["oks"]=$NF }
+            /^telemt_upstream_connect_fail_total /    { m["fai"]=$NF }
+            END {
+                bad = (v("tot") > 0) ? (v("bad") * 100.0 / v("tot")) : 0
+                att = v("oks") + v("fai")
+                ok  = (att > 0) ? (v("oks") * 100.0 / att) : 100
+                printf "👥 活跃 %d · 累计 %d\n", v("cur"), v("tot")
+                printf "⚠️ 握手失败 %.1f%%\n", bad
+                printf "🔗 上游成功率 %.1f%%\n", ok
+            }')
+        _msg+=$'\n'
+    fi
+    _kb_reset
+    _kb_row "🔄 刷新|y"        "$(_cb_can y d && printf '📊 摘要|y:d')"
+    _kb_row "$(_cb_can y p && printf '🌐 上游代理|y:p')" "$(_cb_can y f && printf '🛰 集群|y:f')"
+    _kb_row "$(_cb_can y v && printf '🎟 兑换码|y:v')"  "$(_cb_can y u && printf '⬆️ 更新|y:u')"
+    _kb_row "🏠 主菜单|m"
+    _cb_edit "$_msg" "$(_kb_json)"
+}
+
+# The posture half of what /mp_digest used to render. The three load_*() calls
+# the old handler made are manager-only and were silent no-ops inside the daemon
+# — so it advertised an SSL Shield and a Cloud Backup status it could never
+# actually read. Only the settings the daemon genuinely loads are shown.
+_cb_render_digest() {
+    local _ip _up=0 _rc=0 _st _qos _hh _msg
+    _ip=$(get_cached_ip)
+    is_proxy_running && { _up=$(get_container_uptime); _rc=$(get_active_connections); }
+    _st="🟢 NORMAL"; [ "${LOCKDOWN_MODE:-false}" = "true" ] && _st="🔴 LOCKDOWN ACTIVE"
+    _qos="off"; [ "${QOS_LIMIT_MBPS:-0}" -gt 0 ] 2>/dev/null && _qos="${QOS_LIMIT_MBPS} Mbps/IP"
+    _hh="off"; [ -n "${HAPPY_HOURS_WINDOW:-}" ] && _hh="${HAPPY_HOURS_WINDOW}"
+
+    local _total=0 _active=0 _l _en _rest
+    while IFS='|' read -r _l _s _c _en _rest; do
+        [[ "$_l" =~ ^# ]] && continue
+        [ -z "$_l" ] && continue
+        _total=$(( _total + 1 ))
+        [ "$_en" = "true" ] && _active=$(( _active + 1 ))
+    done < "$SECRETS_FILE"
+
+    _msg="📊 *摘要*\n\n"
+    _msg+="🖥 服务器: \`$(_esc "${_ip:-unknown}")\` (port ${PROXY_PORT:-?})\n"
+    _msg+="⚡️ 防护状态： ${_st}\n"
+    _msg+="⏱ 运行时长： $(format_duration "${_up:-0}")\n"
+    _msg+="🔌 连接数： ${_rc} 个活跃连接\n"
+    _msg+="🏎 QoS 限速： ${_qos}\n"
+    _msg+="🕒 免计费时段： ${_hh}\n"
+    _msg+="🎫 密钥：已启用 ${_active}，共 ${_total} 个\n"
+    _msg+="📈 累计流量： ↓ $(format_bytes "${_cum_out:-0}") ↑ $(format_bytes "${_cum_in:-0}")"
+    _kb_reset
+    _kb_row "◀ 返回|y" "🏠 主菜单|m"
+    _cb_edit "$_msg" "$(_kb_json)"
+}
+
+_cb_render_upstreams() {
+    local uf="${INSTALL_DIR}/upstreams.conf" _msg="🌐 *上游代理*\n"
+    if [ ! -f "$uf" ]; then
+        _msg+="\n🟢 直连，所有流量从本服务器发出。"
+    else
+        local name type addr user pass weight iface enabled icon
+        while IFS='|' read -r name type addr user pass weight iface enabled; do
+            [[ "$name" =~ ^# ]] && continue
+            [ -z "$name" ] && continue
+            # Backward compat: the old 7-column layout kept `enabled` in field 7.
+            if [ "$iface" = "true" ] || [ "$iface" = "false" ]; then enabled="$iface"; iface=""; fi
+            icon="🟢"; [ "$enabled" != "true" ] && icon="🔴"
+            _msg+="\n${icon} *$(_esc "$name")* — ${type}"
+            [ -n "$addr" ] && _msg+=" \`$(_esc "$addr")\`"
+            [ -n "$iface" ] && _msg+=" [${iface}]"
+            _msg+=" · weight ${weight:-?}"
+        done < "$uf"
+    fi
+    _kb_reset
+    _kb_row "◀ 返回|y" "🏠 主菜单|m"
+    _cb_edit "$_msg" "$(_kb_json)"
+}
+
+_cb_render_fleet() {
+    local out
+    out=$("${INSTALL_DIR}/mtproxymax" fleet status 2>/dev/null | sed 's/\x1b\[[0-9;]*m//g')
+    local _msg="🛰 *集群*" _n=0 _f _h _ip _users _traffic _load
+    if [ -n "$out" ]; then
+        while IFS= read -r _f; do
+            case "$_f" in ""|HOSTNAME*|主机名*|*"---"*) continue ;; esac
+            read -r _h _ip _users _traffic _load _ <<< "$_f"
+            [ -z "$_h" ] && continue
+            _msg+="\n🟢 *$(_esc "$_h")*"
+            [ -n "$_ip" ] && _msg+=" — \`$(_esc "$_ip")\`"
+            [ -n "$_users" ] && _msg+=" · 👥 ${_users}"
+            [ -n "$_traffic" ] && _msg+=" · 📊 ${_traffic}"
+            _n=$(( _n + 1 ))
+        done <<< "$out"
+    fi
+    [ "$_n" -eq 0 ] && _msg+="\n\n_尚无集群运行数据。_"
+    _kb_reset
+    _kb_row "◀ 返回|y" "🏠 主菜单|m"
+    _cb_edit "$_msg" "$(_kb_json)"
+}
+
+_cb_render_vouchers() {
+    local body _msg
+    body=$(_tg_voucher_lines)
+    if [ -n "$body" ]; then
+        _msg="🎟 *有效兑换码*${body}"
+    else
+        _msg="🎟 *有效兑换码*\n\n_尚无兑换码，运行以下命令生成_ \`mtproxymax voucher create\`_._"
+    fi
+    _kb_reset
+    _kb_row "◀ 返回|y" "🏠 主菜单|m"
+    _cb_edit "$_msg" "$(_kb_json)"
+}
+
+# The update check is read-only; applying it is a separate, confirmed action.
+_cb_render_update() {
+    local out="$1" _msg="⬆️ *更新*" _l
+    if [ -n "$out" ]; then
+        while IFS= read -r _l; do
+            [ -z "$_l" ] && continue
+            _msg+="\n• $(_esc "$_l")"
+        done <<< "$out"
+    else
+        _msg+="\n\n_更新检查未返回结果。_"
+    fi
+    _kb_reset
+    _kb_row "$(_cb_can a update && printf '⬆️ 应用更新|a:update:_')"
+    _kb_row "◀ 返回|y" "🏠 主菜单|m"
+    _cb_edit "$_msg" "$(_kb_json)"
+}
+
+# Everything that needs typed input, plus the three global verbs. The global
+# verbs are targetless, so they carry "_" where a secret label would go; the
+# dispatcher special-cases that placeholder for these verbs ONLY, so a secret
+# genuinely called "_" keeps working.
+_cb_render_tools() {
+    local _msg="🛠 *工具*\n\n_请选择需要执行的服务器管理操作。_"
+    _kb_reset
+    _kb_row "$(_cb_can g a && printf '➕ 添加用户|g:a')"   "$(_cb_can g b && printf '📢 广播|g:b')"
+    _kb_row "$(_cb_can a rotall && printf '♻️ 轮换全部|a:rotall:_')"
+    if [ "${LOCKDOWN_MODE:-false}" = "true" ]; then
+        _cb_can a lockdown && _kb_row "🔓 解除锁定|a:lockdown:off"
+    else
+        _cb_can a lockdown && _kb_row "🔒 锁定|a:lockdown:on"
+    fi
+    _kb_row "$(_cb_can a restart && printf '🔄 重启代理|a:restart:_')" \
+            "$(_cb_can a update  && printf '⬆️ 应用更新|a:update:_')"
+    _kb_row "🏠 主菜单|m"
+    _cb_edit "$_msg" "$(_kb_json)"
+}
+
+_cb_render_settings() {
+    local _msg="⚙️ *设置*\n\n"
+    _msg+="🔌 端口: \`${PROXY_PORT:-?}\`\n"
+    _msg+="🌐 域名: \`$(_esc "${PROXY_DOMAIN:-?}")\`\n"
+    _msg+="📊 指标端口： \`${PROXY_METRICS_PORT:-?}\`\n"
+    _msg+="⏱ 报告间隔： ${TELEGRAM_INTERVAL:-6}h\n"
+    _kb_reset
+    _kb_row "🏠 主菜单|m"
+    _cb_edit "$_msg" "$(_kb_json)"
+}
+
+# Send the connect link and QR as a NEW message rather than editing: an inline
+# keyboard cannot carry a photo, so the QR has to go out separately.
+_cb_send_link() {
+    local label="$1"
+    ! _cb_secret_exists "$label" && { _CB_TOAST="找不到密钥 '$label'"; return 1; }
+    local _secret _ip _dh _fs
+    _secret=$(grep -E "^${label}\|" "$SECRETS_FILE" 2>/dev/null | head -1 | cut -d'|' -f2)
+    _ip=$(get_cached_ip)
+    [ -z "$_ip" ] && { _CB_TOAST="无法检测服务器 IP"; return 1; }
+    if [ "${MASKING_ENABLED:-true}" != "false" ]; then
+        _dh=$(domain_to_hex "${PROXY_DOMAIN:-cloudflare.com}")
+        _fs="ee${_secret}${_dh}"
+    else
+        _fs="dd${_secret}"
+    fi
+    local _caption
+    _caption="🔗 [连接]($(_proxy_link "$_ip" "${PROXY_PORT}" "$_fs"))"
+    if send_proxy_qr_to "$_CB_CHAT" "$_ip" "${PROXY_PORT}" "$_fs" "$_caption" Markdown; then
+        _CB_TOAST="链接已发送"
+    else
+        _CB_TOAST="链接发送失败，请重试。"
+        _CB_ALERT="true"
+        return 1
+    fi
+}
+
+# The standard button bar attached to ordinary command replies. Inline buttons
+# carry their message implicitly via callback_query.message.message_id, so a
+# reply becomes a live dashboard with no stored message id and no session
+# state. Filtered by the requesting chat's role, so a reply never advertises a
+# button its reader cannot use.
+_tg_button_bar() {
+    local chat="$1"
+    _UI_ROLE="$(_check_tg_role "$chat")"
+    _kb_reset
+    _kb_row "$(_cb_can u l && printf '👥 用户|u:l:0')" "$(_cb_can t && printf '📈 流量|t')"
+    _kb_row "$(_cb_can y && printf '🩺 健康检查|y')" "🏠 主菜单|m"
+    _kb_json
+}
+
+# ── Dispatch ────────────────────────────────────────────────────────────────
+_cb_dispatch() {
+    local role cap need have
+    if ! _cb_dec "$_CB_DATA"; then
+        _CB_TOAST="菜单已过期，请发送 /menu"
+        return 1
+    fi
+    load_tg_settings
+    role=$(_check_tg_role "$_CB_CHAT")
+    _UI_ROLE="$role"
+
+    # Track the chatter so /mp_broadcast reaches button-only users too.
+    if [ -n "$_CB_CHAT" ]; then
+        mkdir -p "$INSTALL_DIR" 2>/dev/null || true
+        grep -q "^${_CB_CHAT}$" "${INSTALL_DIR}/bot_users.txt" 2>/dev/null || \
+            echo "$_CB_CHAT" >> "${INSTALL_DIR}/bot_users.txt" 2>/dev/null || true
+    fi
+
+    cap=$(_tg_cap_for "$_CB_NS" "$_CB_ACT")
+    if [ -z "$cap" ]; then
+        _CB_TOAST="菜单已过期，请发送 /menu"
+        return 1
+    fi
+    need=$(_tg_cap_rank "$cap")
+    have=$(_tg_role_rank "$role")
+    if [ "$have" -lt "$need" ]; then
+        if [ "$role" = "none" ]; then
+            # Unauthenticated: answer, change nothing, log nothing — the same
+            # silent refusal _process_cmd gives.
+            _CB_TOAST=""
+            return 1
+        fi
+        _tg_security_log "$_CB_CHAT" "callback ${_CB_NS}:${_CB_ACT}${_CB_TGT:+:}${_CB_TGT}"
+        _CB_TOAST="权限不足"
+        _CB_ALERT="true"
+        return 1
+    fi
+
+    case "$_CB_NS" in
+        n) : ;;   # page indicator: acknowledge, leave the message alone
+        m)
+            if [ "$_CB_ACT" = "h" ]; then _cb_render_help; else _cb_render_hub; fi
+            ;;
+        u)
+            case "$_CB_ACT" in
+                l) _cb_render_user_list "${_CB_TGT:-0}" ;;
+                s) _cb_render_user_detail "$_CB_TGT" "${_CB_PAGE:-0}" ;;
+                k) _cb_send_link "$_CB_TGT" ;;
+                m) _cb_render_user_manage "$_CB_TGT" "${_CB_PAGE:-0}" ;;
+                t) _cb_render_user_traffic "$_CB_TGT" "${_CB_PAGE:-0}" ;;
+                *) _CB_TOAST="未知操作" ;;
+            esac
+            ;;
+        e)
+            # One namespace for "edit a property of this secret". The page slot
+            # is the origin card for the pickers and the field code for the
+            # custom-value prompt, so it is read per action rather than once.
+            case "$_CB_ACT" in
+                q|c|i|x|r) _cb_render_limits "$_CB_ACT" "$_CB_TGT" "${_CB_PAGE:-0}" ;;
+                z) _cb_prompt_custom_limit "$_CB_TGT" "${_CB_PAGE:-}" ;;
+                t) _cb_render_tpl_picker "$_CB_TGT" "${_CB_PAGE:-0}" ;;
+                n) ! _cb_secret_exists "$_CB_TGT" && { _CB_TOAST="找不到密钥"; } || \
+                   _tg_pending_prompt "$_CB_CHAT" "note" "$_CB_TGT" \
+                       "📝 *备注： $(_esc "$_CB_TGT")*\n\n请输入要保存的内容。 Send \`-\` to clear it." ;;
+                a) ! _cb_secret_exists "$_CB_TGT" && { _CB_TOAST="找不到密钥"; } || \
+                   _tg_pending_prompt "$_CB_CHAT" "adtag" "$_CB_TGT" \
+                       "🏷 *广告标签 for $(_esc "$_CB_TGT")*\n\n请输入 32 位十六进制标签，来源为 \@MTProxybot, or \`clear\` 可恢复全局标签。" ;;
+                *) _CB_TOAST="未知操作" ;;
+            esac
+            ;;
+        a) _cb_render_confirm "$_CB_ACT" "$_CB_TGT" "${_CB_PAGE:-0}" ;;
+        c) _cb_exec_action "$_CB_ACT" "$_CB_TGT" "${_CB_PAGE:-0}" ;;
+        p)
+            # The prompt's own Cancel button. It clears whatever is armed for
+            # THIS chat and nothing else — _CB_CHAT comes from the callback,
+            # which Telegram authenticates, never from callback_data.
+            _tg_pending_clear "$_CB_CHAT"
+            _CB_TOAST="已取消"
+            ;;
+        g)
+            case "$_CB_ACT" in
+                a) _tg_pending_prompt "$_CB_CHAT" "add" "-" "➕ *添加用户*\n\n请输入新密钥标签。" ;;
+                b) _tg_pending_prompt "$_CB_CHAT" "broadcast" "-" "📢 *广播*\n\n请输入要发送给所有用户的消息。" ;;
+                "") _cb_render_tools ;;
+                *) _CB_TOAST="未知操作" ;;
+            esac
+            ;;
+        k)
+            case "$_CB_ACT" in
+                "")  _cb_render_tpl_list ;;
+                e)   _cb_render_tpl_edit "$_CB_TGT" "${_CB_PAGE:-0}" ;;
+                p)   _cb_render_tpl_field "$_CB_TGT" "${_CB_PAGE:-}" ;;
+                s)   _cb_render_tpl_apply_picker "$_CB_TGT" "${_CB_PAGE:-0}" ;;
+                a)   _cb_render_tpl_apply_picker "$_CB_TGT" "${_CB_PAGE:-0}" ;;
+                d)   _cb_render_confirm "tpldel" "$_CB_TGT" "${_CB_PAGE:-0}" ;;
+                n)   _tg_pending_prompt "$_CB_CHAT" "tplnew" "-" "🧩 *新建模板*\n\n请输入名称（字母、数字、下划线或短横线），也可以在同一行附上设置值： \`name conns ips quota expires\`." ;;
+                *)   _CB_TOAST="未知操作" ;;
+            esac
+            ;;
+        t) _cb_render_traffic "${_CB_TGT:-24h}" ;;
+        y)
+            case "$_CB_ACT" in
+                "")  _cb_render_engine ;;
+                d)   _cb_render_digest ;;
+                p)   _cb_render_upstreams ;;
+                f)   _cb_render_fleet ;;
+                v)   _cb_render_vouchers ;;
+                # Read-only: the CLI's `update` APPLIES the update, so the check
+                # only reports what is installed and offers the apply button.
+                u)   _cb_render_update "已安装版本： ${VERSION}" ;;
+                *)   _CB_TOAST="未知操作" ;;
+            esac
+            ;;
+        s) _cb_render_settings ;;
+        *) _CB_TOAST="菜单已过期，请发送 /menu" ;;
+    esac
+    return 0
+}
+
+# Callback-query entry point. Bash has no `finally`, so answering is made
+# structural rather than a discipline: _cb_dispatch never answers, and the
+# exactly-one answer below runs on every path — including denial, a stale
+# menu, and an unknown namespace. Without it the client spins forever.
+_process_callback() {
+    _CB_CHAT="$1"; _CB_MID="$2"; _CB_ID="$3"; _CB_DATA="$4"
+    _CB_TOAST=""; _CB_ALERT="false"
+    # Older buttons for server-wide changes must use the same confirmation as new ones.
+    case "$_CB_DATA" in
+        admin_restart) _CB_DATA="a:restart:_" ;;
+        admin_update) _CB_DATA="a:update:_" ;;
+        security_on) _CB_DATA="a:lockdown:on" ;;
+        security_off) _CB_DATA="a:lockdown:off" ;;
+    esac
+    case "$_CB_DATA" in
+        public_status|public_redeem|public_support|admin_status|admin_traffic|admin_link|\
+        admin_health|admin_digest|admin_upstreams|admin_fleet|admin_reply|admin_broadcast|\
+        secret_list|secret_add|secret_enable|secret_disable|secret_rotate|secret_remove|\
+        secret_limits|secret_setlimit|security_status|voucher_create|voucher_list|menu_secrets|\
+        menu_security|menu_more|menu_vouchers|menu_help|menu_main)
+            _process_cmd 0 "$_CB_CHAT" "$_CB_DATA" || true ;;
+        *) _cb_dispatch || true ;;
+    esac
+    tg_answer_cb "$_CB_ID" "$_CB_TOAST" "$_CB_ALERT"
+}
+# >>> TG_FMT_BEGIN
+# ── Reply formatting ────────────────────────────────────────────────────────
+#
+# Command replies used to dump CLI output into a Markdown code fence, which
+# Telegram draws as a monospace box with a copy button. That is the wrong shape
+# for a status reply: it reads as pasted console output, it cannot wrap, and it
+# puts a tap target on every line.
+#
+# The replacement is one line per fact. Alignment by padding is not available —
+# `printf "%-14s"` pads with letters, and letters do not have a uniform advance
+# width in a proportional font, so padded columns collapse outside a fence. The
+# block-element glyphs used for bars and sparklines are a different case: they
+# are drawn as a tiling set and DO share an advance width, which is why the
+# charts can stay inline.
+
+# "  Key:            value" -> "✅ *Key*: value", one line each. The padding is
+# decorative, so dropping it costs nothing; the key/value pairs are the data.
+_tg_kv_lines() {
+    local _line _k _v _icon _n=0
+    while IFS= read -r _line; do
+        [ -z "$_line" ] && continue
+        [[ "$_line" =~ ^[[:space:]]*([^:：]+)[:：][[:space:]]*(.*)$ ]] || continue
+        _k="${BASH_REMATCH[1]}"
+        _v="${BASH_REMATCH[2]}"
+        # Trim the padding printf added between the key and the colon.
+        _k="${_k%"${_k##*[![:space:]]}"}"
+        [ -z "$_k" ] && continue
+        case "$_v" in
+            *fail*|*Fail*|*FAIL*|*error*|*Error*|*down*|*Down*|*stopped*|*not\ running*|*失败*|*错误*|*停止*|*未运行*)
+                _icon="❌" ;;
+            *warn*|*Warn*|*WARN*|*degraded*|*slow*|*警告*|*缓慢*)
+                _icon="⚠️" ;;
+            *) _icon="✅" ;;
+        esac
+        printf '\n%s *%s*: %s' "$_icon" "$(_esc "$_k")" "$(_esc "$_v")"
+        _n=$(( _n + 1 ))
+    done
+    [ "$_n" -gt 0 ]
+}
+
+# Active vouchers as one line each, read from vouchers.conf rather than parsed
+# out of the CLI's padded table — the source of truth for both the list reply
+# and the create reply, and it needs no column alignment to be re-derived.
+#
+# skip_first drops the rows that already existed before a create, so the reply
+# shows the codes that were just generated instead of the whole inventory.
+_tg_voucher_lines() {
+    local skip_first="${1:-0}" f="${INSTALL_DIR}/vouchers.conf" _n=0
+    local _code _quota _days _conns _ips _tier _status _created _by _at
+    [ -f "$f" ] || return 0
+    while IFS='|' read -r _code _quota _days _conns _ips _tier _status _created _by _at; do
+        [ -z "$_code" ] && continue
+        [ "$_status" != "ACTIVE" ] && continue
+        _n=$(( _n + 1 ))
+        [ "$_n" -le "$skip_first" ] && continue
+        # The code goes inside a Markdown span, so anything outside the code
+        # alphabet would either break the span or inject formatting.
+        _code=$(printf '%s' "$_code" | tr -cd 'A-Za-z0-9-')
+        [ -z "$_code" ] && continue
+        printf '\n🎟 `%s`' "$_code"
+        [ -n "$_quota" ] && [ "$_quota" != "0" ] && printf ' · %s' "$(format_bytes "$_quota")"
+        [ -n "$_days" ] && [ "$_days" != "0" ] && printf ' · %sd' "$_days"
+        [ -n "$_tier" ] && [ "$_tier" != "standard" ] && printf ' · %s' "$_tier"
+    done < "$f"
+}
+
+# How many ACTIVE rows vouchers.conf holds, so a create can report only the new
+# ones. Counted before the create runs.
+_tg_voucher_count() {
+    local f="${INSTALL_DIR}/vouchers.conf" _status
+    [ -f "$f" ] || { printf '0'; return 0; }
+    local _c=0
+    while IFS='|' read -r _code _q _d _cn _i _t _status _cr _by _at; do
+        [ -z "$_code" ] && continue
+        [ "$_status" = "ACTIVE" ] && _c=$(( _c + 1 ))
+    done < "$f"
+    printf '%s' "$_c"
+}
+# <<< TG_FMT_END
+
+# <<< TG_MENU_END
+
+# >>> TG_HISTORY_BEGIN
+# ── Rolling traffic history ─────────────────────────────────────────────────
+#
+# Two append-only files under relay_stats/history/:
+#
+#   global.tsv   epoch|in_delta|out_delta|conns|marker
+#   users.tsv    epoch|label|in_delta|out_delta   (sparse: only non-zero rows)
+#
+# DELTAS, not cumulative counters. A cumulative record goes stale the moment
+# the engine restarts or a traffic reset rewinds the counters, forcing every
+# reader to re-implement restart detection. With deltas a reset just yields a
+# smaller bucket, and a windowed sum is `t >= start { s += $2 }`.
+#
+# Only ONE writer (this daemon) appends, so appends need no lock; only the
+# read-modify-write in _history_prune does.
+#
+# Marker column: "-" normal, "R" engine restart, "X" traffic reset.
+HISTORY_DIR="${INSTALL_DIR}/relay_stats/history"
+
+_bucket_in=0
+_bucket_out=0
+_bucket_conns=0
+_bucket_marker="-"
+_prev_uptime=0
+declare -A _bucket_user_in _bucket_user_out
+
+_history_init() {
+    mkdir -p "$HISTORY_DIR" 2>/dev/null || true
+    [ -f "$HISTORY_DIR/global.tsv" ] || : > "$HISTORY_DIR/global.tsv" 2>/dev/null || true
+    [ -f "$HISTORY_DIR/users.tsv" ] || : > "$HISTORY_DIR/users.tsv" 2>/dev/null || true
+}
+
+_history_zero_buckets() {
+    _bucket_in=0; _bucket_out=0; _bucket_conns=0; _bucket_marker="-"
+    local _k
+    for _k in "${!_bucket_user_in[@]}";  do _bucket_user_in["$_k"]=0; done
+    for _k in "${!_bucket_user_out[@]}"; do _bucket_user_out["$_k"]=0; done
+}
+
+# Flush the accumulated buckets as one sample and reset them. Called on its own
+# timer, so the bucket window matches the sample interval rather than the 60s
+# traffic tick.
+history_sample() {
+    local epoch="${1:-$(date +%s)}"
+    _history_init
+    printf '%s|%s|%s|%s|%s\n' "$epoch" "${_bucket_in:-0}" "${_bucket_out:-0}" \
+        "${_bucket_conns:-0}" "${_bucket_marker:--}" >> "$HISTORY_DIR/global.tsv" 2>/dev/null
+    local _l _di _do
+    for _l in "${!_bucket_user_in[@]}"; do
+        _di="${_bucket_user_in[$_l]:-0}"; _do="${_bucket_user_out[$_l]:-0}"
+        [ "${_di:-0}" -eq 0 ] 2>/dev/null && [ "${_do:-0}" -eq 0 ] 2>/dev/null && continue
+        printf '%s|%s|%s|%s\n' "$epoch" "$_l" "$_di" "$_do" >> "$HISTORY_DIR/users.tsv" 2>/dev/null
+    done
+    _history_zero_buckets
+}
+
+# "cur_in|cur_out|prev_in|prev_out|pct|peak_bps|avg_bps|samples|span_s"
+#
+# pct is -1 when the previous window holds nothing, never inf/nan — a formatter
+# downstream would choke on those. peak uses the ACTUAL gap between samples,
+# not the nominal interval, so a daemon outage shows as a real gap rather than
+# a phantom spike; avg divides by the span actually covered, so a 7-day query
+# against 3 hours of history reports honestly instead of inflating.
+history_summary() {
+    local win="$1" now="$2"
+    local f="$HISTORY_DIR/global.tsv"
+    [ -f "$f" ] || { printf '0|0|0|0|n/a|0|0|0|0'; return 0; }
+    awk -F'|' -v win="$win" -v now="$now" '
+        {
+            t = $1 + 0
+            if (t > now) next
+            if (t >= now - win) {
+                ci += $2; co += $3; cn++
+                if (fs == "" || t < fs) fs = t
+                if (t > ls) ls = t
+            } else if (t >= now - 2 * win) { pi += $2; po += $3 }
+            if (pt != "" && t > pt) {
+                d = ($2 + $3) / (t - pt)
+                if (t >= now - win && d > peak) peak = d
+            }
+            pt = t
+        }
+        END {
+            # "n/a" rather than a numeric sentinel: -1 would be indistinguishable
+            # from a genuine 1%% decrease, and inf/nan would break the formatter.
+            pct = "n/a"
+            if (pi + po > 0) pct = int(((ci + co) - (pi + po)) * 100 / (pi + po)) ""
+            span = (ls > fs) ? (ls - fs) : 0
+            avg = (span > 0) ? int((ci + co) / span) : 0
+            printf "%d|%d|%d|%d|%s|%d|%d|%d|%d\n", ci, co, pi, po, pct, peak, avg, cn, span
+        }
+    ' "$f" 2>/dev/null || printf '0|0|0|0|n/a|0|0|0|0'
+}
+
+# A single-line sparkline for the hourly series. The bar glyphs are passed as a
+# SPACE-separated string and split on that, never on "" — splitting a multibyte
+# string into characters is locale-dependent, and under a C locale `substr`
+# would slice a 3-byte bar glyph in half and emit mojibake.
+_tg_spark() {
+    local vals="$1"
+    [ -n "$vals" ] || return 0
+    awk -v v="$vals" -v b="▁ ▂ ▃ ▄ ▅ ▆ ▇ █" '
+        BEGIN {
+            n = split(v, a, " "); nb = split(b, BAR, " ")
+            max = 0
+            for (i = 1; i <= n; i++) if (a[i] + 0 > max) max = a[i] + 0
+            out = ""
+            for (i = 1; i <= n; i++) {
+                if (max <= 0) { out = out BAR[1]; continue }
+                idx = int(a[i] * (nb - 1) / max) + 1
+                if (idx < 1) idx = 1
+                if (idx > nb) idx = nb
+                out = out BAR[idx]
+            }
+            printf "%s", out
+        }'
+}
+
+# Format a period-over-period figure. "n/a" means the previous window was empty
+# and prints nothing at all, rather than a misleading ▲0%.
+_tg_pct_str() {
+    local p="$1"
+    [[ "$p" =~ ^-?[0-9]+$ ]] || return 0
+    if   [ "$p" -gt 0 ]; then printf '  ▲%d%%' "$p"
+    elif [ "$p" -lt 0 ]; then printf '  ▼%d%%' "$(( -p ))"
+    else printf '  ▬0%%'
+    fi
+}
+
+# "label|in|out" for every requested label, in the order requested, in ONE awk
+# pass — a page of six users must not cost six scans. A label with no history
+# reports 0|0 rather than going missing.
+history_users() {
+    local win="$1" now="$2"; shift 2
+    [ "$#" -gt 0 ] || return 0
+    local f="$HISTORY_DIR/users.tsv" _l want=""
+    for _l in "$@"; do want="${want}${_l} "; done
+    if [ ! -f "$f" ]; then
+        for _l in "$@"; do printf '%s|0|0\n' "$_l"; done
+        return 0
+    fi
+    # NOTE: the accumulators must not be named i/o — awk forbids one name being
+    # both a scalar and an array, and the BEGIN loop already uses i as a counter.
+    awk -F'|' -v win="$win" -v now="$now" -v want="$want" '
+        BEGIN { n = split(want, a, " "); for (i = 1; i <= n; i++) if (a[i] != "") { W[a[i]] = 1; ord[++m] = a[i] } }
+        { t = $1 + 0; if (t < now - win || t > now) next
+          if ($2 in W) { accI[$2] += $3; accO[$2] += $4 } }
+        END { for (k = 1; k <= m; k++) printf "%s|%d|%d\n", ord[k], accI[ord[k]] + 0, accO[ord[k]] + 0 }
+    ' "$f" 2>/dev/null
+}
+
+# 24 space-separated bucket totals across the window, oldest first.
+history_hourly() {
+    local win="$1" now="$2"
+    local f="$HISTORY_DIR/global.tsv"
+    [ -f "$f" ] || { local _o="0" _i; for (( _i = 1; _i < 24; _i++ )); do _o="${_o} 0"; done; printf '%s' "$_o"; return 0; }
+    awk -F'|' -v win="$win" -v now="$now" '
+        BEGIN { n = 24; w = win / n; for (i = 0; i < n; i++) b[i] = 0 }
+        { s = now - win; t = $1 + 0
+          if (t < s || t > now) next
+          idx = int((t - s) / w)
+          if (idx < 0) idx = 0
+          if (idx > n - 1) idx = n - 1
+          b[idx] += $2 + $3 }
+        END { out = ""; for (i = 0; i < n; i++) out = out (i ? " " : "") b[i] + 0; print out }
+    ' "$f" 2>/dev/null
+}
+
+# One user's series across the window, bucketed the same way history_hourly
+# buckets the global one, so _tg_spark consumes either unchanged.
+#
+# A label with no rows yields ZEROS rather than an empty string: the card draws
+# a flat line for a quiet account, and an empty string would silently drop the
+# sparkline row instead. The filter is on the label column, so one user's rows
+# can never be counted for another.
+history_user_series() {
+    local label="$1" win="$2" now="$3" n="${4:-24}"
+    local f="$HISTORY_DIR/users.tsv"
+    [ -f "$f" ] || { local _o="0" _i; for (( _i = 1; _i < n; _i++ )); do _o="${_o} 0"; done; printf '%s' "$_o"; return 0; }
+    awk -F'|' -v win="$win" -v now="$now" -v n="$n" -v who="$label" '
+        BEGIN { w = win / n; for (i = 0; i < n; i++) b[i] = 0 }
+        { if ($2 != who) next
+          s = now - win; t = $1 + 0
+          if (t < s || t > now) next
+          idx = int((t - s) / w)
+          if (idx < 0) idx = 0
+          if (idx > n - 1) idx = n - 1
+          b[idx] += $3 + $4 }
+        END { out = ""; for (i = 0; i < n; i++) out = out (i ? " " : "") b[i] + 0; print out }
+    ' "$f" 2>/dev/null || printf '0'
+}
+
+# "label|bytes", heaviest first. One awk plus one sort, whatever the user count.
+history_top() {
+    local win="$1" now="$2" n="${3:-3}"
+    local f="$HISTORY_DIR/users.tsv"
+    [ -f "$f" ] || return 0
+    awk -F'|' -v win="$win" -v now="$now" '
+        { t = $1 + 0; if (t < now - win || t > now) next; s[$2] += $3 + $4 }
+        END { for (k in s) printf "%s|%d\n", k, s[k] }
+    ' "$f" 2>/dev/null | sort -t'|' -k2 -rn | head -n "$n"
+}
+
+# Drop samples older than the retention window. This is the only read-modify-
+# write against the store, so it takes a lock — on fd 8, NOT the fd 9 that
+# save_traffic holds, because bash file descriptors are process-global and
+# reusing 9 here would close the traffic lock mid-critical-section.
+#
+# A `command -v flock` guard is not sufficient on its own: busybox ships a flock
+# applet, so the guard passes, and it is specifically `-w` that busybox lacks.
+# The lock call then failed, this loop `continue`d, and the prune did nothing at
+# all on Alpine — silently, so global.tsv grew without bound and the retention
+# setting was quietly not honoured. Fall back to `-n`, which busybox does
+# support, rather than trusting that the binary's presence implies the flags.
+#
+# `exec` here is redirection-only, so it applies to the whole shell: a trailing
+# 2>/dev/null would silence stderr for the rest of the process, not just for
+# this line, which is why none of these carry one.
+history_prune() {
+    local days="$1" now="${2:-$(date +%s)}"
+    local cutoff=$(( now - days * 86400 ))
+    _history_init
+    local f tmp
+    for f in "$HISTORY_DIR/global.tsv" "$HISTORY_DIR/users.tsv"; do
+        [ -f "$f" ] || continue
+        exec 8>"$HISTORY_DIR/.history.lock" || continue
+        if command -v flock &>/dev/null; then
+            flock -w 5 8 2>/dev/null ||
+                flock -n 8 2>/dev/null ||
+                { exec 8>&-; continue; }
+        fi
+        tmp=$(mktemp "$HISTORY_DIR/.prune.XXXXXX" 2>/dev/null)
+        if [ -n "$tmp" ]; then
+            chmod 600 "$tmp" 2>/dev/null
+            awk -F'|' -v c="$cutoff" '$1 + 0 >= c' "$f" > "$tmp" 2>/dev/null
+            mv "$tmp" "$f" 2>/dev/null || rm -f "$tmp"
+        fi
+        exec 8>&-
+    done
+}
+# <<< TG_HISTORY_END
+
+# >>> TG_REPORT_BEGIN
+# The periodic report.
+#
+# The previous version sent the same three facts every interval — uptime, live
+# connections, and two LIFETIME cumulative totals — whether or not anything had
+# happened. That is monotonically less informative as uptime grows: the numbers
+# only ever get bigger, and it can never answer "how much moved today, and is
+# that more or less than yesterday?".
+#
+# This reports a WINDOW instead, and adapts: with no traffic at all in the
+# window it collapses to a one-line heartbeat, because a full dashboard of
+# zeroes every six hours is noise. TELEGRAM_REPORT_DETAIL forces either
+# behaviour ('full' or 'summary'); 'auto' decides from the data.
+_tg_periodic_report() {
+    local now="$1" win="${2:-86400}"
+    local _ci _co _pi _po _pct _peak _avg _n _span
+    IFS='|' read -r _ci _co _pi _po _pct _peak _avg _n _span <<< "$(history_summary "$win" "$now")"
+    _ci=${_ci:-0}; _co=${_co:-0}
+
+    local _label="${TELEGRAM_SERVER_LABEL:-MTProxyMax}"
+    local _up _live
+    _up=$(get_uptime)
+    _live=$(get_active_connections)
+    local _detail="${TELEGRAM_REPORT_DETAIL:-auto}"
+    local _idle=0
+    [ "$_ci" -eq 0 ] && [ "$_co" -eq 0 ] && _idle=1
+
+    if [ "$_detail" = "summary" ] || { [ "$_detail" = "auto" ] && [ "$_idle" -eq 1 ]; }; then
+        if [ "$_idle" -eq 1 ]; then
+            tg_send_kb "🟢 *${_label}* — 在线，空闲采样 ${_n:-0} 次\n⏱ $(format_duration "${_up:-0}") · 👥 ${_live} 个活跃连接" \
+                "$(_tg_button_bar "${TELEGRAM_CHAT_ID}")"
+        else
+            tg_send_kb "📊 *${_label}*\n\n🟢 运行中 · ⏱ $(format_duration "${_up:-0}")\n👥 ${_live} 个活跃连接 · 📈 24h ↓ $(format_bytes "$_co") ↑ $(format_bytes "$_ci")" \
+                "$(_tg_button_bar "${TELEGRAM_CHAT_ID}")"
+        fi
+        return 0
+    fi
+
+    local _msg="📊 *运行报告 · $(_esc "$_label")*\n\n"
+    _msg+="🟢 运行中 · ⏱ $(format_duration "${_up:-0}") · 👥 ${_live} 个活跃连接\n"
+    _msg+="📈 24h ↓ $(format_bytes "$_co") ↑ $(format_bytes "$_ci")$(_tg_pct_str "$_pct")\n"
+    _msg+="⚡ 峰值 $(format_bytes "$_peak")/s · 平均 $(format_bytes "$_avg")/s\n"
+
+    local _spark
+    _spark=$(_tg_spark "$(history_hourly "$win" "$now")")
+    # Inline, not fenced — see _cb_render_traffic for why the fence bought
+    # nothing. Deliberately NOT passed through _esc: the block glyphs contain no
+    # Markdown metacharacter, and escaping would render literal backslashes.
+    [ -n "$_spark" ] && _msg+="\n📉 ${_spark}\n"
+
+    local _top _l _b _first=1
+    _top=$(history_top "$win" "$now" 3)
+    if [ -n "$_top" ]; then
+        _msg+="🏆 "
+        while IFS='|' read -r _l _b; do
+            [ -z "$_l" ] && continue
+            [ "$_first" -eq 1 ] || _msg+=" · "
+            _first=0
+            _msg+="$(_esc "$_l") $(format_bytes "${_b:-0}")"
+        done <<< "$_top"
+        _msg+="\n"
+    fi
+
+    # Quota pressure and expiry reuse the same 80/100 thresholds and the same
+    # ISO parser as the enforcement loop, so the two cannot disagree.
+    local _q80=0 _exp3=0 _seclabel _secret _created _en _mc _mi _q _ex _notes _adtag
+    if [ -f "$SECRETS_FILE" ]; then
+        while IFS='|' read -r _seclabel _secret _created _en _mc _mi _q _ex _notes _adtag || [ -n "$_seclabel" ]; do
+            [[ "$_seclabel" =~ ^# ]] && continue
+            [ -z "$_seclabel" ] && continue
+            if [ -n "$_q" ] && [ "${_q:-0}" -gt 0 ] 2>/dev/null; then
+                local _used=$(( ${_cum_user_in[$_seclabel]:-0} + ${_cum_user_out[$_seclabel]:-0} ))
+                [ $(( (_used * 100) / _q )) -ge 80 ] && _q80=$(( _q80 + 1 ))
+            fi
+            if [ -n "$_ex" ] && [ "$_ex" != "0" ]; then
+                local _ee
+                _ee=$(_iso_to_epoch "$_ex")
+                if [ "${_ee:-0}" -gt 0 ] 2>/dev/null; then
+                    local _dl=$(( (_ee - now) / 86400 ))
+                    [ "$_dl" -ge 0 ] && [ "$_dl" -le 3 ] && _exp3=$(( _exp3 + 1 ))
+                fi
+            fi
+        done < "$SECRETS_FILE"
+    fi
+    [ "$_q80" -gt 0 ] && _msg+="⚠️ ${_q80} 个用户的配额已用 ≥80%\n"
+    [ "$_exp3" -gt 0 ] && _msg+="⏳ ${_exp3} 个账户将在 3 天内到期\n"
+
+    tg_send_kb "$_msg" "$(_tg_button_bar "${TELEGRAM_CHAT_ID}")"
+}
+# <<< TG_REPORT_END
+
+# No cleanup trap here. _cleanup is defined in the manager, not in this generated script,
+# and nothing here appends to _TEMP_FILES — so `trap _cleanup EXIT` could only ever print
+# "_cleanup: command not found" on every daemon exit while cleaning nothing.
 
 # Main loop
 echo "$$" > "$PID_FILE"
@@ -12572,13 +15780,24 @@ mkdir -p "$(dirname "$OFFSET_FILE")"
 load_tg_settings
 load_traffic
 tg_prepare_polling
-tg_register_commands
+tg_enable_menu_button
+
+# Register the client-side "/" command menu via the manager, which owns the
+# command tables. Best-effort and backgrounded so a Telegram outage can never
+# delay or break the poll loop.
+"${INSTALL_DIR}/mtproxymax" telegram sync-commands &>/dev/null &
 
 _last_report=0
 _report_interval=$(( ${TELEGRAM_INTERVAL:-6} * 3600 ))
-_last_health=0
 _last_traffic_update=0
-_last_enforcement=0
+# Stagger the initial health check and maintenance sweep so neither fires on
+# pass 1 immediately after daemon start when Docker may still be initializing.
+_last_health=$(date +%s)
+_last_enforcement=$(( $(date +%s) - 150 ))
+# Seeded to now so the first tick after a restart does not immediately write a
+# near-empty bucket for the seconds since the process started.
+_last_hist_sample=$(date +%s)
+_last_hist_prune=$(date +%s)
 declare -A _prev_log_in=()
 declare -A _prev_log_out=()
 
@@ -12589,7 +15808,24 @@ while true; do
     _now=$(date +%s)
     if [ $((_now - _last_traffic_update)) -ge 60 ] && is_running; then
         _last_traffic_update=$_now
-        update_traffic 2>/dev/null
+        # Deliberately not silenced: save_traffic() reports a failed lock on stderr, and
+        # discarding that is what let unpersisted counters go unnoticed in production.
+        update_traffic
+
+        # Flush a history sample on its own coarser timer, so a bucket spans the
+        # sample interval rather than the 60s tick. This sits before the
+        # TELEGRAM_ENABLED guard below, so history keeps recording even while
+        # the bot is switched off.
+        if [ "${TELEGRAM_HISTORY_ENABLED:-true}" = "true" ] && \
+           [ $(( _now - _last_hist_sample )) -ge $(( ${TELEGRAM_HISTORY_INTERVAL_MIN:-5} * 60 )) ]; then
+            _last_hist_sample=$_now
+            history_sample "$_now"
+        fi
+        if [ "${TELEGRAM_HISTORY_ENABLED:-true}" = "true" ] && \
+           [ $(( _now - _last_hist_prune )) -ge 86400 ]; then
+            _last_hist_prune=$_now
+            history_prune "${TELEGRAM_HISTORY_RETENTION_DAYS:-7}" "$_now" &
+        fi
         [ "${PORTAL_ENABLED:-false}" = "true" ] && "${INSTALL_DIR}/mtproxymax" portal generate &>/dev/null
 
         # Connection log: append per-user activity (delta = current cumulative - previous cumulative)
@@ -12699,10 +15935,7 @@ while true; do
     if [ $((_now - _last_report)) -ge $_report_interval ]; then
         _last_report=$_now
         if is_running; then
-            _ri=0 _ro=0 _rc=0
-            read -r _ri _ro _rc <<< "$(get_stats)" || true
-            _up=$(get_uptime)
-            tg_send "📊 *定期报告*\n\n🟢 运行中 | ⏱ $(format_duration ${_up:-0})\n👥 连接数：${_rc}\n📊 ↓ $(format_bytes ${_cum_out:-0}) ↑ $(format_bytes ${_cum_in:-0})"
+            _tg_periodic_report "$_now" 86400
         fi
     fi
 
@@ -12901,12 +16134,18 @@ save_replication() {
 
     chmod 600 "$tmp"
     # Serialise with sync-timer flock to prevent lost-update races with save_sync_status()
-    exec 201>"${INSTALL_DIR:-/opt/mtproxymax}/.mtproxymax-sync.lock" 2>/dev/null || true
-    if command -v flock &>/dev/null; then
-    flock -w 5 201 2>/dev/null || { log_error "无法获取复制配置锁"; rm -f "$tmp"; exec 201>&- 2>/dev/null; return 1; }
+    # No 2>/dev/null here: `exec` with only redirections applies to the whole shell, so it
+    # would silence stderr for the rest of the process — including the log_error below,
+    # which is exactly the failure this function is supposed to report.
+    exec 201>"${INSTALL_DIR:-/opt/mtproxymax}/.mtproxymax-sync.lock" || true
+    if ! _lock_fd 201; then
+        log_error "无法获取复制配置锁"
+        rm -f "$tmp"
+        exec 201>&-
+        return 1
     fi
     mv "$tmp" "$REPLICATION_FILE"
-    exec 201>&- 2>/dev/null || true
+    exec 201>&- || true
 }
 
 # Load replication.conf
@@ -13209,7 +16448,7 @@ do_sync() {
     fi
 
     # itemize-changes: '<' prefix means file was sent to remote
-    if echo "$output" | grep -qE '^[<>]'; then
+    if echo "$output" | grep -cE '^[<>]' >/dev/null; then
         log_sync "CHANGE [${label}/${host}]: Files synced"
         if [ "${REPLICATION_RESTART_ON_CHANGE}" = "true" ]; then
             local r_out r_rc
@@ -13232,7 +16471,7 @@ do_sync() {
 
 main() {
     # Prevent overlapping sync runs
-    exec 200>"${LOCK_FILE}" 2>/dev/null || true
+    exec 200>"${LOCK_FILE}" || true
     if command -v flock &>/dev/null; then
         flock -n 200 || {
             echo "[$(date '+%Y-%m-%d %H:%M:%S')] 跳过：另一项同步正在运行" >> "${REPLICATION_LOG}"
@@ -13602,7 +16841,7 @@ replication_test() {
             "${REPLICATION_SSH_USER}@${host}" \
             "docker ps --filter name=mtproxymax --format '{{.Status}}' 2>/dev/null; echo ssh_ok" 2>&1)
 
-        if echo "$result" | grep -q "ssh_ok"; then
+        if echo "$result" | grep -c "ssh_ok" >/dev/null; then
             local docker_status
             docker_status=$(echo "$result" | grep -v "ssh_ok" | head -1)
             echo -e "${GREEN}SSH 正常${NC} | Docker：${docker_status:-未运行}"
@@ -13993,9 +17232,16 @@ ExecStop=/usr/local/bin/mtproxymax stop
 WantedBy=multi-user.target
 AUTOSTART_EOF
 
-        systemctl daemon-reload
-        systemctl enable mtproxymax.service 2>/dev/null
-        log_success "已启用 systemd 开机自启"
+        systemctl daemon-reload >/dev/null 2>&1 || true
+        # Check the result instead of discarding it. `systemctl enable` exits non-zero when
+        # there is no systemd to talk to (the not-booted case), so the old unconditional
+        # log_success told users autostart was on when nothing had been enabled.
+        if systemctl enable mtproxymax.service >/dev/null 2>&1; then
+            log_success "已启用开机自启（systemd）"
+        else
+            log_warn "无法启用开机自启，请运行 systemctl enable mtproxymax"
+            return 1
+        fi
         ;;
     openrc)
         # Type=oneshot + RemainAfterExit=yes wraps the manager's own start/stop,
@@ -14377,9 +17623,9 @@ instance_list() {
             local port="${INSTANCE_PORTS[$i]}" label="${INSTANCE_LABELS[$i]}"
             local cname="mtproxymax-${port}"
             local st
-            docker ps --format '{{.Names}}' 2>/dev/null | grep -q "^${cname}$" && st="${GREEN}running${NC}" || st="${RED}stopped${NC}"
-            echo -e "  ${BOLD}${label}：${NC}端口 ${port}（容器：${cname}）"
-            echo -e "    状态：${st} | 指标端口：${INSTANCE_METRICS_PORTS[$i]}"
+            docker ps --format '{{.Names}}' 2>/dev/null | grep -c "^${cname}$" >/dev/null && st="${GREEN}running${NC}" || st="${RED}stopped${NC}"
+            echo -e "  ${BOLD}${label}:${NC} port ${port} (container: ${cname})"
+            echo -e "    Status: ${st} | Metrics: ${INSTANCE_METRICS_PORTS[$i]}"
         done
     fi
     echo ""
@@ -14426,7 +17672,7 @@ restore_backup() {
     [ ! -f "$backup_file" ] && { log_error "File 未找到: ${backup_file}"; return 1; }
 
     # Validate backup
-    if ! tar tzf "$backup_file" 2>/dev/null | grep -q "settings.conf"; then
+    if ! tar tzf "$backup_file" 2>/dev/null | grep -c "settings.conf" >/dev/null; then
         log_error "备份文件无效（缺少 settings.conf）"
         return 1
     fi
@@ -14574,6 +17820,9 @@ show_cli_help() {
 
   监控：
     traffic                 显示流量统计
+    traffic reset-global    清零服务器累计流量
+    traffic reset-users     清零全部用户的流量
+    traffic reset-all       同时清零服务器和用户流量
     connections             显示各用户的实时活跃连接
     metrics                 显示实时引擎指标（连接、上游、用户、ME）
     doctor                  执行综合诊断（端口、TLS、密钥、磁盘、机器人）
@@ -14613,6 +17862,9 @@ show_cli_help() {
   Telegram：
     telegram setup          运行 Telegram 机器人向导
     telegram status         显示 Telegram 机器人状态
+    telegram commands <public|reseller|superadmin>  查看对应角色的命令
+    telegram sync-commands   重新注册 Telegram 命令菜单
+    telegram history <status|prune|reset>  查看、清理或重置流量历史
     telegram test           发送测试消息
     broadcast <msg>         通过 Telegram 机器人广播通知
     telegram disable        禁用 Telegram 集成
@@ -14800,9 +18052,9 @@ show_metrics() {
         /^telemt_uptime_seconds /                           { uptime = $NF }
         /^telemt_connections_total /                        { c_tot  = $NF }
         /^telemt_connections_bad_total /                    { c_bad  = $NF }
-        /^telemt_connections_current /                      { c_cur  = $NF }
-        /^telemt_connections_me_current /                   { c_me   = $NF }
-        /^telemt_connections_direct_current /               { c_dir  = $NF }
+        # telemt_connections_current, ..._me_current and ..._direct_current were deleted
+        # in telemt c07b600; the aggregate is now derived from the per-user gauge below.
+        # See tests/test_metric_names.sh for the upstream history.
         /^telemt_upstream_connect_attempt_total /           { up_att = $NF }
         /^telemt_upstream_connect_success_total /           { up_ok  = $NF }
         /^telemt_upstream_connect_fail_total /              { up_fail= $NF }
@@ -14812,21 +18064,25 @@ show_metrics() {
         /^telemt_me_writers_warm_current /                  { me_ww  = $NF }
         /^telemt_me_endpoint_quarantine_total /             { me_quar= $NF }
         /^telemt_me_crc_mismatch_total /                    { me_crc = $NF }
+        /^telemt_me_hardswap_pending /                      { me_hsp = $NF }
         /^telemt_pool_drain_active /                        { pool   = $NF }
         /^telemt_desync_total /                             { desync = $NF }
         /^telemt_secure_padding_invalid_total /             { padinv = $NF }
+        /^telemt_conntrack_rule_rollback_total /            { ct_rb  = $NF }
         /^telemt_upstream_connect_duration_success_total\{/ { b=lbl($0,"bucket"); if(b) ds[b]+=$NF }
         /^telemt_upstream_connect_duration_fail_total\{/    { b=lbl($0,"bucket"); if(b) df[b]+=$NF }
         /^telemt_user_connections_current\{/ { u=lbl($0,"user"); if(u) uc[u]+=$NF }
         /^telemt_user_connections_total\{/   { u=lbl($0,"user"); if(u) ut[u]+=$NF }
-        /^telemt_user_octets_from_client(_total)?\{/  { u=lbl($0,"user"); if(u) rx[u]+=$NF }
-        /^telemt_user_octets_to_client(_total)?\{/    { u=lbl($0,"user"); if(u) tx[u]+=$NF }
+        /^telemt_user_octets_from_client_total\{/  { u=lbl($0,"user"); if(u) rx[u]+=$NF }
+        /^telemt_user_octets_to_client_total\{/    { u=lbl($0,"user"); if(u) tx[u]+=$NF }
         /^telemt_user_unique_ips_current\{/  { u=lbl($0,"user"); if(u) ui[u]+=$NF }
         END {
+            for (u in uc) c_cur += uc[u]
             printf "S|%.0f|%.0f|%.0f|%.0f|%.0f|%.0f|%.0f|%.0f|%.0f|%.0f|%.0f|%.0f|%.0f|%.0f|%.0f|%.0f|%.0f|%.0f\n",
-                uptime+0,c_tot+0,c_bad+0,c_cur+0,c_me+0,c_dir+0,
+                uptime+0,c_tot+0,c_bad+0,c_cur+0,
                 up_att+0,up_ok+0,up_fail+0,me_att+0,me_ok+0,
-                me_wa+0,me_ww+0,me_quar+0,me_crc+0,pool+0,desync+0,padinv+0
+                me_wa+0,me_ww+0,me_quar+0,me_crc+0,pool+0,desync+0,padinv+0,
+                me_hsp+0,ct_rb+0
             bkeys[1]="le_100ms";   bnames[1]="<=100ms"
             bkeys[2]="101_500ms";  bnames[2]="101-500ms"
             bkeys[3]="501_1000ms"; bnames[3]="501ms-1s"
@@ -14845,9 +18101,10 @@ show_metrics() {
     ')
 
     # Parse scalar line
-    local uptime c_tot c_bad c_cur c_me c_dir up_att up_ok up_fail me_att me_ok me_wa me_ww me_quar me_crc pool desync padinv
-    IFS='|' read -r _ uptime c_tot c_bad c_cur c_me c_dir up_att up_ok up_fail \
+    local uptime c_tot c_bad c_cur up_att up_ok up_fail me_att me_ok me_wa me_ww me_quar me_crc pool desync padinv me_hsp ct_rb
+    IFS='|' read -r _ uptime c_tot c_bad c_cur up_att up_ok up_fail \
                        me_att me_ok me_wa me_ww me_quar me_crc pool desync padinv \
+                       me_hsp ct_rb \
         <<< "$(echo "$parsed" | grep '^S|')"
 
     local c_good=$(( ${c_tot:-0} - ${c_bad:-0} ))
@@ -14875,7 +18132,7 @@ show_metrics() {
 
     echo -e "  ${BOLD}连接数${NC}"
     echo -e "  ${DIM}总计：${NC}${c_tot:-0}   ${DIM}已授权：${NC}${BRIGHT_GREEN}${c_good}${NC}   ${DIM}已拒绝：${NC}${BRIGHT_RED}${c_bad:-0}${NC}"
-    echo -e "  ${DIM}活动连接：${NC}${c_cur:-0}（中间端：${c_me:-0}，直连：${c_dir:-0}）"
+    echo -e "  ${DIM}活跃：${NC} ${c_cur:-0}"
     echo ""
 
     echo -e "  ${BOLD}Upstream${NC}"
@@ -14902,12 +18159,14 @@ show_metrics() {
     [ "${me_quar:-0}" -gt 0 ] && echo -e "  ${DIM}已隔离端点：${NC}${YELLOW}${me_quar}${NC}"
     [ "${me_crc:-0}"  -gt 0 ] && echo -e "  ${DIM}CRC 不匹配：${NC}${YELLOW}${me_crc}${NC}"
     [ "${pool:-0}"    -gt 0 ] && echo -e "  ${DIM}正在排空的写入器：${NC}${pool}"
+    [ "${me_hsp:-0}"   -gt 0 ] && echo -e "  ${DIM}等待硬切换：${NC}     ${YELLOW}${me_hsp}${NC}"
     echo ""
 
-    if [ "${desync:-0}" -gt 0 ] || [ "${padinv:-0}" -gt 0 ]; then
+    if [ "${desync:-0}" -gt 0 ] || [ "${padinv:-0}" -gt 0 ] || [ "${ct_rb:-0}" -gt 0 ]; then
         echo -e "  ${BOLD}Security${NC}"
     [ "${desync:-0}"  -gt 0 ] && echo -e "  ${DIM}失同步事件：${NC}${YELLOW}${desync}${NC}"
     [ "${padinv:-0}"  -gt 0 ] && echo -e "  ${DIM}无效填充：${NC}${YELLOW}${padinv}${NC}"
+        [ "${ct_rb:-0}"   -gt 0 ] && echo -e "  ${DIM}连接跟踪回滚：${NC} ${YELLOW}${ct_rb}${NC}"
         echo ""
     fi
 }
@@ -16042,7 +19301,7 @@ cli_main() {
                     check_root
                     local code=$(echo "$2" | tr '[:upper:]' '[:lower:]')
                     if [[ "$code" =~ ^[a-z]{2}$ ]]; then
-                        if echo ",$BLOCKLIST_COUNTRIES," | grep -q ",${code},"; then
+                        if echo ",$BLOCKLIST_COUNTRIES," | grep -c ",${code}," >/dev/null; then
             log_info "国家/地区 '${code^^}' 已被屏蔽"
                         else
                             _ensure_ipset && _download_country_cidrs "$code" && {
@@ -16060,7 +19319,7 @@ cli_main() {
                     check_root
                     local code=$(echo "$2" | tr '[:upper:]' '[:lower:]')
                     if [[ "$code" =~ ^[a-z]{2}$ ]]; then
-                        if echo ",$BLOCKLIST_COUNTRIES," | grep -q ",${code},"; then
+                        if echo ",$BLOCKLIST_COUNTRIES," | grep -c ",${code}," >/dev/null; then
                             BLOCKLIST_COUNTRIES=$(echo ",$BLOCKLIST_COUNTRIES," | sed "s/,${code},/,/g;s/^,//;s/,$//")
                             save_settings
                             _remove_country_rules "$code"
@@ -16121,33 +19380,62 @@ cli_main() {
 
         traffic)
             local subcmd="${1:-}"
-            if [ "$subcmd" = "reset-global" ]; then
-                shift
-                run_traffic_reset_global "$@"
-            else
-                load_settings
-                load_secrets
-            echo ""
-            draw_header "流量"
-            local t_in t_out conns
-            read -r t_in t_out conns <<< "$(get_cumulative_proxy_stats)"
-            # Batch-load all user stats
-            _load_all_cumulative_user_stats 2>/dev/null
-            echo ""
-            echo -e "  ${BOLD}总计：${NC}${SYM_DOWN} $(format_bytes "$t_in")  ${SYM_UP} $(format_bytes "$t_out")  ${BOLD}连接数：${NC}${conns}"
-            echo ""
+            case "$subcmd" in
+                reset-global)
+                    shift
+                    run_traffic_reset_global "$@"
+                    ;;
+                reset-all)
+                    shift
+                    run_traffic_reset_all "$@"
+                    ;;
+                reset-users)
+                    shift
+                    check_root
+                    load_settings
+                    load_secrets
+                    secret_reset_traffic all "$@"
+                    ;;
+                help|--help|-h)
+                    echo ""
+                    echo -e "  ${BOLD}用法：${NC} mtproxymax traffic [子命令]"
+                    echo ""
+                    echo "  子命令："
+                    echo "    （无）         查看服务器总流量和各用户明细"
+                    echo "    reset-all      清零服务器和所有用户的累计流量"
+                    echo "    reset-global   仅清零服务器累计流量"
+                    echo "    reset-users    清零全部用户的流量计数器"
+                    echo ""
+                    ;;
+                "")
+                    load_settings
+                    load_secrets
+                    echo ""
+                    draw_header "流量"
+                    local t_in t_out conns
+                    read -r t_in t_out conns <<< "$(get_cumulative_proxy_stats)"
+                    # Batch-load all user stats
+                    _load_all_cumulative_user_stats 2>/dev/null
+                    echo ""
+                    echo -e "  ${BOLD}Total:${NC} ${SYM_DOWN} $(format_bytes "$t_in")  ${SYM_UP} $(format_bytes "$t_out")  ${BOLD}Connections:${NC} ${conns}"
+                    echo ""
 
-            # Per-user breakdown
-            for i in "${!SECRETS_LABELS[@]}"; do
-                [ "${SECRETS_ENABLED[$i]}" = "true" ] || continue
-                local label="${SECRETS_LABELS[$i]}"
-                local u_in=${_batch_cum_in["$label"]:-0}
-                local u_out=${_batch_cum_out["$label"]:-0}
-                local u_conns=${_batch_cum_conns["$label"]:-0}
-                echo -e "  ${GREEN}${SYM_OK}${NC} ${BOLD}${label}${NC}: ${SYM_DOWN} $(format_bytes "$u_in")  ${SYM_UP} $(format_bytes "$u_out")  conns: ${u_conns}"
-            done
-            echo ""
-            fi
+                    # Per-user breakdown
+                    for i in "${!SECRETS_LABELS[@]}"; do
+                        [ "${SECRETS_ENABLED[$i]}" = "true" ] || continue
+                        local label="${SECRETS_LABELS[$i]}"
+                        local u_in=${_batch_cum_in["$label"]:-0}
+                        local u_out=${_batch_cum_out["$label"]:-0}
+                        local u_conns=${_batch_cum_conns["$label"]:-0}
+                        echo -e "  ${GREEN}${SYM_OK}${NC} ${BOLD}${label}${NC}: ${SYM_DOWN} $(format_bytes "$u_in")  ${SYM_UP} $(format_bytes "$u_out")  conns: ${u_conns}"
+                    done
+                    echo ""
+                    ;;
+                *)
+                    log_error "未知流量子命令 '$subcmd'，运行 mtproxymax traffic help 查看用法"
+                    return 1
+                    ;;
+            esac
             ;;
 
         connections)
@@ -16302,6 +19590,9 @@ cli_main() {
             load_secrets
             case "${1:-status}" in
                 setup)   check_root; telegram_setup_wizard ;;
+                sync-commands) check_root; telegram_sync_commands ;;
+                commands) telegram_print_commands "${2:-admin}" ;;
+                history) telegram_history_cmd "${2:-status}";;
                 test)    telegram_test_message ;;
                 status|"")
                     if [ "$TELEGRAM_ENABLED" != "true" ]; then
@@ -16478,7 +19769,10 @@ cli_main() {
             check_root
             load_settings
             log_info "正在从源代码强制重新构建 telemt 引擎（提交 ${TELEMT_COMMIT}）..."
-            build_telemt_image source
+            if ! build_telemt_image source; then
+                log_error "引擎源码构建失败，当前代理继续运行"
+                return 1
+            fi
             if is_proxy_running; then
                 load_secrets
                 restart_proxy_container
@@ -16513,7 +19807,10 @@ cli_main() {
                     if [[ "$confirm" =~ ^[nN] ]]; then
                         return 0
                     fi
-                    build_telemt_image true
+                    if ! build_telemt_image true; then
+                        log_error "引擎重新构建失败，当前代理继续运行"
+                        return 1
+                    fi
                     if is_proxy_running; then
                         load_secrets
                         restart_proxy_container
@@ -17439,7 +20736,7 @@ show_main_menu() {
         draw_box_top "$w"
 
         local _running=false
-        if docker ps --format '{{.Names}}' 2>/dev/null | grep -q "^${CONTAINER_NAME}$"; then
+        if docker ps --format '{{.Names}}' 2>/dev/null | grep -c "^${CONTAINER_NAME}$" >/dev/null; then
             _running=true
         fi
 
@@ -17529,7 +20826,7 @@ show_proxy_menu() {
         draw_header "代理管理"
         echo ""
         local _pstatus
-        docker ps --format '{{.Names}}' 2>/dev/null | grep -q "^${CONTAINER_NAME}$" && _pstatus="running" || _pstatus="stopped"
+        docker ps --format '{{.Names}}' 2>/dev/null | grep -c "^${CONTAINER_NAME}$" >/dev/null && _pstatus="running" || _pstatus="stopped"
         echo -e "  状态：$(draw_status "$_pstatus")"
         echo ""
         echo -e "  ${DIM}[1]${NC} 启动代理"
@@ -18668,7 +21965,10 @@ show_engine_menu() {
                 if [[ "$confirm" =~ ^[nN] ]]; then
                     press_any_key; continue
                 fi
-                build_telemt_image true
+                if ! build_telemt_image true; then
+                    log_error "引擎重新构建失败，当前代理继续运行"
+                    press_any_key; continue
+                fi
                 if is_proxy_running; then
                     load_secrets
                     restart_proxy_container || true
@@ -18924,10 +22224,13 @@ show_info_qrcode() {
     echo -e "  3. 代理配置会自动应用"
     echo ""
     echo -e "  ${BOLD}二维码生成方式（自动检测）：${NC}"
-    echo -e "  ${GREEN}1.${NC} ${BOLD}qrencode${NC}（原生）：速度最快，直接在终端显示"
+    echo -e "  ${GREEN}1.${NC} ${BOLD}qrencode${NC} （原生工具），直接在终端渲染"
     echo -e "     安装命令：${DIM}apt install qrencode${NC}"
-    echo -e "  ${GREEN}2.${NC} ${BOLD}Docker${NC}：使用 alpine + qrencode 容器"
-    echo -e "  ${GREEN}3.${NC} ${BOLD}网页 API${NC}：qrserver.com（用于 Telegram 图片消息）"
+    echo -e "  ${GREEN}2.${NC} ${BOLD}python3-qrcode${NC} 为机器人和 HTML 页面生成 PNG"
+    echo -e "     安装命令：${DIM}pip install qrcode${NC}"
+    echo -e "  ${DIM}缺少上述工具时，机器人将发送可点击的连接链接。"
+    echo -e "  二维码仅在本机生成。"
+    echo -e "  连接链接包含用户密钥。${NC}"
     echo ""
     echo -e "  ${BOLD}命令：${NC}"
     echo -e "  ${GREEN}mtproxymax secret qr <label>${NC}   在终端显示二维码"

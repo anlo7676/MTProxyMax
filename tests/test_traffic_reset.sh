@@ -41,10 +41,10 @@ SECRETS_LABELS=(alice bob)
 SECRETS_ENABLED=(true true)
 
 METRICS='# HELP test test
-telemt_user_octets_from_client{user="alice"} 120
-telemt_user_octets_to_client{user="alice"} 340
-telemt_user_octets_from_client{user="bob"} 50
-telemt_user_octets_to_client{user="bob"} 70'
+telemt_user_octets_from_client_total{user="alice"} 120
+telemt_user_octets_to_client_total{user="alice"} 340
+telemt_user_octets_from_client_total{user="bob"} 50
+telemt_user_octets_to_client_total{user="bob"} 70'
 
 _fetch_metrics() {
     [ "${METRICS_AVAILABLE:-true}" = "true" ] || return 1
@@ -121,6 +121,16 @@ _cum_user_out[bob]=4000
 apply_pending_traffic_resets
 assert_eq "monthly reset clears stale daemon input" 0 "${_cum_user_in[bob]}"
 assert_eq "monthly reset clears stale daemon output" 0 "${_cum_user_out[bob]}"
+
+# Exercise reset-all
+METRICS_AVAILABLE=true
+printf '999|888\n' > "$STATS_DIR/cumulative_traffic"
+printf 'alice|1000|2000\nbob|3000|4000\n' > "$STATS_DIR/user_traffic"
+run_traffic_reset_all --force
+assert_eq "reset-all succeeds" 0 "$?"
+assert_eq "reset-all clears global counter" "0|0" "$(cat "$STATS_DIR/cumulative_traffic")"
+assert_eq "reset-all clears user traffic file" "" "$(cat "$STATS_DIR/user_traffic")"
+assert_eq "reset-all queues users-all daemon command" "users-all" "$(tail -n 1 "$STATS_DIR/.traffic_reset_pending")"
 
 printf '\n%d tests, %d failures\n' "$TESTS_RUN" "$TESTS_FAILED"
 [ "$TESTS_FAILED" -eq 0 ]

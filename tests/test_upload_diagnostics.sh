@@ -68,5 +68,21 @@ CLIENT_MSS=""
 cli_out=$(run_upload_test 2>&1)
 assert_contains "cli_main upload-test routes correctly" "上传机制诊断" "$cli_out"
 
+# 4. Live metrics reporting when _fetch_metrics succeeds
+_fetch_metrics() {
+    cat <<'EOF'
+telemt_user_octets_from_client_total{user="alice"} 10485760
+telemt_user_octets_to_client_total{user="alice"} 20971520
+EOF
+}
+out_metrics=$(run_upload_test 2>&1)
+assert_contains "upload RX metrics reported" "上传接收：" "$out_metrics"
+assert_contains "download TX metrics reported" "下载发送：" "$out_metrics"
+
+# 5. Live metrics reporting when _fetch_metrics fails / returns empty
+_fetch_metrics() { return 1; }
+out_no_metrics=$(run_upload_test 2>&1)
+assert_contains "metrics offline reported when unavailable" "指标离线（代理容器已停止）" "$out_no_metrics"
+
 printf '\n%d tests, %d failures\n' "$TESTS_RUN" "$TESTS_FAILED"
 [ "$TESTS_FAILED" -eq 0 ]

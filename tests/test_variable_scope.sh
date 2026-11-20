@@ -53,7 +53,7 @@ log_warn() { :; }
 audit_log() { :; }
 METRICS=$'telemt_user_octets_from_client{user="alice"} 120\ntelemt_user_octets_to_client{user="alice"} 340'
 curl() { printf '%s\n' "$METRICS"; }
-_fetch_metrics() { printf '%s\n' "$METRICS"; }
+_fetch_metrics_raw() { printf '%s\n' "$METRICS"; }
 
 printf '%s\n' 'alice|0123456789abcdef0123456789abcdef|1000|true|15|5|4096|0|note|' > "$SECRETS_FILE"
 printf '%s\n' 'direct|direct||||10||true' > "$UPSTREAMS_FILE"

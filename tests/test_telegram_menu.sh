@@ -39,10 +39,10 @@ TESTS_RUN=$((TESTS_RUN + 1))
 
 assert_contains "public menu uses visible inline buttons" '"inline_keyboard"'
 assert_contains "status callback is emitted" '"callback_data":"admin_status"'
-assert_contains "callback queries are parsed" "r.get('callback_query',{})"
+assert_contains "callback queries are parsed" 'r.get("callback_query")'
 assert_contains "callback clicks are acknowledged" 'answerCallbackQuery'
 assert_contains "callback routes to status handler" 'admin_status) text='
-assert_contains "native command menu is registered" 'setMyCommands'
+assert_contains "native command menu is registered" 'telegram sync-commands'
 assert_contains "native menu button is enabled" 'setChatMenuButton'
 assert_contains "polling removes conflicting webhook" 'deleteWebhook'
 assert_contains "start payloads open the menu" '/start\ *'
@@ -80,7 +80,7 @@ unset -f curl
 
 MAIN_SCRIPT="$(dirname "$0")/../mtproxymax.sh"
 TESTS_RUN=$((TESTS_RUN + 1))
-if sed -n '/^telegram_setup_wizard()/,/^}/p' "$MAIN_SCRIPT" | grep -Fq 'telegram_stop_service' && \
+if sed -n '/^telegram_setup_wizard()/,/^}/p' "$MAIN_SCRIPT" | grep -Fc 'telegram_stop_service' >/dev/null && \
    grep -Fq 'TELEGRAM_UPDATE_ID' "$MAIN_SCRIPT" && \
    grep -Fq 'relay_stats/tg_offset' "$MAIN_SCRIPT"; then
     printf '  PASS  setup prevents polling race and rebases offset\n'

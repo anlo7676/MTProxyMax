@@ -4,7 +4,7 @@
 
 **功能完整的 Telegram MTProto 代理管理器**
 
-当前版本：**1.4.1-LTS**；固定引擎版本：**telemt 3.5.7**。
+当前版本：**1.4.2-LTS**；固定引擎版本：**telemt 3.5.17**。
 
 基于 **telemt 3.x Rust 引擎**，提供交互式终端界面、完整命令行工具、Telegram 机器人、多用户访问控制、流量监控、代理链、自动更新和企业级运维能力。
 
@@ -171,7 +171,9 @@ mtproxymax live-diag
 
 ```bash
 mtproxymax secret reset-traffic alice
-mtproxymax traffic reset-total
+mtproxymax traffic reset-global  # 仅清零服务器累计流量
+mtproxymax traffic reset-users   # 清零全部用户的流量
+mtproxymax traffic reset-all     # 同时清零服务器和用户流量
 ```
 
 ### Telegram 机器人
@@ -182,10 +184,12 @@ mtproxymax traffic reset-total
 mtproxymax telegram setup
 mtproxymax telegram status
 mtproxymax telegram test
+mtproxymax telegram sync-commands  # 重新注册分角色命令菜单
+mtproxymax telegram history status # 查看流量历史的采样范围
 mtproxymax telegram disable
 ```
 
-配置完成后，在 Telegram 中向机器人发送 `/start`（也可发送 `/menu`），消息下方会直接显示中文内联按钮菜单；输入框旁的 Telegram 原生命令菜单也会自动注册。公开用户可点击查询状态、兑换码和联系支持；管理员可通过分级菜单完成状态检查、密钥管理、流量查看、安全控制、重启和更新等操作。需要标签或参数时，机器人会逐步提示输入，无需记忆命令。原有命令仍然保留，便于自动化和高级使用。
+配置完成后，在 Telegram 中向机器人发送 `/start`（也可发送 `/menu`），消息下方会直接显示中文内联按钮菜单；输入框旁的 Telegram 原生命令菜单也会自动注册。公开用户可点击查询状态、兑换码和联系支持；管理员可通过分级菜单完成状态检查、密钥管理、流量查看、安全控制、重启和更新等操作。需要标签或参数时，机器人会逐步提示输入，无需记忆命令。管理员还可点击「交互面板」查看用户明细、流量趋势和限额模板。原有命令仍然保留，便于自动化和高级使用。
 
 公开自助命令：
 
@@ -193,8 +197,8 @@ mtproxymax telegram disable
 |---|---|
 | `/start` | 显示自助服务入口 |
 | `/my_status <label>` | 查询账户状态、配额和到期时间 |
-| `/redeem <code> [label]` | 兑换礼品码 |
-| `/voucher <code> [label]` | `/redeem` 的别名 |
+| `/redeem <code>` | 将礼品码兑换到当前聊天绑定的账户 |
+| `/voucher <code>` | `/redeem` 的别名 |
 | `/support <message>` | 向管理员提交支持工单 |
 
 管理员命令：
@@ -533,6 +537,13 @@ sudo mtproxymax update
 ```
 
 脚本会从当前项目仓库下载新版本，并在替换前执行 Bash 语法校验。
+
+### 1.4.2-LTS 更新内容
+
+- 固定 telemt 3.5.17，升级时校验镜像版本，构建失败时保留正在运行的代理。
+- Telegram 管理菜单支持流量历史、定期报告和按用户查看链接。二维码在本机生成。
+- 兑换码核销增加并发锁，流量重置支持按服务器或全部用户分别执行。
+- 引擎设置支持 IPv4 ME NAT 参数，并保留本分支的 Middle-End 容量上限和新旧流量指标兼容。
 
 ### 1.4.1-LTS 更新内容
 

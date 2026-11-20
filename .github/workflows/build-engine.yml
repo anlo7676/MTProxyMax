@@ -4,13 +4,17 @@ on:
   workflow_dispatch:
     inputs:
       telemt_commit:
-        description: 'Telemt commit hash to build from'
+        description: 'Telemt commit hash to build from (7-char or full SHA)'
         required: true
-        default: '4ca7418'
+        default: '66708d2'
       version_tag:
-        description: 'Version tag (e.g. 3.4.8-10c9bcd)'
+        description: 'Version tag (e.g. 3.5.17-66708d2)'
         required: true
-        default: '3.5.7-4ca7418'
+        default: '3.5.17-66708d2'
+
+concurrency:
+  group: build-telemt-engine-${{ github.ref }}
+  cancel-in-progress: true
 
 env:
   REGISTRY: ghcr.io
@@ -46,9 +50,9 @@ jobs:
           RUN apt-get update && apt-get install -y --no-install-recommends git && rm -rf /var/lib/apt/lists/*
           RUN git clone "https://github.com/${TELEMT_REPO}.git" /build
           WORKDIR /build
-          RUN git checkout "${TELEMT_COMMIT}"
+          RUN git checkout --detach "${TELEMT_COMMIT}" && test "$(git rev-parse HEAD | cut -c1-7)" = "$(printf '%.7s' "${TELEMT_COMMIT}")"
           ENV CARGO_PROFILE_RELEASE_LTO=true CARGO_PROFILE_RELEASE_CODEGEN_UNITS=1 CARGO_PROFILE_RELEASE_DEBUG=false
-          RUN cargo build --release && strip target/release/telemt 2>/dev/null || true && cp target/release/telemt /telemt
+          RUN cargo build --release --locked && (strip target/release/telemt 2>/dev/null || true) && cp target/release/telemt /telemt
           FROM debian:bookworm-slim
           RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates && rm -rf /var/lib/apt/lists/*
           COPY --from=builder /telemt /usr/local/bin/telemt
