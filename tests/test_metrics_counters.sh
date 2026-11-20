@@ -19,7 +19,7 @@ assert_eq() {
     fi
 }
 is_proxy_running() { return 0; }
-_fetch_metrics() { printf '%s\n' "$METRICS"; }
+_fetch_metrics_raw() { printf '%s\n' "$METRICS"; }
 curl() { printf '%s\n' "$METRICS"; }
 check_root() { :; }
 log_info() { :; }
@@ -67,5 +67,11 @@ telemt_user_connections_current{user=\"bob\"} 2"
     secret_reset_traffic alice no_reload
     assert_eq "reset captures live baseline ($suffix)" 'alice|120|340' "$(grep '^alice|' "$STATS_DIR/user_traffic_snapshot")"
 done
+METRICS='telemt_user_octets_from_client{user="alice"} 11
+telemt_user_octets_from_client_total{user="alice"} 21
+telemt_user_octets_to_client{user="alice"} 31'
+assert_eq "mixed scrape prefers new inbound and falls back for outbound" '21 31 0' "$(get_proxy_stats)"
+assert_eq "daemon uses the same mixed-scrape rule" '21 31 0' "$(get_stats)"
+
 printf '\n%d tests, %d failures\n' "$TESTS_RUN" "$TESTS_FAILED"
 [ "$TESTS_FAILED" -eq 0 ]

@@ -26,6 +26,7 @@ PROXY_RUNNING=false
 is_proxy_running() {
     [ "$PROXY_RUNNING" = "true" ]
 }
+check_root() { :; }
 
 assert_eq() {
     local name="$1" want="$2" got="$3"
@@ -44,10 +45,17 @@ echo "Telemt client_mss tests"
 assert_eq "out-of-the-box default CLIENT_MSS is empty" "" "$CLIENT_MSS"
 
 # 2. Config generation when CLIENT_MSS is empty (off)
+# generate_telemt_config writes the TOML to a destination path — it does not print it.
+# Capturing its stdout (as this test used to) yields an empty string, so `grep` on it
+# found nothing and every assertion below was decided by that emptiness rather than by
+# the generated config. The file-exists assertion exists so that if generation ever
+# breaks, this test fails outright instead of passing vacuously again.
 CLIENT_MSS=""
-generate_telemt_config
-cfg=$(cat "$CONFIG_DIR/config.toml")
-if grep -q 'client_mss' <<< "$cfg"; then
+dest_off="$TEST_TMPDIR/config-off.toml"
+generate_telemt_config "$dest_off" >/dev/null 2>&1
+assert_eq "config is written when client_mss is off" "written" \
+    "$([ -f "$dest_off" ] && echo written || echo missing)"
+if grep -q 'client_mss' "$dest_off" 2>/dev/null; then
     assert_eq "client_mss omitted when off" "absent" "present"
 else
     assert_eq "client_mss omitted when off" "absent" "absent"
@@ -55,9 +63,11 @@ fi
 
 # 3. Config generation when CLIENT_MSS="tspu"
 CLIENT_MSS="tspu"
-generate_telemt_config
-cfg=$(cat "$CONFIG_DIR/config.toml")
-if grep -q 'client_mss = "tspu"' <<< "$cfg"; then
+dest_tspu="$TEST_TMPDIR/config-tspu.toml"
+generate_telemt_config "$dest_tspu" >/dev/null 2>&1
+assert_eq "config is written when client_mss is tspu" "written" \
+    "$([ -f "$dest_tspu" ] && echo written || echo missing)"
+if grep -q 'client_mss = "tspu"' "$dest_tspu" 2>/dev/null; then
     assert_eq "client_mss emitted when set to tspu" "present" "present"
 else
     assert_eq "client_mss emitted when set to tspu" "present" "absent"
